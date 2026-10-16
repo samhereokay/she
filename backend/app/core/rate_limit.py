@@ -39,4 +39,5 @@ class SimpleRateLimiter:
 
 # Limiters for different sensitivity levels
 auth_limiter = SimpleRateLimiter(requests_per_minute=20)
+totp_limiter = SimpleRateLimiter(requests_per_minute=5)
 batch_ingest_limiter = SimpleRateLimiter(requests_per_minute=120)

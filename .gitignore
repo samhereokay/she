@@ -26,3 +26,4 @@ local.properties
 
 # Local Build Tools
 .tools/
+*.db

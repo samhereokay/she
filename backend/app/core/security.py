@@ -39,6 +39,39 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 import base64
 import os
 import struct
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+
+def get_totp_encryption_key() -> bytes:
+    """Derive deterministic 256-bit key for encrypting secrets at rest."""
+    return hashlib.sha256(f"totp-at-rest-secret-v1:{settings.SECRET_KEY}".encode("utf-8")).digest()
+
+
+def encrypt_totp_secret(plain_secret: str) -> str:
+    """Encrypt TOTP secret using AES-256-GCM before saving to database."""
+    if not plain_secret:
+        return ""
+    key = get_totp_encryption_key()
+    iv = os.urandom(12)
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(iv, plain_secret.encode("utf-8"), None)
+    return base64.b64encode(iv + ciphertext).decode("utf-8")
+
+
+def decrypt_totp_secret(encrypted_secret: str) -> str:
+    """Decrypt TOTP secret using AES-256-GCM with backward compatibility for legacy plaintext."""
+    if not encrypted_secret:
+        return ""
+    try:
+        combined = base64.b64decode(encrypted_secret)
+        if len(combined) < 28:
+            return encrypted_secret
+        iv = combined[:12]
+        ciphertext = combined[12:]
+        aesgcm = AESGCM(get_totp_encryption_key())
+        return aesgcm.decrypt(iv, ciphertext, None).decode("utf-8")
+    except Exception:
+        return encrypted_secret
 
 
 def generate_totp_secret() -> str:

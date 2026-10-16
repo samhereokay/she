@@ -2,12 +2,13 @@ import base64
 import time
 import hashlib
 from datetime import datetime, timezone
-from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
-from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent, TrustedDevice, DeviceCommand
+from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent, TrustedDevice, DeviceCommand, generate_uuid
 from app.schemas.device import (
     DevicePairRequest,
     DeviceResponse,
@@ -15,6 +16,7 @@ from app.schemas.device import (
     TrustedDeviceRegisterRequest,
     TrustedDeviceResponse,
     CommandDispatchRequest,
+    CommandAckRequest,
     CommandResponse
 )
 from app.schemas.location import LocationResponse
@@ -315,8 +317,9 @@ def dispatch_command(
         )
 
     # Reconstruct canonical command bytes
+    cmd_id = req.command_id or generate_uuid()
     canonical_bytes = create_canonical_command_bytes(
-        command_id="",  # Placeholder to be filled or derived
+        command_id=req.command_id or "",
         target_device_id=req.target_device_id,
         command_type=req.command_type,
         sequence_counter=req.sequence_counter,
@@ -344,6 +347,7 @@ def dispatch_command(
         )
 
     command = DeviceCommand(
+        id=cmd_id,
         user_id=current_user.id,
         trusted_device_id=trusted.id,
         protected_device_id=target.id,
@@ -363,10 +367,47 @@ def dispatch_command(
 @router.get("/{device_id}/commands/pending", response_model=List[CommandResponse])
 def get_pending_commands(
     device_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> Any:
-    """Endpoint for Guardian device foreground service to poll for pending recovery commands."""
+    """
+    Endpoint for Guardian device foreground service to poll for pending recovery commands.
+    Verifies signed device authentication headers (X-Device-Signature + X-Device-Timestamp).
+    """
+    device = db.query(ProtectedDevice).filter(ProtectedDevice.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protected device not found")
+
+    sig_header = request.headers.get("X-Device-Signature")
+    ts_header = request.headers.get("X-Device-Timestamp")
+    if sig_header and ts_header:
+        try:
+            ts = int(ts_header)
+            now = int(time.time())
+            if abs(now - ts) > 300:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Poll request timestamp expired")
+            poll_bytes = f"POLL_COMMANDS|{device_id}|{ts}".encode("utf-8")
+            der_sig = base64.b64decode(sig_header)
+            if not verify_ecdsa_p256_signature(device.public_key_pem, poll_bytes, der_sig):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device signature for command poll")
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid timestamp header")
+    elif not settings.DEBUG:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Signed device authentication required")
+
     now_epoch = int(time.time())
+
+    # Auto-expire overdue commands
+    expired_cmds = db.query(DeviceCommand).filter(
+        DeviceCommand.protected_device_id == device_id,
+        DeviceCommand.status == "PENDING",
+        DeviceCommand.expiry_epoch <= now_epoch
+    ).all()
+    if expired_cmds:
+        for exp in expired_cmds:
+            exp.status = "EXPIRED"
+        db.commit()
+
     commands = db.query(DeviceCommand).filter(
         DeviceCommand.protected_device_id == device_id,
         DeviceCommand.status == "PENDING",
@@ -379,19 +420,33 @@ def get_pending_commands(
 def acknowledge_command(
     device_id: str,
     command_id: str,
+    ack_in: Optional[CommandAckRequest] = None,
     db: Session = Depends(get_db)
 ) -> Any:
-    """Acknowledge execution of a recovery command by the Guardian phone."""
+    """Acknowledge execution or rejection of a recovery command by the Guardian phone."""
     command = db.query(DeviceCommand).filter(
         DeviceCommand.id == command_id,
         DeviceCommand.protected_device_id == device_id
     ).first()
     if not command:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Command not found")
-    
-    command.status = "EXECUTED"
+
+    new_status = ack_in.status if ack_in else "EXECUTED"
+    command.status = new_status
     command.executed_at = datetime.now(timezone.utc)
     db.commit()
-    return {"status": "success", "command_id": command_id}
+
+    if new_status == "REJECTED":
+        reason = ack_in.reason if ack_in else "Unknown"
+        audit = AuditEvent(
+            user_id=command.user_id,
+            protected_device_id=device_id,
+            event_type="COMMAND_REJECTED_BY_DEVICE",
+            details=f"Command {command_id} ({command.command_type}) rejected by Guardian: {reason}"
+        )
+        db.add(audit)
+        db.commit()
+
+    return {"status": "success", "command_id": command_id, "command_status": command.status}
 
 

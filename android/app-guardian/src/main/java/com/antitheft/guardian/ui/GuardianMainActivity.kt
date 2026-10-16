@@ -19,6 +19,8 @@ import com.antitheft.guardian.location.TrackingForegroundService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.Locale
 
 class GuardianMainActivity : AppCompatActivity() {
@@ -78,6 +80,138 @@ class GuardianMainActivity : AppCompatActivity() {
             Toast.makeText(this, "Sync scheduled with backend", Toast.LENGTH_SHORT).show()
             refreshDashboardData()
         }
+
+        findViewById<Button>(R.id.btnPairWithAdmin).setOnClickListener {
+            showPairingInputDialog()
+        }
+
+        handleIncomingPairingIntent(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIncomingPairingIntent(intent)
+    }
+
+    private fun handleIncomingPairingIntent(intent: android.content.Intent?) {
+        val payload = intent?.getStringExtra("pairing_payload")
+        if (!payload.isNullOrBlank()) {
+            applyPairingPayload(payload)
+        }
+    }
+
+    private fun showPairingInputDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Paste JSON from Admin QR code"
+            setPadding(32, 32, 32, 32)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Pair with Admin Phone")
+            .setMessage("Paste or scan the enrollment JSON payload displayed on your Admin device:")
+            .setView(input)
+            .setPositiveButton("Pair") { _, _ ->
+                val text = input.text.toString().trim()
+                if (text.isNotBlank()) {
+                    applyPairingPayload(text)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun applyPairingPayload(jsonString: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val clean = jsonString.trim()
+                val parsedJson = if (!clean.startsWith("{")) {
+                    try {
+                        String(java.util.Base64.getDecoder().decode(clean), Charsets.UTF_8)
+                    } catch (e: Exception) {
+                        clean
+                    }
+                } else clean
+                val payload = com.google.gson.JsonParser.parseString(parsedJson).asJsonObject
+                val serverUrl = payload.get("server_url")?.asString
+                val adminPubPem = payload.get("admin_public_key_pem")?.asString
+                val pairingSecretHex = payload.get("pairing_secret_hex")?.asString
+                val authToken = payload.get("auth_token")?.asString
+
+                if (!serverUrl.isNullOrBlank()) {
+                    storageHelper.setServerUrl(serverUrl)
+                }
+                if (!adminPubPem.isNullOrBlank()) {
+                    storageHelper.setAdminPublicKeyPem(adminPubPem)
+                    storageHelper.setLastAdminCommandSequence(0L)
+                }
+                if (!pairingSecretHex.isNullOrBlank()) {
+                    val secretBytes = hexToByteArray(pairingSecretHex)
+                    storageHelper.setPairingSecret(secretBytes)
+                }
+
+                val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
+                val guardianPubPem = keystoreManager.getPublicKeyPem()
+
+                var successMsg = "Pairing applied locally."
+
+                // If owner auth token is present, register device with backend API
+                if (!authToken.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
+                    val client = okhttp3.OkHttpClient()
+                    val pairEndpoint = serverUrl.trimEnd('/') + "/api/v1/devices/pair"
+
+                    val reqBodyMap = mapOf(
+                        "device_id" to storageHelper.getDeviceId(),
+                        "device_alias" to (storageHelper.getDeviceAlias() ?: "Guardian Pixel"),
+                        "public_key_pem" to guardianPubPem,
+                        "trusted_phone_number" to (if (storageHelper.getTrustedPhoneNumber().length >= 5) storageHelper.getTrustedPhoneNumber() else "+15551234567"),
+                        "pairing_secret" to (pairingSecretHex ?: "")
+                    )
+                    val reqJson = com.google.gson.Gson().toJson(reqBodyMap)
+                    val mediaType = "application/json; charset=utf-8".toMediaType()
+                    val body = reqJson.toRequestBody(mediaType)
+                    val request = okhttp3.Request.Builder()
+                        .url(pairEndpoint)
+                        .header("Authorization", "Bearer $authToken")
+                        .post(body)
+                        .build()
+
+                    val response = client.newCall(request).execute()
+                    val respBody = response.body?.string() ?: ""
+                    if (response.isSuccessful) {
+                        val respObj = com.google.gson.JsonParser.parseString(respBody).asJsonObject
+                        val returnedId = respObj.get("id")?.asString
+                        if (!returnedId.isNullOrBlank()) {
+                            storageHelper.setDeviceId(returnedId)
+                        }
+                        successMsg = "Device successfully enrolled and paired on backend!"
+                        android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId")
+                    } else {
+                        android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}: $respBody")
+                        successMsg = "Local pairing set. Backend returned ${response.code}"
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@GuardianMainActivity, successMsg, Toast.LENGTH_LONG).show()
+                    findViewById<TextView>(R.id.tvDeviceId).text = "Device ID: ${storageHelper.getDeviceId()}"
+                    startTrackingService()
+                    refreshDashboardData()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GuardianPairing", "Error applying pairing payload", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@GuardianMainActivity, "Pairing error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun hexToByteArray(hex: String): ByteArray {
+        val clean = hex.trim()
+        val result = ByteArray(clean.length / 2)
+        for (i in 0 until clean.length step 2) {
+            result[i / 2] = clean.substring(i, i + 2).toInt(16).toByte()
+        }
+        return result
     }
 
     private fun refreshDashboardData() {

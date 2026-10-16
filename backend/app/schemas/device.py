@@ -55,6 +55,7 @@ class TrustedDeviceResponse(BaseModel):
 
 
 class CommandDispatchRequest(BaseModel):
+    command_id: Optional[str] = None
     trusted_device_id: str
     target_device_id: str
     command_type: str = Field(..., pattern=r"^(LOCATE|RING|STOP_RING|LOCK|STOLEN_MODE|RECOVERED)$")
@@ -62,6 +63,13 @@ class CommandDispatchRequest(BaseModel):
     expiry_epoch: int = Field(..., description="Unix epoch timestamp when command expires")
     parameters_json: str = Field(default="{}", description="JSON string of command parameters")
     admin_signature: str = Field(..., description="Base64 ASN.1 DER signature from Admin device ECDSA key")
+
+
+class CommandAckRequest(BaseModel):
+    status: str = Field("EXECUTED", pattern=r"^(EXECUTED|REJECTED)$")
+    reason: Optional[str] = "OK"
+    signature: Optional[str] = None
+    timestamp: Optional[int] = None
 
 
 class CommandResponse(BaseModel):

@@ -6,9 +6,12 @@ import android.os.UserManager
 import java.security.SecureRandom
 import java.util.UUID
 
+import com.antitheft.common.crypto.KeystoreAesGcmStorage
+
 /**
  * Manages device metadata and sequence numbers inside Direct Boot Device Protected Storage (DE).
  * Accessible before First Unlock.
+ * Sensitive keys (SQLCipher db_passphrase and pairing_secret) are encrypted at rest with hardware Keystore AES-256-GCM.
  */
 class DirectBootStorageHelper(context: Context) {
 
@@ -23,6 +26,30 @@ class DirectBootStorageHelper(context: Context) {
         Context.MODE_PRIVATE
     )
 
+    private val secureStorage = KeystoreAesGcmStorage(
+        context = deContext,
+        prefsName = SECURE_PREFS_NAME,
+        keyAlias = KEYSTORE_AES_ALIAS
+    )
+
+    init {
+        migratePlaintextSecretsIfPresent()
+    }
+
+    private fun migratePlaintextSecretsIfPresent() {
+        val legacyDbPass = prefs.getString(KEY_DB_PASSPHRASE, null)
+        if (legacyDbPass != null) {
+            secureStorage.putEncryptedString(KEY_DB_PASSPHRASE, legacyDbPass)
+            prefs.edit().remove(KEY_DB_PASSPHRASE).apply()
+        }
+
+        val legacyPairingSecret = prefs.getString(KEY_PAIRING_SECRET, null)
+        if (legacyPairingSecret != null) {
+            secureStorage.putEncryptedString(KEY_PAIRING_SECRET, legacyPairingSecret)
+            prefs.edit().remove(KEY_PAIRING_SECRET).apply()
+        }
+    }
+
     val isUserUnlocked: Boolean
         get() {
             val userManager = deContext.getSystemService(Context.USER_SERVICE) as? UserManager
@@ -36,6 +63,10 @@ class DirectBootStorageHelper(context: Context) {
             prefs.edit().putString(KEY_DEVICE_ID, id).apply()
         }
         return id
+    }
+
+    fun setDeviceId(id: String) {
+        prefs.edit().putString(KEY_DEVICE_ID, id).apply()
     }
 
     fun getDeviceAlias(): String {
@@ -71,28 +102,28 @@ class DirectBootStorageHelper(context: Context) {
     }
 
     fun getPairingSecret(): ByteArray {
-        var secretHex = prefs.getString(KEY_PAIRING_SECRET, null)
+        var secretHex = secureStorage.getDecryptedString(KEY_PAIRING_SECRET, null)
         if (secretHex == null) {
             val randomBytes = ByteArray(32)
             SecureRandom().nextBytes(randomBytes)
             secretHex = randomBytes.joinToString("") { "%02X".format(it) }
-            prefs.edit().putString(KEY_PAIRING_SECRET, secretHex).apply()
+            secureStorage.putEncryptedString(KEY_PAIRING_SECRET, secretHex)
         }
         return hexToByteArray(secretHex)
     }
 
     fun setPairingSecret(secretBytes: ByteArray) {
         val hex = secretBytes.joinToString("") { "%02X".format(it) }
-        prefs.edit().putString(KEY_PAIRING_SECRET, hex).apply()
+        secureStorage.putEncryptedString(KEY_PAIRING_SECRET, hex)
     }
 
     fun getDbPassphrase(): ByteArray {
-        var passHex = prefs.getString(KEY_DB_PASSPHRASE, null)
+        var passHex = secureStorage.getDecryptedString(KEY_DB_PASSPHRASE, null)
         if (passHex == null) {
             val randomBytes = ByteArray(32)
             SecureRandom().nextBytes(randomBytes)
             passHex = randomBytes.joinToString("") { "%02X".format(it) }
-            prefs.edit().putString(KEY_DB_PASSPHRASE, passHex).apply()
+            secureStorage.putEncryptedString(KEY_DB_PASSPHRASE, passHex)
         }
         return hexToByteArray(passHex)
     }
@@ -133,6 +164,8 @@ class DirectBootStorageHelper(context: Context) {
 
     companion object {
         private const val PREFS_NAME = "guardian_de_storage"
+        private const val SECURE_PREFS_NAME = "guardian_de_secure_storage"
+        private const val KEYSTORE_AES_ALIAS = "guardian_de_keystore_aes_key"
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DEVICE_ALIAS = "device_alias"
         private const val KEY_TRUSTED_PHONE = "trusted_phone"

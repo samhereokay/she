@@ -39,8 +39,26 @@ class AdminSessionManager(context: Context) {
         secureStorage.putEncryptedString(KEY_SERVER_URL, url)
     }
 
+    fun getTrustedDeviceId(): String? {
+        return secureStorage.getDecryptedString(KEY_TRUSTED_DEVICE_ID)
+    }
+
+    fun saveTrustedDeviceId(id: String) {
+        secureStorage.putEncryptedString(KEY_TRUSTED_DEVICE_ID, id)
+    }
+
+    @Synchronized
+    fun getNextCommandSequence(): Long {
+        val currentStr = secureStorage.getDecryptedString(KEY_COMMAND_SEQ, "0") ?: "0"
+        val next = currentStr.toLongOrNull()?.plus(1) ?: 1L
+        secureStorage.putEncryptedString(KEY_COMMAND_SEQ, next.toString())
+        return next
+    }
+
     companion object {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_SERVER_URL = "server_url"
+        private const val KEY_TRUSTED_DEVICE_ID = "trusted_device_id"
+        private const val KEY_COMMAND_SEQ = "command_sequence_counter"
     }
 }

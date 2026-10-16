@@ -77,19 +77,30 @@ class CommandProcessor(
         }
 
         return try {
-            val canonicalBytes = EcdsaSigner.createCanonicalCommandBytes(
-                commandId = "",
+            val publicKey = EcdsaSigner.parsePublicKeyFromPem(adminPem)
+            val derSignature = Base64.getDecoder().decode(adminSignatureBase64.trim())
+
+            val canonicalBytesWithId = EcdsaSigner.createCanonicalCommandBytes(
+                commandId = commandId,
                 targetDeviceId = targetDeviceId,
                 commandType = commandType,
                 sequenceCounter = sequenceCounter,
                 expiryEpoch = expiryEpoch,
                 parametersJson = parametersJson
             )
+            var isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesWithId, derSignature)
+            if (!isValid && commandId.isNotBlank()) {
+                val canonicalBytesNoId = EcdsaSigner.createCanonicalCommandBytes(
+                    commandId = "",
+                    targetDeviceId = targetDeviceId,
+                    commandType = commandType,
+                    sequenceCounter = sequenceCounter,
+                    expiryEpoch = expiryEpoch,
+                    parametersJson = parametersJson
+                )
+                isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesNoId, derSignature)
+            }
 
-            val publicKey = EcdsaSigner.parsePublicKeyFromPem(adminPem)
-            val derSignature = Base64.getDecoder().decode(adminSignatureBase64.trim())
-
-            val isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytes, derSignature)
             if (!isValid) {
                 Log.e(TAG, "Cryptographic signature check FAILED for Admin command! Rejecting forged command.")
                 return CommandValidationResult.InvalidSignature

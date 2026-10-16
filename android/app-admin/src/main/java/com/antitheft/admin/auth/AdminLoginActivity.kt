@@ -40,23 +40,39 @@ class AdminLoginActivity : AppCompatActivity() {
             val username = etUsername.text.toString().trim()
             val password = etPassword.text.toString().trim()
 
-            if (username.isBlank() || password.isBlank()) {
-                Toast.makeText(this, "Please enter username and password", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+            performLogin(username, password, serverUrl)
+        }
 
-            sessionManager.setServerUrl(serverUrl)
+        handleIncomingLoginIntent(intent)
+    }
 
-            lifecycleScope.launch {
-                try {
-                    val api = ApiClient.create(sessionManager)
-                    val tokenResp = api.login(LoginRequest(username, password))
-                    sessionManager.saveToken(tokenResp.access_token)
-                    Toast.makeText(this@AdminLoginActivity, "Authenticated successfully", Toast.LENGTH_SHORT).show()
-                    openDashboard()
-                } catch (e: Exception) {
-                    Toast.makeText(this@AdminLoginActivity, "Login failed: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIncomingLoginIntent(intent)
+    }
+
+    private fun handleIncomingLoginIntent(intent: Intent?) {
+        val u = intent?.getStringExtra("username")
+        val p = intent?.getStringExtra("password")
+        val url = intent?.getStringExtra("server_url") ?: sessionManager.getServerUrl()
+        if (!u.isNullOrBlank() && !p.isNullOrBlank()) {
+            performLogin(u, p, url)
+        }
+    }
+
+    private fun performLogin(username: String, password: String, serverUrl: String) {
+        sessionManager.setServerUrl(serverUrl)
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val tokenResp = api.login(LoginRequest(username, password))
+                sessionManager.saveToken(tokenResp.access_token)
+                android.util.Log.i("AdminLogin", "LOGIN_SUCCESSFUL user:$username")
+                Toast.makeText(this@AdminLoginActivity, "Authenticated successfully", Toast.LENGTH_SHORT).show()
+                openDashboard()
+            } catch (e: Exception) {
+                android.util.Log.e("AdminLogin", "LOGIN_FAILED", e)
+                Toast.makeText(this@AdminLoginActivity, "Login failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

@@ -10,10 +10,12 @@ from app.core.security import (
     verify_password,
     create_access_token,
     generate_totp_secret,
+    encrypt_totp_secret,
+    decrypt_totp_secret,
     get_totp_uri,
     verify_totp_code
 )
-from app.core.rate_limit import auth_limiter
+from app.core.rate_limit import auth_limiter, totp_limiter
 from app.db.session import get_db
 from app.db.models import User
 from app.schemas.auth import (
@@ -142,7 +144,7 @@ def setup_totp(
 ) -> Any:
     """Generate a new TOTP secret for the authenticated owner."""
     secret = generate_totp_secret()
-    current_user.totp_secret = secret
+    current_user.totp_secret = encrypt_totp_secret(secret)
     db.commit()
     return {
         "secret": secret,
@@ -153,17 +155,21 @@ def setup_totp(
 @router.post("/totp/verify", response_model=Token)
 def verify_totp(
     req: TotpVerifyRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """Verify initial TOTP code to activate 2FA and return an upgraded 2FA token."""
+    totp_limiter.check_rate_limit(request, key_override=f"totp:{current_user.id}")
+
     if not current_user.totp_secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="TOTP setup not initiated. Call /auth/totp/setup first."
         )
     
-    if not verify_totp_code(current_user.totp_secret, req.code):
+    plain_secret = decrypt_totp_secret(current_user.totp_secret)
+    if not verify_totp_code(plain_secret, req.code):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid TOTP authentication code"
@@ -187,16 +193,20 @@ def verify_totp(
 @router.post("/totp/validate", response_model=Token)
 def validate_totp(
     req: TotpVerifyRequest,
+    request: Request,
     current_user: User = Depends(get_current_user)
 ) -> Any:
     """Upgrade a 1FA session to a full 2FA session via TOTP code verification."""
+    totp_limiter.check_rate_limit(request, key_override=f"totp:{current_user.id}")
+
     if not current_user.totp_enabled or not current_user.totp_secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="TOTP is not enabled for this user."
         )
     
-    if not verify_totp_code(current_user.totp_secret, req.code):
+    plain_secret = decrypt_totp_secret(current_user.totp_secret)
+    if not verify_totp_code(plain_secret, req.code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid TOTP authentication code"

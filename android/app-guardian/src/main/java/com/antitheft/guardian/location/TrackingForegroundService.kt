@@ -98,7 +98,17 @@ class TrackingForegroundService : Service() {
                     val deviceId = storageHelper.getDeviceId()
                     val endpoint = "$serverUrl/api/v1/devices/$deviceId/commands/pending"
 
-                    val request = Request.Builder().url(endpoint).get().build()
+                    val nowSec = System.currentTimeMillis() / 1000
+                    val pollPayload = "POLL_COMMANDS|$deviceId|$nowSec".toByteArray(Charsets.UTF_8)
+                    val sig = com.antitheft.guardian.crypto.KeystoreManager().signData(pollPayload)
+                    val sigBase64 = java.util.Base64.getEncoder().encodeToString(sig)
+
+                    val request = Request.Builder()
+                        .url(endpoint)
+                        .header("X-Device-Timestamp", nowSec.toString())
+                        .header("X-Device-Signature", sigBase64)
+                        .get()
+                        .build()
                     val response = httpClient.newCall(request).execute()
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: ""
@@ -106,16 +116,25 @@ class TrackingForegroundService : Service() {
                             val commands = gson.fromJson(body, Array<com.antitheft.guardian.commands.CommandDto>::class.java)
                             for (cmd in commands) {
                                 val result = commandProcessor.processCommand(cmd)
+                                val isSuccess = result is CommandValidationResult.Success
+                                val ackStatus = if (isSuccess) "EXECUTED" else "REJECTED"
+                                val ackReason = if (isSuccess) "OK" else result.javaClass.simpleName
 
-                                if (result is CommandValidationResult.Success) {
-                                    val ackReq = Request.Builder()
-                                        .url("$serverUrl/api/v1/devices/$deviceId/commands/${cmd.id}/ack")
-                                        .post("{}".toRequestBody("application/json".toMediaType()))
-                                        .build()
-                                    httpClient.newCall(ackReq).execute().close()
+                                val ackPayload = mapOf(
+                                    "status" to ackStatus,
+                                    "reason" to ackReason,
+                                    "timestamp" to (System.currentTimeMillis() / 1000)
+                                )
+                                val ackReq = Request.Builder()
+                                    .url("$serverUrl/api/v1/devices/$deviceId/commands/${cmd.id}/ack")
+                                    .post(gson.toJson(ackPayload).toRequestBody("application/json".toMediaType()))
+                                    .build()
+                                httpClient.newCall(ackReq).execute().close()
+
+                                if (isSuccess) {
                                     Log.i(TAG, "Command ${cmd.id} (${cmd.command_type}) successfully executed and acknowledged.")
                                 } else {
-                                    Log.w(TAG, "Command ${cmd.id} failed validation: $result")
+                                    Log.w(TAG, "Command ${cmd.id} (${cmd.command_type}) rejected: $ackReason. Reported rejection to server.")
                                 }
                             }
                         }
