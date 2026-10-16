@@ -1,0 +1,23 @@
+# Pinned Backend Dependencies for Android Anti-Theft & Recovery System
+# All dependencies are pinned to guarantee deterministic builds and avoid supply-chain breaks.
+
+# Core Web Framework & ASGI Server
+fastapi==0.143.2          # Modern, high-performance async API framework with automatic OpenAPI docs
+uvicorn==0.54.0           # Lightning-fast ASGI web server implementation
+pydantic==2.14.1          # Robust data validation and settings management using Python type hints
+pydantic-settings==2.7.1  # Environment variable parsing and configuration management for Pydantic v2
+
+# Database & Migrations
+SQLAlchemy==2.1.4         # SQL toolkit and Object Relational Mapper for PostgreSQL / SQLite
+psycopg2-binary==2.9.10   # PostgreSQL database driver for production Docker container
+alembic==1.14.1           # Database migration tool for SQLAlchemy
+
+# Cryptography & Security
+argon2-cffi==23.1.0       # Memory-hard password hashing algorithm (OWASP recommended)
+PyJWT==2.10.1             # JSON Web Token implementation for temporary Phase 2 session tokens
+cryptography==44.0.0      # Production cryptographic primitives: ECDSA P-256 signature verification
+python-multipart==0.0.20  # Required for OAuth2 password form parsing in FastAPI
+
+# Testing & Quality
+pytest==8.3.4             # Test runner for automated unit and integration tests
+httpx==0.28.1             # Async HTTP client used by FastAPI TestClient
