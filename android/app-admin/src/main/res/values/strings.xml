@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Owner Admin</string>
+    <string name="login_title">Owner Sign-In</string>
+    <string name="login_temp_notice">Phase 2 MVP: Temporary Password Login. 2FA mandated in Phase 3.</string>
+    <string name="dashboard_title">Protected Devices</string>
+    <string name="action_pair_device">Pair New Device</string>
+    <string name="pairing_title">Scan QR on Guardian Phone</string>
+</resources>

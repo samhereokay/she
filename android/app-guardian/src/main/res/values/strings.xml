@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Guardian</string>
+    <string name="status_title">Guardian Protection Status</string>
+    <string name="status_active">Protection Active</string>
+    <string name="tier1_title">Tier 1: OS Security Guidance Checklist</string>
+    <string name="tier1_find_hub">1. Google Find Hub (Find My Device) enabled</string>
+    <string name="tier1_theft_detection">2. Theft Detection Lock (Android 15+)</string>
+    <string name="tier1_sim_lock">3. SIM Card PIN Lock enabled</string>
+    <string name="tier1_power_menu">4. Require unlock for Power Menu</string>
+    <string name="action_sync_now">Sync Now</string>
+    <string name="action_capture_now">Capture Location Now</string>
+</resources>
