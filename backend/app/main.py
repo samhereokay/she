@@ -5,6 +5,7 @@ from app.db.session import engine, Base
 from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.locations import router as locations_router
+from app.api.vault import router as vault_router
 
 # Auto-create tables for development / SQLite testing
 Base.metadata.create_all(bind=engine)
@@ -12,7 +13,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="Backend service for Android Anti-Theft & Recovery System (Phase 2 MVP: Pair, Capture, Store, Sync)"
+    description="Backend service for Android Anti-Theft & Recovery System"
 )
 
 # CORS Middleware for local development and admin UI
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(locations_router)
+app.include_router(vault_router)
 
 
 @app.get("/health", tags=["Health"])

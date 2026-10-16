@@ -84,6 +84,47 @@ data class CommandDispatchResponse(
     val sequence_counter: Long
 )
 
+data class VaultItemCreateDto(
+    val item_type: String,
+    val title: String,
+    val encrypted_blob: String,
+    val iv: String,
+    val tag: String,
+    val key_version: Long = 1
+)
+
+data class VaultItemUpdateDto(
+    val title: String? = null,
+    val item_type: String? = null,
+    val encrypted_blob: String? = null,
+    val iv: String? = null,
+    val tag: String? = null,
+    val key_version: Long? = null
+)
+
+data class VaultItemDto(
+    val id: String,
+    val user_id: String,
+    val item_type: String,
+    val title: String,
+    val encrypted_blob: String,
+    val iv: String,
+    val tag: String,
+    val key_version: Long,
+    val created_at: String,
+    val updated_at: String
+)
+
+data class VaultItemListDto(
+    val items: List<VaultItemDto>,
+    val total: Int
+)
+
+data class VaultPurgeResponse(
+    val status: String,
+    val deleted_count: Int
+)
+
 interface AdminApiService {
     @POST("auth/login/json")
     suspend fun login(@Body request: LoginRequest): TokenResponse
@@ -117,6 +158,24 @@ interface AdminApiService {
 
     @POST("api/v1/devices/commands/dispatch")
     suspend fun dispatchCommand(@Body request: CommandDispatchRequest): CommandDispatchResponse
+
+    @POST("api/v1/vault/items")
+    suspend fun createVaultItem(@Body request: VaultItemCreateDto): VaultItemDto
+
+    @GET("api/v1/vault/items")
+    suspend fun listVaultItems(): VaultItemListDto
+
+    @GET("api/v1/vault/items/{id}")
+    suspend fun getVaultItem(@Path("id") id: String): VaultItemDto
+
+    @retrofit2.http.PUT("api/v1/vault/items/{id}")
+    suspend fun updateVaultItem(@Path("id") id: String, @Body request: VaultItemUpdateDto): VaultItemDto
+
+    @retrofit2.http.DELETE("api/v1/vault/items/{id}")
+    suspend fun deleteVaultItem(@Path("id") id: String): Map<String, Any>
+
+    @retrofit2.http.DELETE("api/v1/vault/purge")
+    suspend fun purgeVault(): VaultPurgeResponse
 }
 
 object ApiClient {
@@ -132,7 +191,7 @@ object ApiClient {
         }
 
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.BASIC
         }
 
         val okHttpClient = OkHttpClient.Builder()

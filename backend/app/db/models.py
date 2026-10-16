@@ -37,6 +37,7 @@ class User(Base):
     trusted_devices = relationship("TrustedDevice", back_populates="user", cascade="all, delete-orphan")
     protected_devices = relationship("ProtectedDevice", back_populates="user", cascade="all, delete-orphan")
     commands = relationship("DeviceCommand", back_populates="user", cascade="all, delete-orphan")
+    vault_items = relationship("VaultItem", back_populates="user", cascade="all, delete-orphan")
 
 
 class TrustedDevice(Base):
@@ -132,4 +133,26 @@ class DeviceCommand(Base):
     user = relationship("User", back_populates="commands")
     trusted_device = relationship("TrustedDevice")
     protected_device = relationship("ProtectedDevice")
+
+
+class VaultItem(Base):
+    """
+    Client-side end-to-end encrypted recovery vault items.
+    Stores recovery codes, IMEI/serial details, purchase receipts, and insurance documents.
+    Server has ZERO knowledge of plaintext. Stored strictly as encrypted ciphertext blobs.
+    """
+    __tablename__ = "vault_items"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_type = Column(String(64), nullable=False)  # RECOVERY_CODE, DEVICE_IDENTIFIER, INSURANCE_POLICY, PURCHASE_RECEIPT, CONTACTS_BACKUP
+    title = Column(String(128), nullable=False)
+    encrypted_blob = Column(Text, nullable=False)  # Base64 ciphertext
+    iv = Column(String(64), nullable=False)  # Base64 initialization vector (12 bytes for AES-GCM)
+    tag = Column(String(64), nullable=False)  # Base64 authentication tag (16 bytes)
+    key_version = Column(BigInteger, default=1, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    user = relationship("User", back_populates="vault_items")
 

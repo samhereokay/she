@@ -29,6 +29,11 @@
             android:name=".pairing.PairDeviceActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".vault.AdminVaultActivity"
+            android:launchMode="singleTop"
+            android:exported="false" />
+
     </application>
 
 </manifest>

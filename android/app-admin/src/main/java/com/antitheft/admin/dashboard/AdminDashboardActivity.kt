@@ -24,6 +24,7 @@ import com.antitheft.admin.network.DeviceDto
 import com.antitheft.admin.network.RegisterTrustedDeviceRequest
 import com.antitheft.admin.network.TotpValidateRequest
 import com.antitheft.admin.pairing.PairDeviceActivity
+import com.antitheft.admin.vault.AdminVaultActivity
 import com.antitheft.common.crypto.EcdsaSigner
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,10 @@ class AdminDashboardActivity : AppCompatActivity() {
 
         findViewById<ExtendedFloatingActionButton>(R.id.fabPairDevice).setOnClickListener {
             startActivity(Intent(this, PairDeviceActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.btnOpenVault).setOnClickListener {
+            startActivity(Intent(this, AdminVaultActivity::class.java))
         }
 
         handleIncomingCommandIntent(intent)
