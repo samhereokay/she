@@ -49,6 +49,7 @@ class TrustedDevice(Base):
     public_key_pem = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
 
     user = relationship("User", back_populates="trusted_devices")
 
@@ -63,8 +64,10 @@ class ProtectedDevice(Base):
     public_key_pem = Column(Text, nullable=False)
     trusted_phone_number = Column(String(32), nullable=False)
     pairing_secret_hash = Column(String(128), nullable=False)
+    pairing_id = Column(String(36), default=generate_uuid, nullable=False)
+    confirmation_code = Column(String(16), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-    status = Column(String(32), default="ACTIVE", nullable=False)  # ACTIVE, STOLEN, REVOKED
+    status = Column(String(32), default="ACTIVE", nullable=False)  # ACTIVE, PENDING_CONFIRMATION, STOLEN, REVOKED
 
     user = relationship("User", back_populates="protected_devices")
     location_events = relationship("LocationEvent", back_populates="protected_device", cascade="all, delete-orphan")
@@ -119,6 +122,7 @@ class DeviceCommand(Base):
     command_type = Column(String(32), nullable=False)  # LOCATE, RING, LOCK, STOLEN_MODE
     sequence_counter = Column(BigInteger, nullable=False)
     expiry_epoch = Column(BigInteger, nullable=False)
+    pairing_id = Column(String(36), nullable=True)
     parameters_json = Column(Text, default="{}", nullable=False)
     admin_signature = Column(Text, nullable=False)  # Base64 ASN.1 DER signature from Admin device key
     status = Column(String(32), default="PENDING", nullable=False)  # PENDING, DELIVERED, EXECUTED, EXPIRED, FAILED

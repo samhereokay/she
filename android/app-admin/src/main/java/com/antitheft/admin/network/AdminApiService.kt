@@ -30,6 +30,8 @@ data class DeviceDto(
     val public_key_pem: String,
     val trusted_phone_number: String,
     val status: String,
+    val pairing_id: String? = null,
+    val confirmation_code: String? = null,
     val calculated_status: String, // LIVE, DELAYED, UNAVAILABLE
     val last_location: DeviceLocationDto?
 )
@@ -37,6 +39,12 @@ data class DeviceDto(
 data class DeviceListDto(val devices: List<DeviceDto>)
 
 data class TotpValidateRequest(val code: String)
+
+data class PairingTokenRequest(val trusted_device_id: String? = null)
+data class PairingTokenResponse(val pairing_token: String, val expires_in_seconds: Int)
+
+data class ConfirmPairingRequest(val confirmation_code: String)
+data class ConfirmPairingResponse(val device_id: String, val status: String, val pairing_id: String)
 
 data class RegisterTrustedDeviceRequest(
     val device_name: String,
@@ -46,11 +54,19 @@ data class RegisterTrustedDeviceRequest(
 data class TrustedDeviceResponse(
     val id: String,
     val device_name: String,
-    val public_key_pem: String
+    val public_key_pem: String,
+    val is_active: Boolean = true
+)
+
+data class RevokeTrustedDeviceResponse(
+    val status: String,
+    val trusted_device_id: String,
+    val device_name: String? = null
 )
 
 data class CommandDispatchRequest(
     val command_id: String? = null,
+    val pairing_id: String? = null,
     val trusted_device_id: String,
     val target_device_id: String,
     val command_type: String,
@@ -62,6 +78,7 @@ data class CommandDispatchRequest(
 
 data class CommandDispatchResponse(
     val id: String,
+    val pairing_id: String? = null,
     val command_type: String,
     val status: String,
     val sequence_counter: Long
@@ -74,11 +91,23 @@ interface AdminApiService {
     @POST("auth/totp/validate")
     suspend fun validateTotp(@Body request: TotpValidateRequest): TokenResponse
 
+    @POST("auth/pairing-token")
+    suspend fun createPairingToken(@Body request: PairingTokenRequest): PairingTokenResponse
+
     @POST("api/v1/devices/trusted")
     suspend fun registerTrustedDevice(@Body request: RegisterTrustedDeviceRequest): TrustedDeviceResponse
 
+    @POST("auth/trusted-devices/{id}/revoke")
+    suspend fun revokeTrustedDevice(@Path("id") id: String): RevokeTrustedDeviceResponse
+
     @GET("api/v1/devices")
     suspend fun listDevices(): DeviceListDto
+
+    @GET("api/v1/devices/pending-confirmations")
+    suspend fun listPendingConfirmations(): List<DeviceDto>
+
+    @POST("api/v1/devices/{id}/confirm-pairing")
+    suspend fun confirmPairing(@Path("id") id: String, @Body request: ConfirmPairingRequest): ConfirmPairingResponse
 
     @GET("api/v1/devices/{id}")
     suspend fun getDevice(@Path("id") id: String): DeviceDto

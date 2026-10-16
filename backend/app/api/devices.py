@@ -1,6 +1,7 @@
 import base64
 import time
 import hashlib
+import random
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -17,10 +18,12 @@ from app.schemas.device import (
     TrustedDeviceResponse,
     CommandDispatchRequest,
     CommandAckRequest,
-    CommandResponse
+    CommandResponse,
+    PairingConfirmRequest,
+    PairingConfirmResponse
 )
 from app.schemas.location import LocationResponse
-from app.api.deps import get_current_user, get_current_user_2fa
+from app.api.deps import get_current_user, get_current_user_2fa, get_pairing_token_user
 from app.core.security import verify_ecdsa_p256_signature, create_canonical_command_bytes
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
@@ -54,11 +57,20 @@ def compute_device_status(last_location: LocationEvent) -> str:
 @router.post("/pair", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
 def pair_device(
     pair_in: DevicePairRequest,
-    current_user: User = Depends(get_current_user),
+    pairing_data: tuple[User, dict] = Depends(get_pairing_token_user),
     db: Session = Depends(get_db)
 ) -> Any:
-    """Enroll and pair a new Guardian phone with the authenticated owner."""
+    """
+    Enroll a new Guardian phone with the authenticated owner.
+    STRICT SECURITY REQUIREMENT:
+    Must be authorized with a single-use, 5-minute register-only pairing token from the QR code.
+    General session tokens are strictly rejected.
+    Device is placed in PENDING_CONFIRMATION until the owner confirms the mutual confirmation code.
+    """
+    current_user, token_payload = pairing_data
     pairing_hash = hashlib.sha256(pair_in.pairing_secret.encode("utf-8")).hexdigest()
+    pairing_id = generate_uuid()
+    confirmation_code = f"{random.randint(100, 999)}-{random.randint(100, 999)}"
     
     if pair_in.device_id:
         existing = db.query(ProtectedDevice).filter(ProtectedDevice.id == pair_in.device_id).first()
@@ -69,7 +81,9 @@ def pair_device(
             existing.public_key_pem = pair_in.public_key_pem
             existing.trusted_phone_number = pair_in.trusted_phone_number
             existing.pairing_secret_hash = pairing_hash
-            existing.status = "ACTIVE"
+            existing.pairing_id = pairing_id
+            existing.confirmation_code = confirmation_code
+            existing.status = "PENDING_CONFIRMATION"
             db.commit()
             db.refresh(existing)
             device = existing
@@ -81,7 +95,9 @@ def pair_device(
                 public_key_pem=pair_in.public_key_pem,
                 trusted_phone_number=pair_in.trusted_phone_number,
                 pairing_secret_hash=pairing_hash,
-                status="ACTIVE"
+                pairing_id=pairing_id,
+                confirmation_code=confirmation_code,
+                status="PENDING_CONFIRMATION"
             )
             db.add(device)
             db.commit()
@@ -93,7 +109,9 @@ def pair_device(
             public_key_pem=pair_in.public_key_pem,
             trusted_phone_number=pair_in.trusted_phone_number,
             pairing_secret_hash=pairing_hash,
-            status="ACTIVE"
+            pairing_id=pairing_id,
+            confirmation_code=confirmation_code,
+            status="PENDING_CONFIRMATION"
         )
         db.add(device)
         db.commit()
@@ -103,8 +121,8 @@ def pair_device(
     audit = AuditEvent(
         user_id=current_user.id,
         protected_device_id=device.id,
-        event_type="DEVICE_PAIRED",
-        details=f"Paired alias: {device.device_alias}"
+        event_type="DEVICE_PAIRING_REQUESTED",
+        details=f"Device {device.device_alias} ({device.id}) requested enrollment. Confirmation code: {confirmation_code}"
     )
     db.add(audit)
     db.commit()
@@ -116,9 +134,90 @@ def pair_device(
         public_key_pem=device.public_key_pem,
         trusted_phone_number=device.trusted_phone_number,
         status=device.status,
+        pairing_id=device.pairing_id,
+        confirmation_code=device.confirmation_code,
         created_at=device.created_at,
         last_location=None,
         calculated_status="UNAVAILABLE"
+    )
+
+
+@router.get("/pending-confirmations", response_model=List[DeviceResponse])
+def list_pending_confirmations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """List devices currently awaiting owner mutual confirmation."""
+    devices = db.query(ProtectedDevice).filter(
+        ProtectedDevice.user_id == current_user.id,
+        ProtectedDevice.status == "PENDING_CONFIRMATION"
+    ).all()
+    results = []
+    for d in devices:
+        results.append(DeviceResponse(
+            id=d.id,
+            user_id=d.user_id,
+            device_alias=d.device_alias,
+            public_key_pem=d.public_key_pem,
+            trusted_phone_number=d.trusted_phone_number,
+            status=d.status,
+            pairing_id=d.pairing_id,
+            confirmation_code=d.confirmation_code,
+            created_at=d.created_at,
+            last_location=None,
+            calculated_status="UNAVAILABLE"
+        ))
+    return results
+
+
+@router.post("/{device_id}/confirm-pairing", response_model=PairingConfirmResponse)
+def confirm_device_pairing(
+    device_id: str,
+    req: PairingConfirmRequest,
+    current_user: User = Depends(get_current_user_2fa),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Confirm device enrollment by matching the 6-digit confirmation code shown on Guardian screen.
+    Requires 2FA owner authentication. Transitions device from PENDING_CONFIRMATION to ACTIVE.
+    """
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    if device.status != "PENDING_CONFIRMATION":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Device is not awaiting confirmation (status: {device.status})"
+        )
+
+    clean_req = req.confirmation_code.replace("-", "").strip()
+    clean_dev = (device.confirmation_code or "").replace("-", "").strip()
+    if clean_req != clean_dev:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirmation code does not match. Check Guardian screen."
+        )
+
+    device.status = "ACTIVE"
+    device.confirmation_code = None
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        protected_device_id=device.id,
+        event_type="DEVICE_PAIRING_CONFIRMED",
+        details=f"Device {device.device_alias} ({device.id}) enrollment confirmed by owner. Status ACTIVE."
+    )
+    db.add(audit)
+    db.commit()
+
+    return PairingConfirmResponse(
+        device_id=device.id,
+        status="ACTIVE",
+        pairing_id=device.pairing_id
     )
 
 
@@ -283,26 +382,34 @@ def dispatch_command(
 
     trusted = db.query(TrustedDevice).filter(
         TrustedDevice.id == req.trusted_device_id,
-        TrustedDevice.user_id == current_user.id,
-        TrustedDevice.revoked_at.is_(None)
+        TrustedDevice.user_id == current_user.id
     ).first()
-    if not trusted:
+    if not trusted or not trusted.is_active or trusted.revoked_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Trusted Admin device not recognized or revoked for this user."
+            detail="Trusted Admin device not recognized or has been revoked."
         )
 
     target = db.query(ProtectedDevice).filter(
-        ProtectedDevice.id == req.target_device_id,
-        ProtectedDevice.user_id == current_user.id
+        ProtectedDevice.id == req.target_device_id
     ).first()
     if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Target protected device not found for this user."
+            detail="Target protected device not found."
+        )
+    if target.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to dispatch recovery commands to another user's device."
+        )
+    if target.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot dispatch commands to device with status {target.status}. Must be ACTIVE."
         )
 
-    # Check monotonic counter
+    # Check monotonic counter per trusted device
     max_cmd_seq = (
         db.query(DeviceCommand.sequence_counter)
         .filter(DeviceCommand.trusted_device_id == trusted.id)
@@ -316,9 +423,10 @@ def dispatch_command(
             detail=f"Command counter replayed or non-monotonic: {req.sequence_counter} <= last_seen ({last_seq})"
         )
 
-    # Reconstruct canonical command bytes
+    # Reconstruct canonical command bytes with pairing_id
     cmd_id = req.command_id or generate_uuid()
     canonical_bytes = create_canonical_command_bytes(
+        pairing_id=target.pairing_id or "",
         command_id=req.command_id or "",
         target_device_id=req.target_device_id,
         command_type=req.command_type,
@@ -351,6 +459,7 @@ def dispatch_command(
         user_id=current_user.id,
         trusted_device_id=trusted.id,
         protected_device_id=target.id,
+        pairing_id=target.pairing_id,
         command_type=req.command_type,
         sequence_counter=req.sequence_counter,
         expiry_epoch=req.expiry_epoch,

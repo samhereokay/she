@@ -46,11 +46,14 @@ class PairDeviceActivity : AppCompatActivity() {
         val adminKeystore = com.antitheft.admin.crypto.AdminKeystoreManager()
         val adminPubPem = adminKeystore.getPublicKeyPem()
 
+        val etConfirmCode = findViewById<android.widget.EditText>(R.id.etConfirmCode)
+        val btnApprovePairing = findViewById<Button>(R.id.btnApprovePairing)
+
         lifecycleScope.launch {
+            val api = com.antitheft.admin.network.ApiClient.create(sessionManager)
             var trustedId = sessionManager.getTrustedDeviceId()
             if (trustedId.isNullOrBlank()) {
                 try {
-                    val api = com.antitheft.admin.network.ApiClient.create(sessionManager)
                     val regResp = api.registerTrustedDevice(
                         com.antitheft.admin.network.RegisterTrustedDeviceRequest(
                             device_name = "Admin Controller Phone",
@@ -65,12 +68,24 @@ class PairDeviceActivity : AppCompatActivity() {
                 }
             }
 
+            // Issue dedicated single-use, 5-minute pairing token from backend
+            var pairingToken = ""
+            try {
+                val tokenResp = api.createPairingToken(
+                    com.antitheft.admin.network.PairingTokenRequest(trusted_device_id = trustedId)
+                )
+                pairingToken = tokenResp.pairing_token
+            } catch (e: Exception) {
+                android.util.Log.e("AdminPairing", "Failed creating pairing token", e)
+                Toast.makeText(this@PairDeviceActivity, "Token error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+
             val pairingPayload = mapOf(
                 "server_url" to sessionManager.getServerUrl(),
                 "trusted_device_id" to trustedId,
                 "admin_public_key_pem" to adminPubPem,
                 "pairing_secret_hex" to pairingSecretHex,
-                "auth_token" to (sessionManager.getToken() ?: ""),
+                "pairing_token" to pairingToken,
                 "pairing_timestamp" to (System.currentTimeMillis() / 1000)
             )
 
@@ -88,6 +103,36 @@ class PairDeviceActivity : AppCompatActivity() {
                 ivQrCode.setImageBitmap(bitmap)
             } catch (e: Exception) {
                 Toast.makeText(this@PairDeviceActivity, "Failed generating QR: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnApprovePairing.setOnClickListener {
+            val code = etConfirmCode.text.toString().trim()
+            if (code.isBlank()) {
+                Toast.makeText(this, "Please enter the code shown on Guardian", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            lifecycleScope.launch {
+                try {
+                    val api = com.antitheft.admin.network.ApiClient.create(sessionManager)
+                    val pending = api.listPendingConfirmations()
+                    if (pending.isEmpty()) {
+                        Toast.makeText(this@PairDeviceActivity, "No pending Guardian devices found to approve", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    val target = pending.first()
+                    val confirmResp = api.confirmPairing(
+                        target.id,
+                        com.antitheft.admin.network.ConfirmPairingRequest(confirmation_code = code)
+                    )
+                    sessionManager.saveDevicePairingId(target.id, confirmResp.pairing_id)
+                    android.util.Log.i("AdminPairing", "CONFIRMED_PAIRING: Device ${target.id} active with pairing_id: ${confirmResp.pairing_id}")
+                    Toast.makeText(this@PairDeviceActivity, "Enrollment confirmed! Device is now ACTIVE.", Toast.LENGTH_LONG).show()
+                    finish()
+                } catch (e: Exception) {
+                    android.util.Log.e("AdminPairing", "Error confirming pairing", e)
+                    Toast.makeText(this@PairDeviceActivity, "Confirmation failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
 

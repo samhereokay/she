@@ -58,7 +58,35 @@ class KeystoreManager {
         return "-----BEGIN PUBLIC KEY-----\n$encoded\n-----END PUBLIC KEY-----"
     }
 
+    fun getSecurityInfo(context: android.content.Context? = null): KeystoreSecurityInfo {
+        val keyPair = getOrCreateDeviceKeyPair()
+        val factory = java.security.KeyFactory.getInstance(keyPair.private.algorithm, CryptoConstants.ANDROID_KEYSTORE)
+        val keyInfo = factory.getKeySpec(keyPair.private, android.security.keystore.KeyInfo::class.java)
+        val isInside = keyInfo.isInsideSecureHardware
+        val securityLevel = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            when (keyInfo.securityLevel) {
+                KeyProperties.SECURITY_LEVEL_STRONGBOX -> "STRONGBOX"
+                KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> "TRUSTED_ENVIRONMENT"
+                KeyProperties.SECURITY_LEVEL_SOFTWARE -> "SOFTWARE"
+                else -> "UNKNOWN(${keyInfo.securityLevel})"
+            }
+        } else {
+            if (isInside) "HARDWARE_TEE" else "SOFTWARE"
+        }
+        val hasStrongBox = context?.packageManager?.hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE) ?: false
+        android.util.Log.i(TAG, "Runtime Keystore Key: alias=$KEY_ALIAS, isInsideSecureHardware=$isInside, securityLevel=$securityLevel, hasStrongBox=$hasStrongBox")
+        return KeystoreSecurityInfo(KEY_ALIAS, isInside, securityLevel, hasStrongBox)
+    }
+
     companion object {
+        private const val TAG = "KeystoreSecurity"
         private const val KEY_ALIAS = "guardian_device_identity_key"
     }
 }
+
+data class KeystoreSecurityInfo(
+    val alias: String,
+    val isInsideSecureHardware: Boolean,
+    val securityLevel: String,
+    val hasStrongBoxFeature: Boolean
+)

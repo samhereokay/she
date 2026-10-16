@@ -85,8 +85,13 @@ def test_device_pairing_and_list(test_keypair):
     token = login_resp.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Pair Guardian phone
-    pair_resp = client.post("/api/v1/devices/pair", headers=headers, json={
+    # 1. Request single-use pairing token
+    pt_resp = client.post("/auth/pairing-token", headers=headers, json={})
+    assert pt_resp.status_code == 200
+    pt = pt_resp.json()["pairing_token"]
+
+    # 2. Pair Guardian phone using single-use pairing token
+    pair_resp = client.post("/api/v1/devices/pair", headers={"Authorization": f"Bearer {pt}"}, json={
         "device_alias": "Bob Pixel 8",
         "public_key_pem": pem_public,
         "trusted_phone_number": "+15551234567",
@@ -95,8 +100,18 @@ def test_device_pairing_and_list(test_keypair):
     assert pair_resp.status_code == 201
     device_data = pair_resp.json()
     assert device_data["device_alias"] == "Bob Pixel 8"
-    assert device_data["status"] == "ACTIVE"
-    assert device_data["calculated_status"] == "UNAVAILABLE"  # No location yet
+    assert device_data["status"] == "PENDING_CONFIRMATION"
+    assert device_data["confirmation_code"] is not None
+
+    # 3. Confirm pairing with matching confirmation code
+    conf_resp = client.post(
+        f"/api/v1/devices/{device_data['id']}/confirm-pairing",
+        headers=headers,
+        json={"confirmation_code": device_data["confirmation_code"]}
+    )
+    assert conf_resp.status_code == 200
+    assert conf_resp.json()["status"] == "ACTIVE"
+    assert conf_resp.json()["pairing_id"] is not None
 
     # List devices
     list_resp = client.get("/api/v1/devices", headers=headers)
@@ -106,7 +121,7 @@ def test_device_pairing_and_list(test_keypair):
     assert devices[0]["id"] == device_data["id"]
 
 
-def test_location_batch_ingest_and_signature_verification(test_keypair):
+def test_location_batch_ingest_and_signature_verification(client, test_keypair, pair_device):
     private_key, pem_public = test_keypair
     
     # 1. Setup Owner & Device
@@ -121,12 +136,14 @@ def test_location_batch_ingest_and_signature_verification(test_keypair):
     }).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    device_id = client.post("/api/v1/devices/pair", headers=headers, json={
-        "device_alias": "Carol Phone",
-        "public_key_pem": pem_public,
-        "trusted_phone_number": "+15559876543",
-        "pairing_secret": "secretpairingkey1234567890abcdef"
-    }).json()["id"]
+    device_id, _ = pair_device(
+        client,
+        token,
+        "Carol Phone",
+        pem_public,
+        "+15559876543",
+        "secretpairingkey1234567890abcdef"
+    )
 
     # 2. Construct signed location event
     now = datetime.now(timezone.utc)
@@ -198,7 +215,7 @@ def test_location_batch_ingest_and_signature_verification(test_keypair):
     assert bad_res["acknowledged_sequences"] == []
 
 
-def test_idempotent_offline_queue_reconnect(test_keypair):
+def test_idempotent_offline_queue_reconnect(client, test_keypair, pair_device):
     """Simulates Guardian phone collecting 5 events offline, then batch syncing on reconnect."""
     private_key, pem_public = test_keypair
     
@@ -214,12 +231,14 @@ def test_idempotent_offline_queue_reconnect(test_keypair):
     }).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    device_id = client.post("/api/v1/devices/pair", headers=headers, json={
-        "device_alias": "Dave Offline Phone",
-        "public_key_pem": pem_public,
-        "trusted_phone_number": "+15553334444",
-        "pairing_secret": "davesecret1234567890abcdef123456"
-    }).json()["id"]
+    device_id, _ = pair_device(
+        client,
+        token,
+        "Dave Offline Phone",
+        pem_public,
+        "+15553334444",
+        "davesecret1234567890abcdef123456"
+    )
 
     # Generate 5 offline events
     events = []
@@ -266,7 +285,7 @@ def test_idempotent_offline_queue_reconnect(test_keypair):
     assert len(hist_resp.json()) == 5
 
 
-def test_reject_same_sequence_different_payload(test_keypair):
+def test_reject_same_sequence_different_payload(client, test_keypair, pair_device):
     """Verifies that replaying a sequence number with altered coordinates is rejected."""
     private_key, pem_public = test_keypair
 
@@ -281,12 +300,14 @@ def test_reject_same_sequence_different_payload(test_keypair):
     }).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    device_id = client.post("/api/v1/devices/pair", headers=headers, json={
-        "device_alias": "Eve Phone",
-        "public_key_pem": pem_public,
-        "trusted_phone_number": "+15550001111",
-        "pairing_secret": "evesecret1234567890abcdef123456"
-    }).json()["id"]
+    device_id, _ = pair_device(
+        client,
+        token,
+        "Eve Phone",
+        pem_public,
+        "+15550001111",
+        "evesecret1234567890abcdef123456"
+    )
 
     now = datetime.now(timezone.utc)
     epoch = int(now.timestamp())
@@ -331,7 +352,7 @@ def test_reject_same_sequence_different_payload(test_keypair):
     assert resp2.json()["acknowledged_sequences"] == []
 
 
-def test_out_of_order_event_handling(test_keypair):
+def test_out_of_order_event_handling(client, test_keypair, pair_device):
     """Verifies that events delivered out-of-order over network reconnects are accepted and sorted."""
     private_key, pem_public = test_keypair
 
@@ -346,12 +367,14 @@ def test_out_of_order_event_handling(test_keypair):
     }).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    device_id = client.post("/api/v1/devices/pair", headers=headers, json={
-        "device_alias": "Frank Phone",
-        "public_key_pem": pem_public,
-        "trusted_phone_number": "+15552223333",
-        "pairing_secret": "franksecret1234567890abcdef1234"
-    }).json()["id"]
+    device_id, _ = pair_device(
+        client,
+        token,
+        "Frank Phone",
+        pem_public,
+        "+15552223333",
+        "franksecret1234567890abcdef1234"
+    )
 
     now = datetime.now(timezone.utc)
     
@@ -396,7 +419,7 @@ def test_out_of_order_event_handling(test_keypair):
     assert hist[1]["sequence_number"] == 8
 
 
-def test_cross_user_authorization(test_keypair):
+def test_cross_user_authorization(client, test_keypair, pair_device):
     """Enforces multi-tenant authorization: User A cannot access User B's device or location history."""
     _, pem_public = test_keypair
 
@@ -411,12 +434,14 @@ def test_cross_user_authorization(test_keypair):
     headers_b = {"Authorization": f"Bearer {token_b}"}
 
     # 2. User A creates a protected device
-    device_a_id = client.post("/api/v1/devices/pair", headers=headers_a, json={
-        "device_alias": "Device A",
-        "public_key_pem": pem_public,
-        "trusted_phone_number": "+1111111111",
-        "pairing_secret": "pairingsecretuserA1234567890abc"
-    }).json()["id"]
+    device_a_id, _ = pair_device(
+        client,
+        token_a,
+        "Device A",
+        pem_public,
+        "+1111111111",
+        "pairingsecretuserA1234567890abc"
+    )
 
     # 3. User B attempts to read User A's device -> 404 (does not leak existence)
     resp_get = client.get(f"/api/v1/devices/{device_a_id}", headers=headers_b)

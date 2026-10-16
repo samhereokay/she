@@ -8,6 +8,8 @@ import java.util.Base64
 
 data class CommandDto(
     val id: String = "",
+    val pairing_id: String? = null,
+    val trusted_device_id: String = "",
     val protected_device_id: String = "",
     val command_type: String = "",
     val sequence_counter: Long = 0L,
@@ -19,6 +21,7 @@ data class CommandDto(
 sealed class CommandValidationResult {
     data class Success(val executed: Boolean) : CommandValidationResult()
     object WrongTargetDevice : CommandValidationResult()
+    object WrongPairingId : CommandValidationResult()
     data class Expired(val expiryEpoch: Long, val currentEpoch: Long) : CommandValidationResult()
     data class Replayed(val incomingSeq: Long, val lastSeenSeq: Long) : CommandValidationResult()
     object MissingAdminKey : CommandValidationResult()
@@ -34,6 +37,8 @@ class CommandProcessor(
     fun processCommand(cmd: CommandDto): CommandValidationResult {
         return processCommand(
             commandId = cmd.id,
+            pairingId = cmd.pairing_id,
+            trustedDeviceId = cmd.trusted_device_id,
             targetDeviceId = cmd.protected_device_id,
             commandType = cmd.command_type,
             sequenceCounter = cmd.sequence_counter,
@@ -45,6 +50,8 @@ class CommandProcessor(
 
     fun processCommand(
         commandId: String,
+        pairingId: String? = null,
+        trustedDeviceId: String = "",
         targetDeviceId: String,
         commandType: String,
         sequenceCounter: Long,
@@ -58,13 +65,19 @@ class CommandProcessor(
             return CommandValidationResult.WrongTargetDevice
         }
 
+        val currentPairingId = storageHelper.getPairingId()
+        if (!currentPairingId.isNullOrBlank() && !pairingId.isNullOrBlank() && pairingId != currentPairingId) {
+            Log.w(TAG, "Command pairing_id ($pairingId) does not match device pairing_id ($currentPairingId). Rejecting stale session.")
+            return CommandValidationResult.WrongPairingId
+        }
+
         val nowEpoch = System.currentTimeMillis() / 1000
         if (expiryEpoch <= nowEpoch) {
             Log.w(TAG, "Command expired: expiry $expiryEpoch <= now $nowEpoch. Rejecting.")
             return CommandValidationResult.Expired(expiryEpoch, nowEpoch)
         }
 
-        val lastSeenSeq = storageHelper.getLastAdminCommandSequence()
+        val lastSeenSeq = storageHelper.getLastAdminCommandSequence(trustedDeviceId)
         if (sequenceCounter <= lastSeenSeq) {
             Log.w(TAG, "Command sequence non-monotonic or replayed: $sequenceCounter <= $lastSeenSeq. Rejecting.")
             return CommandValidationResult.Replayed(sequenceCounter, lastSeenSeq)
@@ -80,7 +93,9 @@ class CommandProcessor(
             val publicKey = EcdsaSigner.parsePublicKeyFromPem(adminPem)
             val derSignature = Base64.getDecoder().decode(adminSignatureBase64.trim())
 
-            val canonicalBytesWithId = EcdsaSigner.createCanonicalCommandBytes(
+            val effectivePairingId = pairingId ?: currentPairingId ?: ""
+            val canonicalBytes = EcdsaSigner.createCanonicalCommandBytes(
+                pairingId = effectivePairingId,
                 commandId = commandId,
                 targetDeviceId = targetDeviceId,
                 commandType = commandType,
@@ -88,17 +103,19 @@ class CommandProcessor(
                 expiryEpoch = expiryEpoch,
                 parametersJson = parametersJson
             )
-            var isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesWithId, derSignature)
-            if (!isValid && commandId.isNotBlank()) {
-                val canonicalBytesNoId = EcdsaSigner.createCanonicalCommandBytes(
-                    commandId = "",
+            var isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytes, derSignature)
+            if (!isValid && effectivePairingId.isNotBlank()) {
+                // Fallback check without pairing_id for legacy compatibility
+                val canonicalBytesLegacy = EcdsaSigner.createCanonicalCommandBytes(
+                    pairingId = "",
+                    commandId = commandId,
                     targetDeviceId = targetDeviceId,
                     commandType = commandType,
                     sequenceCounter = sequenceCounter,
                     expiryEpoch = expiryEpoch,
                     parametersJson = parametersJson
                 )
-                isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesNoId, derSignature)
+                isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesLegacy, derSignature)
             }
 
             if (!isValid) {
@@ -106,8 +123,8 @@ class CommandProcessor(
                 return CommandValidationResult.InvalidSignature
             }
 
-            // Successfully verified! Update monotonic sequence counter
-            storageHelper.setLastAdminCommandSequence(sequenceCounter)
+            // Successfully verified! Update monotonic sequence counter for this admin
+            storageHelper.setLastAdminCommandSequence(trustedDeviceId, sequenceCounter)
 
             // Execute recovery action
             val executed = CommandExecutionManager.executeCommand(context, commandType, parametersJson)

@@ -13,6 +13,25 @@ class DevicePairRequest(BaseModel):
     pairing_secret: str = Field(..., min_length=16, description="Shared symmetric secret from QR exchange")
 
 
+class PairingTokenCreateRequest(BaseModel):
+    trusted_device_id: Optional[str] = None
+
+
+class PairingTokenResponse(BaseModel):
+    pairing_token: str
+    expires_in_seconds: int = 300
+
+
+class PairingConfirmRequest(BaseModel):
+    confirmation_code: str = Field(..., min_length=3, max_length=16)
+
+
+class PairingConfirmResponse(BaseModel):
+    device_id: str
+    status: str
+    pairing_id: str
+
+
 class DeviceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -22,6 +41,8 @@ class DeviceResponse(BaseModel):
     public_key_pem: str
     trusted_phone_number: str
     status: str
+    pairing_id: Optional[str] = None
+    confirmation_code: Optional[str] = None
     created_at: datetime
     last_location: Optional[LocationResponse] = None
     calculated_status: str = "UNAVAILABLE"  # LIVE, DELAYED, UNAVAILABLE
@@ -34,7 +55,7 @@ class DeviceListResponse(BaseModel):
 class QRPairingPayload(BaseModel):
     """Payload serialized into QR code for Guardian phone to scan."""
     server_url: str
-    admin_user_id: str
+    admin_public_key_pem: str
     pairing_token: str
     pairing_secret_hex: str
     trusted_phone_number: str
@@ -52,10 +73,13 @@ class TrustedDeviceResponse(BaseModel):
     device_name: str
     public_key_pem: str
     created_at: datetime
+    revoked_at: Optional[datetime] = None
+    is_active: bool = True
 
 
 class CommandDispatchRequest(BaseModel):
     command_id: Optional[str] = None
+    pairing_id: Optional[str] = None
     trusted_device_id: str
     target_device_id: str
     command_type: str = Field(..., pattern=r"^(LOCATE|RING|STOP_RING|LOCK|STOLEN_MODE|RECOVERED)$")
@@ -76,6 +100,7 @@ class CommandResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    pairing_id: Optional[str] = None
     trusted_device_id: str
     protected_device_id: str
     command_type: str

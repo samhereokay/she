@@ -17,7 +17,7 @@ from app.core.security import (
 )
 from app.core.rate_limit import auth_limiter, totp_limiter
 from app.db.session import get_db
-from app.db.models import User
+from app.db.models import User, TrustedDevice, AuditEvent, utc_now
 from app.schemas.auth import (
     UserCreate,
     UserResponse,
@@ -27,7 +27,9 @@ from app.schemas.auth import (
     TotpVerifyRequest,
     TotpStatusResponse
 )
-from app.api.deps import get_current_user
+from app.schemas.device import PairingTokenCreateRequest, PairingTokenResponse
+from app.api.deps import get_current_user, get_current_user_2fa
+from app.core.security import create_pairing_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -228,3 +230,75 @@ def validate_totp(
 def read_current_user(current_user: User = Depends(get_current_user)) -> Any:
     """Get profile of current authenticated owner."""
     return current_user
+
+
+@router.post("/pairing-token", response_model=PairingTokenResponse)
+def create_device_pairing_token(
+    req: PairingTokenCreateRequest,
+    current_user: User = Depends(get_current_user_2fa),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Issue a single-use, 5-minute restricted token strictly for enrolling a Guardian device.
+    Requires verified 2FA session. Cannot be used to execute recovery commands.
+    """
+    if req.trusted_device_id:
+        trusted = db.query(TrustedDevice).filter(
+            TrustedDevice.id == req.trusted_device_id,
+            TrustedDevice.user_id == current_user.id,
+            TrustedDevice.revoked_at.is_(None)
+        ).first()
+        if not trusted:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Trusted admin device not recognized or revoked."
+            )
+
+    token = create_pairing_token(
+        user_id=current_user.id,
+        trusted_device_id=req.trusted_device_id,
+        expires_minutes=5
+    )
+    return PairingTokenResponse(
+        pairing_token=token,
+        expires_in_seconds=300
+    )
+
+
+@router.post("/trusted-devices/{trusted_device_id}/revoke", status_code=status.HTTP_200_OK)
+def revoke_trusted_device(
+    trusted_device_id: str,
+    current_user: User = Depends(get_current_user_2fa),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Revoke a compromised or lost Admin device.
+    Commands signed by this device will be immediately rejected.
+    """
+    trusted = db.query(TrustedDevice).filter(
+        TrustedDevice.id == trusted_device_id,
+        TrustedDevice.user_id == current_user.id
+    ).first()
+    if not trusted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trusted device not found for this user."
+        )
+
+    trusted.is_active = False
+    trusted.revoked_at = utc_now()
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        event_type="TRUSTED_DEVICE_REVOKED",
+        details=f"Trusted device {trusted.device_name} ({trusted.id}) was revoked by owner."
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "status": "REVOKED",
+        "trusted_device_id": trusted.id,
+        "device_name": trusted.device_name,
+        "revoked_at": trusted.revoked_at
+    }

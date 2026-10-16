@@ -55,6 +55,14 @@ class AdminSessionManager(context: Context) {
         return next
     }
 
+    fun saveDevicePairingId(deviceId: String, pairingId: String) {
+        secureStorage.putEncryptedString("pairing_id_$deviceId", pairingId)
+    }
+
+    fun getDevicePairingId(deviceId: String): String? {
+        return secureStorage.getDecryptedString("pairing_id_$deviceId")
+    }
+
     companion object {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_SERVER_URL = "server_url"

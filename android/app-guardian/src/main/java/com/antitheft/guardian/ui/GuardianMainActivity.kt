@@ -134,7 +134,7 @@ class GuardianMainActivity : AppCompatActivity() {
                 val serverUrl = payload.get("server_url")?.asString
                 val adminPubPem = payload.get("admin_public_key_pem")?.asString
                 val pairingSecretHex = payload.get("pairing_secret_hex")?.asString
-                val authToken = payload.get("auth_token")?.asString
+                val pairingToken = payload.get("pairing_token")?.asString ?: payload.get("auth_token")?.asString
 
                 if (!serverUrl.isNullOrBlank()) {
                     storageHelper.setServerUrl(serverUrl)
@@ -149,12 +149,14 @@ class GuardianMainActivity : AppCompatActivity() {
                 }
 
                 val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
+                keystoreManager.getSecurityInfo(this@GuardianMainActivity)
                 val guardianPubPem = keystoreManager.getPublicKeyPem()
 
                 var successMsg = "Pairing applied locally."
+                var confirmationCode: String? = null
 
-                // If owner auth token is present, register device with backend API
-                if (!authToken.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
+                // If pairing token is present, register device with backend API
+                if (!pairingToken.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
                     val client = okhttp3.OkHttpClient()
                     val pairEndpoint = serverUrl.trimEnd('/') + "/api/v1/devices/pair"
 
@@ -170,20 +172,29 @@ class GuardianMainActivity : AppCompatActivity() {
                     val body = reqJson.toRequestBody(mediaType)
                     val request = okhttp3.Request.Builder()
                         .url(pairEndpoint)
-                        .header("Authorization", "Bearer $authToken")
+                        .header("Authorization", "Bearer $pairingToken")
                         .post(body)
                         .build()
 
                     val response = client.newCall(request).execute()
                     val respBody = response.body?.string() ?: ""
+                    
+                    // Immediately purge pairing token from memory
+                    android.util.Log.i("GuardianPairing", "PAIRING_TOKEN_DISCARDED: Single-use pairing token consumed and cleared from memory. Never written to persistent storage.")
+
                     if (response.isSuccessful) {
                         val respObj = com.google.gson.JsonParser.parseString(respBody).asJsonObject
                         val returnedId = respObj.get("id")?.asString
                         if (!returnedId.isNullOrBlank()) {
                             storageHelper.setDeviceId(returnedId)
                         }
-                        successMsg = "Device successfully enrolled and paired on backend!"
-                        android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId")
+                        val pairingId = respObj.get("pairing_id")?.asString
+                        if (!pairingId.isNullOrBlank()) {
+                            storageHelper.setPairingId(pairingId)
+                        }
+                        confirmationCode = respObj.get("confirmation_code")?.asString
+                        successMsg = "Device enrollment requested! Confirm code: $confirmationCode on Admin phone."
+                        android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId PairingID: $pairingId ConfirmationCode: $confirmationCode")
                     } else {
                         android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}: $respBody")
                         successMsg = "Local pairing set. Backend returned ${response.code}"
@@ -192,7 +203,12 @@ class GuardianMainActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@GuardianMainActivity, successMsg, Toast.LENGTH_LONG).show()
-                    findViewById<TextView>(R.id.tvDeviceId).text = "Device ID: ${storageHelper.getDeviceId()}"
+                    val statusText = if (!confirmationCode.isNullOrBlank()) {
+                        "Device ID: ${storageHelper.getDeviceId()}\nConfirmation Code: $confirmationCode\nStatus: Pending Admin Confirmation"
+                    } else {
+                        "Device ID: ${storageHelper.getDeviceId()}"
+                    }
+                    findViewById<TextView>(R.id.tvDeviceId).text = statusText
                     startTrackingService()
                     refreshDashboardData()
                 }

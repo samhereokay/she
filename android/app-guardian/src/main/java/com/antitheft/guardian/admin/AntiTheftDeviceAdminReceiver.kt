@@ -9,6 +9,16 @@ import android.util.Log
 
 class AntiTheftDeviceAdminReceiver : DeviceAdminReceiver() {
 
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == "com.antitheft.guardian.DEACTIVATE_ADMIN") {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+            dpm?.removeActiveAdmin(getComponentName(context))
+            Log.i(TAG, "Device Admin policy removed via DEACTIVATE_ADMIN intent.")
+            return
+        }
+        super.onReceive(context, intent)
+    }
+
     override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
         Log.i(TAG, "Device Admin policy successfully enabled.")

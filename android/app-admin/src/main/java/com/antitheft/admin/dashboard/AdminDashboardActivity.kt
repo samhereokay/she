@@ -84,6 +84,11 @@ class AdminDashboardActivity : AppCompatActivity() {
             try {
                 val api = ApiClient.create(sessionManager)
                 val response = api.listDevices()
+                response.devices.forEach { d ->
+                    if (!d.pairing_id.isNullOrBlank()) {
+                        sessionManager.saveDevicePairingId(d.id, d.pairing_id)
+                    }
+                }
                 deviceAdapter.setDevices(response.devices)
             } catch (e: Exception) {
                 Toast.makeText(this@AdminDashboardActivity, "Error loading devices: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -152,8 +157,10 @@ class AdminDashboardActivity : AppCompatActivity() {
                 val seq = sessionManager.getNextCommandSequence()
                 val expiryEpoch = (System.currentTimeMillis() / 1000) + 300
                 val paramsJson = "{}"
+                val pairingId = sessionManager.getDevicePairingId(targetDeviceId) ?: ""
 
                 val canonicalBytes = EcdsaSigner.createCanonicalCommandBytes(
+                    pairingId = pairingId,
                     commandId = cmdId,
                     targetDeviceId = targetDeviceId,
                     commandType = commandType,
@@ -168,6 +175,7 @@ class AdminDashboardActivity : AppCompatActivity() {
                 // 4. Dispatch command to backend
                 val dispatchReq = CommandDispatchRequest(
                     command_id = cmdId,
+                    pairing_id = pairingId,
                     trusted_device_id = trustedId,
                     target_device_id = targetDeviceId,
                     command_type = commandType,

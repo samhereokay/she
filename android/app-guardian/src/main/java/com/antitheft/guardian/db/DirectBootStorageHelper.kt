@@ -144,14 +144,29 @@ class DirectBootStorageHelper(context: Context) {
         prefs.edit().putString(KEY_ADMIN_PUBLIC_KEY, pem).apply()
     }
 
+    fun getPairingId(): String? {
+        return prefs.getString(KEY_PAIRING_ID, null)
+    }
+
+    fun setPairingId(pairingId: String) {
+        prefs.edit().putString(KEY_PAIRING_ID, pairingId).apply()
+    }
+
     @Synchronized
-    fun getLastAdminCommandSequence(): Long {
-        return prefs.getLong(KEY_LAST_ADMIN_CMD_SEQ, 0L)
+    fun getLastAdminCommandSequence(trustedDeviceId: String = ""): Long {
+        val key = if (trustedDeviceId.isNotBlank()) "${KEY_LAST_ADMIN_CMD_SEQ}_$trustedDeviceId" else KEY_LAST_ADMIN_CMD_SEQ
+        return prefs.getLong(key, 0L)
     }
 
     @Synchronized
     fun setLastAdminCommandSequence(seq: Long) {
-        prefs.edit().putLong(KEY_LAST_ADMIN_CMD_SEQ, seq).commit()
+        setLastAdminCommandSequence("", seq)
+    }
+
+    @Synchronized
+    fun setLastAdminCommandSequence(trustedDeviceId: String, seq: Long) {
+        val key = if (trustedDeviceId.isNotBlank()) "${KEY_LAST_ADMIN_CMD_SEQ}_$trustedDeviceId" else KEY_LAST_ADMIN_CMD_SEQ
+        prefs.edit().putLong(key, seq).commit()
     }
 
     fun isStolenMode(): Boolean {
@@ -176,5 +191,6 @@ class DirectBootStorageHelper(context: Context) {
         private const val KEY_ADMIN_PUBLIC_KEY = "admin_public_key"
         private const val KEY_LAST_ADMIN_CMD_SEQ = "last_admin_cmd_seq"
         private const val KEY_IS_STOLEN_MODE = "is_stolen_mode"
+        private const val KEY_PAIRING_ID = "pairing_id"
     }
 }

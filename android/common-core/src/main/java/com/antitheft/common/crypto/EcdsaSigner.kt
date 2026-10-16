@@ -37,9 +37,10 @@ object EcdsaSigner {
 
     /**
      * Constructs canonical byte representation for Admin command signing.
-     * Matches backend specification: <command_id>|<target_device_id>|<command_type>|<sequence>|<expiry_epoch>|<sha256(parameters)>
+     * Matches backend specification: <pairing_id>|<command_id>|<target_device_id>|<command_type>|<sequence>|<expiry_epoch>|<sha256(parameters)>
      */
     fun createCanonicalCommandBytes(
+        pairingId: String = "",
         commandId: String = "",
         targetDeviceId: String,
         commandType: String,
@@ -50,7 +51,7 @@ object EcdsaSigner {
         val md = java.security.MessageDigest.getInstance("SHA-256")
         val paramsHash = md.digest(parametersJson.trim().toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
-        val canonicalStr = "${commandId.trim()}|${targetDeviceId.trim()}|${commandType.trim().uppercase()}|$sequenceCounter|$expiryEpoch|$paramsHash"
+        val canonicalStr = "${pairingId.trim()}|${commandId.trim()}|${targetDeviceId.trim()}|${commandType.trim().uppercase()}|$sequenceCounter|$expiryEpoch|$paramsHash"
         return canonicalStr.toByteArray(Charsets.UTF_8)
     }
 

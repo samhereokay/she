@@ -111,14 +111,18 @@ class LocationCaptureManager(private val context: Context) {
     }
 
     fun enqueueSyncWork() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+        try {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
 
-        val syncRequest = OneTimeWorkRequestBuilder<LocationSyncWorker>()
-            .setConstraints(constraints)
-            .build()
+            val syncRequest = OneTimeWorkRequestBuilder<LocationSyncWorker>()
+                .setConstraints(constraints)
+                .build()
 
-        WorkManager.getInstance(context).enqueue(syncRequest)
+            WorkManager.getInstance(context).enqueue(syncRequest)
+        } catch (e: Exception) {
+            android.util.Log.w("LocationCaptureManager", "WorkManager unavailable during Direct Boot (CE storage locked). Location fix safely queued in DE SQLCipher database.")
+        }
     }
 }

@@ -1,6 +1,7 @@
 import time
 import hmac
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, Any
 
@@ -150,20 +151,70 @@ def verify_access_token(token: str) -> Optional[dict]:
         return None
 
 
+# In-memory single-use JTI cache for pairing tokens
+_used_pairing_token_jtis: set[str] = set()
+
+
+def create_pairing_token(
+    user_id: str,
+    trusted_device_id: Optional[str] = None,
+    expires_minutes: int = 5
+) -> str:
+    """
+    Generate short-lived, single-use token strictly restricted to device pairing.
+    Cannot be used for command dispatch or API access.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+    jti = str(uuid.uuid4())
+    payload = {
+        "sub": str(user_id),
+        "trusted_device_id": str(trusted_device_id) if trusted_device_id else None,
+        "scope": "device_pairing",
+        "jti": jti,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc)
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def verify_pairing_token(token: str) -> Optional[dict]:
+    """Verify pairing token and return payload if valid and unconsumed."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("scope") != "device_pairing" or "sub" not in payload:
+            return None
+        jti = payload.get("jti")
+        if not jti or jti in _used_pairing_token_jtis:
+            return None
+        return payload
+    except (jwt.PyJWTError, Exception):
+        return None
+
+
+def claim_pairing_token_jti(jti: str) -> bool:
+    """Atomically claim a pairing token JTI to prevent replay."""
+    if jti in _used_pairing_token_jtis:
+        return False
+    _used_pairing_token_jtis.add(jti)
+    return True
+
+
 def create_canonical_command_bytes(
-    command_id: str,
-    target_device_id: str,
-    command_type: str,
-    sequence_counter: int,
-    expiry_epoch: int,
+    pairing_id: str = "",
+    command_id: str = "",
+    target_device_id: str = "",
+    command_type: str = "",
+    sequence_counter: int = 0,
+    expiry_epoch: int = 0,
     parameters_json: str = "{}"
 ) -> bytes:
     """
     Constructs deterministic canonical bytes for Owner Admin command signing.
-    Enforces format: command_id|target_device_id|command_type|sequence_counter|expiry_epoch|<sha256(parameters)>
+    Enforces format: pairing_id|command_id|target_device_id|command_type|sequence_counter|expiry_epoch|<sha256(parameters)>
     """
     params_hash = hashlib.sha256(parameters_json.strip().encode("utf-8")).hexdigest()
     canonical_str = (
+        f"{pairing_id.strip()}|"
         f"{command_id.strip()}|"
         f"{target_device_id.strip()}|"
         f"{command_type.strip().upper()}|"

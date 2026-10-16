@@ -26,6 +26,10 @@ class BootReceiver : BroadcastReceiver() {
         val storageHelper = DirectBootStorageHelper(context)
         Log.i(TAG, "Device unlocked state: ${storageHelper.isUserUnlocked}")
 
+        val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
+        val secInfo = keystoreManager.getSecurityInfo(context)
+        Log.i(TAG, "Direct Boot Keystore Security: insideHardware=${secInfo.isInsideSecureHardware}, level=${secInfo.securityLevel}, strongBox=${secInfo.hasStrongBoxFeature}")
+
         // Capture initial boot fix and trigger sync
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
