@@ -36,6 +36,42 @@ object EcdsaSigner {
     }
 
     /**
+     * Constructs canonical byte representation for Admin command signing.
+     * Matches backend specification: <command_id>|<target_device_id>|<command_type>|<sequence>|<expiry_epoch>|<sha256(parameters)>
+     */
+    fun createCanonicalCommandBytes(
+        commandId: String = "",
+        targetDeviceId: String,
+        commandType: String,
+        sequenceCounter: Long,
+        expiryEpoch: Long,
+        parametersJson: String = "{}"
+    ): ByteArray {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val paramsHash = md.digest(parametersJson.trim().toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val canonicalStr = "${commandId.trim()}|${targetDeviceId.trim()}|${commandType.trim().uppercase()}|$sequenceCounter|$expiryEpoch|$paramsHash"
+        return canonicalStr.toByteArray(Charsets.UTF_8)
+    }
+
+    /**
+     * Parses standard EC X.509 PEM formatted public key.
+     */
+    fun parsePublicKeyFromPem(pem: String): PublicKey {
+        val cleanPem = pem
+            .replace("-----BEGIN PUBLIC KEY-----", "")
+            .replace("-----END PUBLIC KEY-----", "")
+            .replace("\\n", "")
+            .replace("\n", "")
+            .replace("\r", "")
+            .trim()
+        val keyBytes = java.util.Base64.getDecoder().decode(cleanPem)
+        val spec = java.security.spec.X509EncodedKeySpec(keyBytes)
+        val kf = java.security.KeyFactory.getInstance("EC")
+        return kf.generatePublic(spec)
+    }
+
+    /**
      * Signs data using private key (hardware Keystore or software EC key).
      * Output is standard ASN.1 DER format.
      */

@@ -105,6 +105,32 @@ class DirectBootStorageHelper(context: Context) {
         return result
     }
 
+    fun getAdminPublicKeyPem(): String? {
+        return prefs.getString(KEY_ADMIN_PUBLIC_KEY, null)
+    }
+
+    fun setAdminPublicKeyPem(pem: String) {
+        prefs.edit().putString(KEY_ADMIN_PUBLIC_KEY, pem).apply()
+    }
+
+    @Synchronized
+    fun getLastAdminCommandSequence(): Long {
+        return prefs.getLong(KEY_LAST_ADMIN_CMD_SEQ, 0L)
+    }
+
+    @Synchronized
+    fun setLastAdminCommandSequence(seq: Long) {
+        prefs.edit().putLong(KEY_LAST_ADMIN_CMD_SEQ, seq).commit()
+    }
+
+    fun isStolenMode(): Boolean {
+        return prefs.getBoolean(KEY_IS_STOLEN_MODE, false)
+    }
+
+    fun setStolenMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_IS_STOLEN_MODE, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "guardian_de_storage"
         private const val KEY_DEVICE_ID = "device_id"
@@ -114,5 +140,8 @@ class DirectBootStorageHelper(context: Context) {
         private const val KEY_SEQUENCE_COUNTER = "sequence_counter"
         private const val KEY_PAIRING_SECRET = "pairing_secret"
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
+        private const val KEY_ADMIN_PUBLIC_KEY = "admin_public_key"
+        private const val KEY_LAST_ADMIN_CMD_SEQ = "last_admin_cmd_seq"
+        private const val KEY_IS_STOLEN_MODE = "is_stolen_mode"
     }
 }

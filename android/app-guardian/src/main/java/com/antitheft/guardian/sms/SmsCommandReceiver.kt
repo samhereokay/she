@@ -56,8 +56,9 @@ class SmsCommandReceiver : BroadcastReceiver() {
             Log.i(TAG, "Authenticated command received: ${command.commandType}")
 
             // Execute command
-            when (command.commandType) {
+            when (command.commandType.uppercase()) {
                 "LOCATE" -> {
+                    com.antitheft.guardian.commands.CommandExecutionManager.executeLocate(context)
                     val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
                         try {
@@ -86,6 +87,21 @@ class SmsCommandReceiver : BroadcastReceiver() {
                             pendingResult.finish()
                         }
                     }
+                }
+                "RING" -> {
+                    com.antitheft.guardian.commands.CommandExecutionManager.executeRing(context)
+                }
+                "STOP_RING" -> {
+                    com.antitheft.guardian.commands.CommandExecutionManager.executeStopRing()
+                }
+                "LOCK" -> {
+                    com.antitheft.guardian.commands.CommandExecutionManager.executeLock(context)
+                }
+                "STOLEN_MODE" -> {
+                    com.antitheft.guardian.commands.CommandExecutionManager.executeStolenMode(context, true)
+                }
+                else -> {
+                    Log.w(TAG, "Unknown SMS command: ${command.commandType}")
                 }
             }
         }
