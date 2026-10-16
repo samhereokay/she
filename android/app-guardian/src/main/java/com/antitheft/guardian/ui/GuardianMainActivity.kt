@@ -21,12 +21,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.graphics.Color
+import android.widget.CheckBox
+import com.antitheft.deviceowner.DeviceOwnerManager
+import com.antitheft.deviceowner.SystemGuidanceManager
 import java.util.Locale
 
 class GuardianMainActivity : AppCompatActivity() {
 
     private lateinit var storageHelper: DirectBootStorageHelper
     private lateinit var captureManager: LocationCaptureManager
+    private val deviceOwnerManager = DeviceOwnerManager()
+    private val guidanceManager = SystemGuidanceManager()
+    private var isLockTaskActive = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -85,18 +92,117 @@ class GuardianMainActivity : AppCompatActivity() {
             showPairingInputDialog()
         }
 
+        findViewById<Button>(R.id.btnEnforceRestrictions).setOnClickListener {
+            if (deviceOwnerManager.isDeviceOwner(this)) {
+                val res = deviceOwnerManager.applyTheftRestrictions(this)
+                Toast.makeText(this, "Enforced ${res.count { it.value }} restrictions", Toast.LENGTH_SHORT).show()
+                refreshDashboardData()
+            } else {
+                showProvisioningDialog()
+            }
+        }
+
+        findViewById<Button>(R.id.btnClearRestrictions).setOnClickListener {
+            if (deviceOwnerManager.isDeviceOwner(this)) {
+                deviceOwnerManager.clearTheftRestrictions(this)
+                Toast.makeText(this, "Theft restrictions cleared", Toast.LENGTH_SHORT).show()
+                refreshDashboardData()
+            } else {
+                Toast.makeText(this, "Device Owner not provisioned", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<Button>(R.id.btnToggleLockTaskKiosk).setOnClickListener {
+            if (!deviceOwnerManager.isDeviceOwner(this)) {
+                showProvisioningDialog()
+                return@setOnClickListener
+            }
+            if (!isLockTaskActive) {
+                val success = deviceOwnerManager.enterLockTaskStolenMode(this)
+                if (success) {
+                    isLockTaskActive = true
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Exit Stolen Kiosk Mode"
+                    Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Power Menu Suppressed)", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                deviceOwnerManager.exitLockTaskMode(this)
+                isLockTaskActive = false
+                findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
+                Toast.makeText(this, "Stolen Kiosk Mode EXITED", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<Button>(R.id.btnShowAdbCommand).setOnClickListener {
+            showProvisioningDialog()
+        }
+
         handleIncomingPairingIntent(intent)
+        handleIncomingDeviceOwnerIntent(intent)
+    }
+
+    private fun showProvisioningDialog() {
+        val cmd = deviceOwnerManager.getAdbProvisioningCommand(this)
+        val tv = android.widget.EditText(this).apply {
+            setText(cmd)
+            isFocusable = true
+            isClickable = true
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Provision Device Owner (ADB)")
+            .setMessage("To enable hardware-level anti-theft lockdown, run this ADB command from your PC (device must have no user accounts added):")
+            .setView(tv)
+            .setPositiveButton("Copy") { _, _ ->
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("AdbCmd", cmd))
+                Toast.makeText(this, "Command copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         handleIncomingPairingIntent(intent)
+        handleIncomingDeviceOwnerIntent(intent)
     }
 
     private fun handleIncomingPairingIntent(intent: android.content.Intent?) {
         val payload = intent?.getStringExtra("pairing_payload")
         if (!payload.isNullOrBlank()) {
             applyPairingPayload(payload)
+        }
+    }
+
+    private fun handleIncomingDeviceOwnerIntent(intent: android.content.Intent?) {
+        if (intent == null) return
+        val action = intent.getStringExtra("do_action") ?: intent.getStringExtra("action") ?: return
+        android.util.Log.i("GuardianDO", "Received Device Owner test action: $action")
+        when (action) {
+            "enforce_restrictions" -> {
+                val res = deviceOwnerManager.applyTheftRestrictions(this)
+                Toast.makeText(this, "Enforced ${res.count { it.value }} restrictions", Toast.LENGTH_SHORT).show()
+                refreshDashboardData()
+            }
+            "clear_restrictions" -> {
+                deviceOwnerManager.clearTheftRestrictions(this)
+                Toast.makeText(this, "Restrictions cleared", Toast.LENGTH_SHORT).show()
+                refreshDashboardData()
+            }
+            "enter_kiosk" -> {
+                val ok = deviceOwnerManager.enterLockTaskStolenMode(this)
+                if (ok) {
+                    isLockTaskActive = true
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Exit Stolen Kiosk Mode"
+                }
+            }
+            "exit_kiosk" -> {
+                deviceOwnerManager.exitLockTaskMode(this)
+                isLockTaskActive = false
+                findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
+            }
+            "lock_now" -> {
+                deviceOwnerManager.lockNow(this)
+            }
         }
     }
 
@@ -236,6 +342,10 @@ class GuardianMainActivity : AppCompatActivity() {
             val latest = db.locationDao().getLatestLocation()
             val pendingCount = db.locationDao().getPendingCount()
 
+            val isDO = deviceOwnerManager.isDeviceOwner(this@GuardianMainActivity)
+            val restrictions = deviceOwnerManager.getActiveRestrictions(this@GuardianMainActivity)
+            val checklist = guidanceManager.evaluateSystemChecklist(this@GuardianMainActivity)
+
             withContext(Dispatchers.Main) {
                 val tvLastLocation = findViewById<TextView>(R.id.tvLastLocation)
                 val tvQueueCount = findViewById<TextView>(R.id.tvQueueCount)
@@ -253,6 +363,38 @@ class GuardianMainActivity : AppCompatActivity() {
                 }
 
                 tvQueueCount.text = "Offline Queue: $pendingCount pending"
+
+                // Update Device Owner Card
+                val tvDeviceOwnerBadge = findViewById<TextView>(R.id.tvDeviceOwnerBadge)
+                val tvRestrictionsStatus = findViewById<TextView>(R.id.tvRestrictionsStatus)
+                if (isDO) {
+                    tvDeviceOwnerBadge.text = "DEVICE OWNER: ACTIVE (TIER 3)"
+                    tvDeviceOwnerBadge.setBackgroundColor(Color.parseColor("#DCFCE7"))
+                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#166534"))
+                } else {
+                    tvDeviceOwnerBadge.text = "DEVICE OWNER: NOT PROVISIONED"
+                    tvDeviceOwnerBadge.setBackgroundColor(Color.parseColor("#FEF3C7"))
+                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#92400E"))
+                }
+
+                val sb = StringBuilder()
+                sb.append("Active Restrictions (${restrictions.count { it.value }}/${restrictions.size}):\n")
+                restrictions.forEach { (k, v) ->
+                    val cleanKey = k.replace("no_", "").uppercase()
+                    sb.append(" • ").append(cleanKey).append(": ").append(if (v) "ENFORCED" else "inactive").append("\n")
+                }
+                tvRestrictionsStatus.text = sb.toString().trimEnd()
+
+                // Update Tier 1 System Checklist
+                val cbFindHub = findViewById<CheckBox>(R.id.cbFindHub)
+                val cbTheftDetection = findViewById<CheckBox>(R.id.cbTheftDetection)
+                val cbSimLock = findViewById<CheckBox>(R.id.cbSimLock)
+                val cbPowerMenu = findViewById<CheckBox>(R.id.cbPowerMenu)
+
+                cbFindHub.isChecked = checklist.find { it.id == "find_hub" }?.isEnabled == true
+                cbTheftDetection.isChecked = checklist.find { it.id == "screen_lock" }?.isEnabled == true
+                cbSimLock.isChecked = checklist.find { it.id == "sim_pin" }?.isEnabled == true
+                cbPowerMenu.isChecked = checklist.find { it.id == "power_menu_lock" }?.isEnabled == true
             }
         }
     }

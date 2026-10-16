@@ -15,5 +15,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "AndroidAntiTheft"
 include(":common-core")
+include(":device-owner")
 include(":app-guardian")
 include(":app-admin")

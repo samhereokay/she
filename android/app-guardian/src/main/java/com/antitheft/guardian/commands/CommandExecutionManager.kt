@@ -2,7 +2,7 @@ package com.antitheft.guardian.commands
 
 import android.content.Context
 import android.util.Log
-import com.antitheft.guardian.admin.AntiTheftDeviceAdminReceiver
+import com.antitheft.deviceowner.DeviceOwnerManager
 import com.antitheft.guardian.db.DirectBootStorageHelper
 import com.antitheft.guardian.location.LocationCaptureManager
 import com.antitheft.guardian.location.TrackingForegroundService
@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 object CommandExecutionManager {
     private const val TAG = "CommandExecutionManager"
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val deviceOwnerManager = DeviceOwnerManager()
 
     fun executeCommand(
         context: Context,
@@ -57,8 +58,11 @@ object CommandExecutionManager {
     }
 
     fun executeLock(context: Context): Boolean {
-        Log.i(TAG, "Executing LOCK: locking phone screen via DevicePolicyManager.")
-        return AntiTheftDeviceAdminReceiver.lockDevice(context)
+        Log.i(TAG, "Executing LOCK: enforcing restrictions and locking phone screen.")
+        if (deviceOwnerManager.isDeviceOwner(context)) {
+            deviceOwnerManager.applyTheftRestrictions(context)
+        }
+        return deviceOwnerManager.lockNow(context)
     }
 
     fun executeStolenMode(context: Context, enabled: Boolean): Boolean {
@@ -67,10 +71,19 @@ object CommandExecutionManager {
         storage.setStolenMode(enabled)
 
         if (enabled) {
+            // Apply theft restrictions if Device Owner
+            if (deviceOwnerManager.isDeviceOwner(context)) {
+                deviceOwnerManager.applyTheftRestrictions(context)
+            }
             // Lock phone immediately on stolen mode activation
-            AntiTheftDeviceAdminReceiver.lockDevice(context)
+            deviceOwnerManager.lockNow(context)
             // Trigger an immediate fix
             executeLocate(context)
+        } else {
+            // Clear theft restrictions upon de-escalation/recovery
+            if (deviceOwnerManager.isDeviceOwner(context)) {
+                deviceOwnerManager.clearTheftRestrictions(context)
+            }
         }
 
         // Restart or update tracking service with new stolen mode cadence
