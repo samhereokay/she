@@ -108,6 +108,7 @@ class PairDeviceActivity : AppCompatActivity() {
 
         btnApprovePairing.setOnClickListener {
             val code = etConfirmCode.text.toString().trim()
+            android.util.Log.i("AdminPairing", "btnApprovePairing clicked with code: '$code'")
             if (code.isBlank()) {
                 Toast.makeText(this, "Please enter the code shown on Guardian", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener

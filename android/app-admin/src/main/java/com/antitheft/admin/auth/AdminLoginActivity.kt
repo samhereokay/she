@@ -52,6 +52,7 @@ class AdminLoginActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingLoginIntent(intent: Intent?) {
+        if (!com.antitheft.admin.BuildConfig.DEBUG) return
         val u = intent?.getStringExtra("username")
         val p = intent?.getStringExtra("password")
         val url = intent?.getStringExtra("server_url") ?: sessionManager.getServerUrl()

@@ -68,6 +68,7 @@ class AdminVaultActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingVaultIntent(intent: Intent?) {
+        if (!com.antitheft.admin.BuildConfig.DEBUG) return
         val action = intent?.getStringExtra("vault_action") ?: return
         Log.i(TAG, "HANDLING_VAULT_INTENT action:$action")
         when (action) {
@@ -84,19 +85,7 @@ class AdminVaultActivity : AppCompatActivity() {
                 exportVaultWithPassphrase(passphrase)
             }
             "emergency_shred" -> {
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val api = ApiClient.create(sessionManager)
-                        api.purgeVault()
-                        vaultManager.shredVaultMasterKey()
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@AdminVaultActivity, "Vault shredded via intent", Toast.LENGTH_SHORT).show()
-                            loadVaultItems()
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Shred failed", e)
-                    }
-                }
+                confirmEmergencyShred()
             }
         }
     }
@@ -282,8 +271,36 @@ class AdminVaultActivity : AppCompatActivity() {
             layoutParams = params
         }
 
+        var decryptedTitle = item.title
+        var decryptedType = item.item_type
+        var decryptedSecret: String
+
+        try {
+            val container = VaultEncryptedContainer(
+                ciphertextBase64 = item.encrypted_blob,
+                ivBase64 = item.iv,
+                tagBase64 = item.tag,
+                keyVersion = item.key_version
+            )
+            val decryptedPayload = vaultManager.decryptSecret(container)
+            if (decryptedPayload.trim().startsWith("{")) {
+                try {
+                    val obj = JSONObject(decryptedPayload)
+                    decryptedTitle = obj.optString("title", item.title)
+                    decryptedType = obj.optString("type", item.item_type)
+                    decryptedSecret = obj.optString("secret", decryptedPayload)
+                } catch (e: Exception) {
+                    decryptedSecret = decryptedPayload
+                }
+            } else {
+                decryptedSecret = decryptedPayload
+            }
+        } catch (e: Exception) {
+            decryptedSecret = "[Decryption Failed: Key mismatch or tampered data]"
+        }
+
         val tvTitle = TextView(this).apply {
-            text = item.title
+            text = decryptedTitle
             setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 16f
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -291,7 +308,7 @@ class AdminVaultActivity : AppCompatActivity() {
         card.addView(tvTitle)
 
         val tvMeta = TextView(this).apply {
-            text = "Type: ${item.item_type} • Key v${item.key_version} • Created: ${item.created_at.take(10)}"
+            text = "Type: $decryptedType • Key v${item.key_version} • Created: ${item.created_at.take(10)}"
             setTextColor(Color.parseColor("#38BDF8"))
             textSize = 11f
             setPadding(0, 4, 0, 8)
@@ -300,19 +317,7 @@ class AdminVaultActivity : AppCompatActivity() {
 
         // Decrypted Secret Display
         val tvSecret = TextView(this).apply {
-            var decryptedText: String
-            try {
-                val container = VaultEncryptedContainer(
-                    ciphertextBase64 = item.encrypted_blob,
-                    ivBase64 = item.iv,
-                    tagBase64 = item.tag,
-                    keyVersion = item.key_version
-                )
-                decryptedText = vaultManager.decryptSecret(container)
-            } catch (e: Exception) {
-                decryptedText = "[Decryption Failed: Key mismatch or tampered data]"
-            }
-            text = decryptedText
+            text = decryptedSecret
             setTextColor(Color.parseColor("#A7F3D0"))
             textSize = 13f
             setBackgroundColor(Color.parseColor("#0F172A"))
@@ -331,7 +336,7 @@ class AdminVaultActivity : AppCompatActivity() {
             }
             layoutParams = bParams
             setOnClickListener {
-                confirmDeleteItem(item.id, item.title)
+                confirmDeleteItem(item.id, decryptedTitle)
             }
         }
         card.addView(btnDelete)
@@ -383,12 +388,19 @@ class AdminVaultActivity : AppCompatActivity() {
     private fun encryptAndUploadSecret(title: String, type: String, plaintextSecret: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Client-side AES-256-GCM encryption
-                val container = vaultManager.encryptSecret(plaintextSecret, keyVersion = 1)
+                // Client-side AES-256-GCM encryption of full JSON object (title + type + secret)
+                // True Zero-Knowledge: Plaintext title and type are NEVER sent to the server.
+                val fullPayload = JSONObject().apply {
+                    put("title", title)
+                    put("type", type)
+                    put("secret", plaintextSecret)
+                }.toString()
+
+                val container = vaultManager.encryptSecret(fullPayload, keyVersion = 1)
 
                 val req = VaultItemCreateDto(
-                    item_type = type,
-                    title = title,
+                    item_type = "ENCRYPTED",
+                    title = "ENCRYPTED_VAULT_ITEM",
                     encrypted_blob = container.ciphertextBase64,
                     iv = container.ivBase64,
                     tag = container.tagBase64,

@@ -65,6 +65,18 @@ class GuardianMainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshDashboardData()
+        checkAndEnterKioskIfNeeded()
+    }
+
+    private fun checkAndEnterKioskIfNeeded() {
+        if (storageHelper.isStolenMode() && deviceOwnerManager.isDeviceOwner(this) && !isLockTaskActive) {
+            val success = deviceOwnerManager.enterLockTaskStolenMode(this)
+            if (success) {
+                isLockTaskActive = true
+                findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Exit Stolen Kiosk Mode"
+                android.util.Log.i("GuardianKiosk", "Automatically engaged LockTask kiosk mode due to active stolen mode.")
+            }
+        }
     }
 
     private fun setupViews() {
@@ -103,12 +115,15 @@ class GuardianMainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnClearRestrictions).setOnClickListener {
-            if (deviceOwnerManager.isDeviceOwner(this)) {
-                deviceOwnerManager.clearTheftRestrictions(this)
-                Toast.makeText(this, "Theft restrictions cleared", Toast.LENGTH_SHORT).show()
-                refreshDashboardData()
-            } else {
+            if (!deviceOwnerManager.isDeviceOwner(this)) {
                 Toast.makeText(this, "Device Owner not provisioned", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            // Require owner authentication to clear lockdown
+            requestOwnerAuth("Authenticate to Clear Lockdown") {
+                deviceOwnerManager.clearTheftRestrictions(this)
+                Toast.makeText(this, "Theft restrictions cleared by authenticated owner", Toast.LENGTH_SHORT).show()
+                refreshDashboardData()
             }
         }
 
@@ -122,13 +137,16 @@ class GuardianMainActivity : AppCompatActivity() {
                 if (success) {
                     isLockTaskActive = true
                     findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Exit Stolen Kiosk Mode"
-                    Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Power Menu Suppressed)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Navigation Suppressed)", Toast.LENGTH_LONG).show()
                 }
             } else {
-                deviceOwnerManager.exitLockTaskMode(this)
-                isLockTaskActive = false
-                findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
-                Toast.makeText(this, "Stolen Kiosk Mode EXITED", Toast.LENGTH_SHORT).show()
+                // Thief protection: Exiting kiosk mode requires owner authentication or signed Admin command
+                requestOwnerAuth("Authenticate to Exit Kiosk Mode") {
+                    deviceOwnerManager.exitLockTaskMode(this)
+                    isLockTaskActive = false
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
+                    Toast.makeText(this, "Stolen Kiosk Mode EXITED by authenticated owner", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
@@ -164,9 +182,44 @@ class GuardianMainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         handleIncomingPairingIntent(intent)
         handleIncomingDeviceOwnerIntent(intent)
+        checkAndEnterKioskIfNeeded()
+    }
+
+    private var pendingAuthAction: (() -> Unit)? = null
+
+    private fun requestOwnerAuth(title: String, onAuthenticated: () -> Unit) {
+        val km = getSystemService(android.content.Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+        if (km != null && km.isDeviceSecure) {
+            pendingAuthAction = onAuthenticated
+            val authIntent = km.createConfirmDeviceCredentialIntent(title, "Confirm your device credentials to proceed")
+            if (authIntent != null) {
+                startActivityForResult(authIntent, REQUEST_CODE_OWNER_AUTH)
+                return
+            }
+        }
+        // Fallback for test emulators without screen lock set: confirmation dialog
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage("Owner confirmation required to proceed:")
+            .setPositiveButton("Confirm") { _, _ -> onAuthenticated() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_OWNER_AUTH) {
+            if (resultCode == RESULT_OK) {
+                pendingAuthAction?.invoke()
+            } else {
+                Toast.makeText(this, "Authentication failed or cancelled.", Toast.LENGTH_SHORT).show()
+            }
+            pendingAuthAction = null
+        }
     }
 
     private fun handleIncomingPairingIntent(intent: android.content.Intent?) {
+        if (!com.antitheft.guardian.BuildConfig.DEBUG) return
         val payload = intent?.getStringExtra("pairing_payload")
         if (!payload.isNullOrBlank()) {
             applyPairingPayload(payload)
@@ -174,6 +227,7 @@ class GuardianMainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingDeviceOwnerIntent(intent: android.content.Intent?) {
+        if (!com.antitheft.guardian.BuildConfig.DEBUG) return
         if (intent == null) return
         val action = intent.getStringExtra("do_action") ?: intent.getStringExtra("action") ?: return
         android.util.Log.i("GuardianDO", "Received Device Owner test action: $action")
@@ -438,5 +492,9 @@ class GuardianMainActivity : AppCompatActivity() {
 
     private fun startTrackingService() {
         TrackingForegroundService.start(this)
+    }
+
+    companion object {
+        private const val REQUEST_CODE_OWNER_AUTH = 7001
     }
 }

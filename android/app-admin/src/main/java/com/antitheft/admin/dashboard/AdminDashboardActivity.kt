@@ -102,7 +102,7 @@ class AdminDashboardActivity : AppCompatActivity() {
     }
 
     private fun showCommandSelectionDialog(device: DeviceDto) {
-        val commands = arrayOf("LOCK", "RING", "STOP_RING", "LOCATE")
+        val commands = arrayOf("LOCK", "RING", "STOP_RING", "LOCATE", "STOLEN_MODE", "CLEAR_DEVICE_OWNER")
         AlertDialog.Builder(this)
             .setTitle("Send Command to ${device.device_alias}")
             .setItems(commands) { _, which ->

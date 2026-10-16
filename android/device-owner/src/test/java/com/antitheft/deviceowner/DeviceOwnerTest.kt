@@ -95,4 +95,12 @@ class DeviceOwnerTest {
         assertNotNull(AntiTheftDeviceAdminReceiver.ACTION_SECURITY_PASSWORD_FAILED)
         assertEquals("failed_attempts", AntiTheftDeviceAdminReceiver.EXTRA_FAILED_ATTEMPTS)
     }
+
+    @Test
+    fun testTheftRestrictionsListIncludesAirplaneMode() {
+        // Verify constant name
+        assertEquals("no_airplane_mode", android.os.UserManager.DISALLOW_AIRPLANE_MODE)
+        assertEquals("no_factory_reset", android.os.UserManager.DISALLOW_FACTORY_RESET)
+        assertEquals("no_safe_boot", android.os.UserManager.DISALLOW_SAFE_BOOT)
+    }
 }

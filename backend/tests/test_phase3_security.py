@@ -960,4 +960,95 @@ def test_pairing_id_required_in_command_signature(client, pair_device):
     assert "verification failed" in stale_dispatch.json()["detail"].lower()
 
 
+def test_clear_device_owner_command_dispatch_and_execution(client, pair_device):
+    """Verifies that the signed CLEAR_DEVICE_OWNER recovery command is accepted and queued."""
+    auth_limiter.history.clear()
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+
+    # Setup owner
+    client.post("/auth/register", json={
+        "username": "deprovision_owner",
+        "email": "deprovision_owner@example.com",
+        "password": "SecurePassword123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "deprovision_owner",
+        "password": "SecurePassword123!"
+    }).json()["access_token"]
+
+    # Setup TOTP
+    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token}"})
+    totp_secret = setup_resp.json()["secret"]
+
+    import struct, hmac, hashlib
+    key = base64.b32decode(totp_secret + "=" * ((8 - len(totp_secret) % 8) % 8), casefold=True)
+    counter = int(time.time() // 30)
+    msg = struct.pack(">Q", counter)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    idx = h[-1] & 0x0F
+    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+    valid_code = f"{code_int % 1000000:06d}"
+
+    verify_resp = client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {token}"})
+    token_2fa = verify_resp.json()["access_token"]
+
+    admin_priv = ec.generate_private_key(ec.SECP256R1())
+    admin_pub = admin_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+    trusted_id = client.post("/api/v1/devices/trusted", json={
+        "device_name": "AdminDeprovision",
+        "public_key_pem": admin_pub
+    }, headers={"Authorization": f"Bearer {token_2fa}"}).json()["id"]
+
+    guardian_priv = ec.generate_private_key(ec.SECP256R1())
+    guardian_pub = guardian_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+
+    enroll_resp = client.post("/auth/pairing-token", json={}, headers={"Authorization": f"Bearer {token_2fa}"})
+    p_token = enroll_resp.json()["pairing_token"]
+
+    pair_resp = client.post("/api/v1/devices/pair", json={
+        "device_alias": "GuardianDO",
+        "public_key_pem": guardian_pub,
+        "trusted_phone_number": "+15551239999",
+        "pairing_secret": "11223344556677889900112233445566"
+    }, headers={"Authorization": f"Bearer {p_token}"})
+    target_id = pair_resp.json()["id"]
+    code = pair_resp.json()["confirmation_code"]
+
+    confirm_resp = client.post(f"/api/v1/devices/{target_id}/confirm-pairing", json={"confirmation_code": code}, headers={"Authorization": f"Bearer {token_2fa}"})
+    assert confirm_resp.status_code == 200, confirm_resp.text
+
+    now_epoch = int(time.time())
+    canonical_bytes = create_canonical_command_bytes(
+        pairing_id=pair_resp.json()["pairing_id"],
+        command_id="",
+        target_device_id=target_id,
+        command_type="CLEAR_DEVICE_OWNER",
+        sequence_counter=1,
+        expiry_epoch=now_epoch + 300,
+        parameters_json="{}"
+    )
+    sig = base64.b64encode(admin_priv.sign(canonical_bytes, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+    dispatch_resp = client.post("/api/v1/devices/commands/dispatch", json={
+        "trusted_device_id": trusted_id,
+        "target_device_id": target_id,
+        "command_type": "CLEAR_DEVICE_OWNER",
+        "sequence_counter": 1,
+        "expiry_epoch": now_epoch + 300,
+        "parameters_json": "{}",
+        "admin_signature": sig
+    }, headers={"Authorization": f"Bearer {token_2fa}"})
+
+    assert dispatch_resp.status_code == 201, dispatch_resp.text
+    assert dispatch_resp.json()["command_type"] == "CLEAR_DEVICE_OWNER"
+    assert dispatch_resp.json()["status"] == "PENDING"
+
+
+
 

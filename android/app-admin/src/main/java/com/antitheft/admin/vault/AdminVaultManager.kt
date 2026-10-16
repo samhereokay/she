@@ -80,6 +80,14 @@ class AdminVaultManager(
     }
 
     /**
+     * Derives a deterministic Vault Master Key from the user's master recovery passphrase and salt.
+     * Guarantees that the encrypted server copy CAN be restored on any new phone using the passphrase.
+     */
+    fun deriveVaultMasterKeyFromPassphrase(passphrase: String, salt: ByteArray): SecretKey {
+        return cryptoManager.deriveKeyFromPassphrase(passphrase, salt, VaultCryptoManager.PBKDF2_ITERATIONS)
+    }
+
+    /**
      * Cryptographic Shredding: Delete the Keystore Vault Master Key.
      * Instantly and irrevocably renders all stored vault ciphertexts unrecoverable.
      */

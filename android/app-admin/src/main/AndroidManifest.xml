@@ -34,6 +34,14 @@
             android:launchMode="singleTop"
             android:exported="false" />
 
+        <receiver
+            android:name=".dashboard.AdminDispatchReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.antitheft.admin.DISPATCH_COMMAND" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

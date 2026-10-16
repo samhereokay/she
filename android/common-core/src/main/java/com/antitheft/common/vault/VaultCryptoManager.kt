@@ -147,6 +147,6 @@ class VaultCryptoManager {
         const val GCM_IV_LENGTH_BYTES = 12
         const val GCM_TAG_LENGTH_BYTES = 16
         const val GCM_TAG_LENGTH_BITS = 128
-        const val PBKDF2_ITERATIONS = 100_000
+        const val PBKDF2_ITERATIONS = 600_000
     }
 }

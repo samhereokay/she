@@ -54,7 +54,8 @@ class DeviceOwnerManager {
             UserManager.DISALLOW_ADD_USER,
             UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
             UserManager.DISALLOW_UNINSTALL_APPS,
-            UserManager.DISALLOW_MODIFY_ACCOUNTS
+            UserManager.DISALLOW_MODIFY_ACCOUNTS,
+            UserManager.DISALLOW_AIRPLANE_MODE
         )
 
         for (res in restrictions) {
@@ -90,7 +91,8 @@ class DeviceOwnerManager {
             UserManager.DISALLOW_ADD_USER,
             UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
             UserManager.DISALLOW_UNINSTALL_APPS,
-            UserManager.DISALLOW_MODIFY_ACCOUNTS
+            UserManager.DISALLOW_MODIFY_ACCOUNTS,
+            UserManager.DISALLOW_AIRPLANE_MODE
         )
 
         for (res in restrictions) {
@@ -120,11 +122,62 @@ class DeviceOwnerManager {
             UserManager.DISALLOW_ADD_USER,
             UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
             UserManager.DISALLOW_UNINSTALL_APPS,
-            UserManager.DISALLOW_MODIFY_ACCOUNTS
+            UserManager.DISALLOW_MODIFY_ACCOUNTS,
+            UserManager.DISALLOW_AIRPLANE_MODE
         )
 
         return keys.associateWith { key ->
             userManager.hasUserRestriction(key)
+        }
+    }
+
+    /**
+     * Sets recovery contact message displayed prominently on the keyguard lock screen.
+     */
+    fun setDeviceOwnerLockScreenInfo(context: Context, info: CharSequence?): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        val admin = getAdminComponent(context)
+        return try {
+            dpm.setDeviceOwnerLockScreenInfo(admin, info)
+            Log.i(TAG, "LOCK_SCREEN_INFO_SET: $info")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed setting lock screen info", e)
+            false
+        }
+    }
+
+    /**
+     * Retrieves the current device owner lock screen info string.
+     */
+    fun getDeviceOwnerLockScreenInfo(context: Context): CharSequence? {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return null
+        return try {
+            dpm.getDeviceOwnerLockScreenInfo()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Authenticated Deprovisioning: Safely clears Device Owner status.
+     * Reverts phone to standard consumer mode upon verified owner de-escalation.
+     */
+    fun clearDeviceOwner(context: Context): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        return try {
+            if (dpm.isDeviceOwnerApp(context.packageName)) {
+                clearTheftRestrictions(context)
+                setDeviceOwnerLockScreenInfo(context, null)
+                dpm.clearDeviceOwnerApp(context.packageName)
+                Log.i(TAG, "DEVICE_OWNER_DEPROVISIONED: Cleared Device Owner privileges.")
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed deprovisioning Device Owner", e)
+            false
         }
     }
 
@@ -156,6 +209,24 @@ class DeviceOwnerManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed entering lock-task mode", e)
             return false
+        }
+    }
+
+    /**
+     * Pre-configures Lock-Task packages so the activity can enter kiosk immediately.
+     */
+    fun setLockTaskPackages(context: Context, packages: Array<String>): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
+        val admin = getAdminComponent(context)
+        return try {
+            dpm.setLockTaskPackages(admin, packages)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed setting lock task packages", e)
+            false
         }
     }
 

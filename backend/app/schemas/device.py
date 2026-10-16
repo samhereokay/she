@@ -82,7 +82,7 @@ class CommandDispatchRequest(BaseModel):
     pairing_id: Optional[str] = None
     trusted_device_id: str
     target_device_id: str
-    command_type: str = Field(..., pattern=r"^(LOCATE|RING|STOP_RING|LOCK|STOLEN_MODE|RECOVERED)$")
+    command_type: str = Field(..., pattern=r"^(LOCATE|RING|STOP_RING|LOCK|STOLEN_MODE|RECOVERED|CLEAR_DEVICE_OWNER)$")
     sequence_counter: int = Field(..., ge=1)
     expiry_epoch: int = Field(..., description="Unix epoch timestamp when command expires")
     parameters_json: str = Field(default="{}", description="JSON string of command parameters")
