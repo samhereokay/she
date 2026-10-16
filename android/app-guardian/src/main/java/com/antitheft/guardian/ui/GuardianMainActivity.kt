@@ -1,6 +1,7 @@
 package com.antitheft.guardian.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -54,10 +55,6 @@ class GuardianMainActivity : AppCompatActivity() {
         storageHelper = DirectBootStorageHelper(this)
         captureManager = LocationCaptureManager(this)
 
-        val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
-        android.util.Log.i("GuardianPairing", "PAIRING_PUBLIC_KEY:${keystoreManager.getPublicKeyPem().replace("\n", "\\n")}")
-        android.util.Log.i("GuardianPairing", "DEVICE_ID:${storageHelper.getDeviceId()}")
-
         setupViews()
         checkAndRequestPermissions()
     }
@@ -69,11 +66,15 @@ class GuardianMainActivity : AppCompatActivity() {
     }
 
     private fun checkAndEnterKioskIfNeeded() {
-        if (storageHelper.isStolenMode() && deviceOwnerManager.isDeviceOwner(this) && !isLockTaskActive) {
+        val isStolen = storageHelper.isStolenMode()
+        findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = if (isStolen || isLockTaskActive) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<TextView>(R.id.tvEmergencyPhone)?.text = "Owner Emergency Contact: ${storageHelper.getTrustedPhoneNumber().ifBlank { "+1-555-0199" }}"
+
+        if (isStolen && deviceOwnerManager.isDeviceOwner(this) && !isLockTaskActive) {
             val success = deviceOwnerManager.enterLockTaskStolenMode(this)
             if (success) {
                 isLockTaskActive = true
-                findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Exit Stolen Kiosk Mode"
+                findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Kiosk Mode Active (Protected)"
                 android.util.Log.i("GuardianKiosk", "Automatically engaged LockTask kiosk mode due to active stolen mode.")
             }
         }
@@ -81,6 +82,12 @@ class GuardianMainActivity : AppCompatActivity() {
 
     private fun setupViews() {
         findViewById<TextView>(R.id.tvDeviceId).text = "Device ID: ${storageHelper.getDeviceId()}"
+
+        findViewById<Button>(R.id.btnCallEmergencyContact)?.setOnClickListener {
+            val phone = storageHelper.getTrustedPhoneNumber().ifBlank { "+15550199" }
+            val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$phone"))
+            startActivity(dialIntent)
+        }
 
         findViewById<Button>(R.id.btnCaptureNow).setOnClickListener {
             lifecycleScope.launch {
@@ -136,17 +143,17 @@ class GuardianMainActivity : AppCompatActivity() {
                 val success = deviceOwnerManager.enterLockTaskStolenMode(this)
                 if (success) {
                     isLockTaskActive = true
-                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Exit Stolen Kiosk Mode"
-                    Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Navigation Suppressed)", Toast.LENGTH_LONG).show()
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Kiosk Mode Active (Protected)"
+                    findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.VISIBLE
+                    Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Dialer Permitted, Nav Suppressed)", Toast.LENGTH_LONG).show()
                 }
             } else {
-                // Thief protection: Exiting kiosk mode requires owner authentication or signed Admin command
-                requestOwnerAuth("Authenticate to Exit Kiosk Mode") {
-                    deviceOwnerManager.exitLockTaskMode(this)
-                    isLockTaskActive = false
-                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
-                    Toast.makeText(this, "Stolen Kiosk Mode EXITED by authenticated owner", Toast.LENGTH_SHORT).show()
-                }
+                // Thief protection: Exiting kiosk mode strictly requires owner-signed command from Admin companion phone
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Kiosk Lockdown Active")
+                    .setMessage("This device is locked into Anti-Theft Kiosk mode. To prevent thief bypass, local PIN exit is disabled. An owner-signed EXIT_KIOSK or RECOVERED command must be dispatched from the registered Admin phone.")
+                    .setPositiveButton("OK", null)
+                    .show()
             }
         }
 
@@ -234,11 +241,13 @@ class GuardianMainActivity : AppCompatActivity() {
         when (action) {
             "enforce_restrictions" -> {
                 val res = deviceOwnerManager.applyTheftRestrictions(this)
+                deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
                 Toast.makeText(this, "Enforced ${res.count { it.value }} restrictions", Toast.LENGTH_SHORT).show()
                 refreshDashboardData()
             }
             "clear_restrictions" -> {
                 deviceOwnerManager.clearTheftRestrictions(this)
+                deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, null)
                 Toast.makeText(this, "Restrictions cleared", Toast.LENGTH_SHORT).show()
                 refreshDashboardData()
             }
@@ -246,15 +255,20 @@ class GuardianMainActivity : AppCompatActivity() {
                 val ok = deviceOwnerManager.enterLockTaskStolenMode(this)
                 if (ok) {
                     isLockTaskActive = true
-                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Exit Stolen Kiosk Mode"
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Kiosk Mode Active (Protected)"
+                    findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.VISIBLE
                 }
             }
             "exit_kiosk" -> {
+                storageHelper.setStolenMode(false)
                 deviceOwnerManager.exitLockTaskMode(this)
                 isLockTaskActive = false
                 findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
+                findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.GONE
+                refreshDashboardData()
             }
             "lock_now" -> {
+                deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
                 deviceOwnerManager.lockNow(this)
             }
         }
@@ -282,6 +296,18 @@ class GuardianMainActivity : AppCompatActivity() {
     private fun applyPairingPayload(jsonString: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
+                if (storageHelper.isPaired()) {
+                    android.util.Log.w("GuardianPairing", "REJECTED_ALREADY_PAIRED: Device is already paired to an owner. Re-pairing rejected.")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@GuardianMainActivity,
+                            "Re-pairing rejected: Device is already paired. Send an owner-signed UNPAIR command first.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    return@launch
+                }
+
                 val clean = jsonString.trim()
                 val parsedJson = if (!clean.startsWith("{")) {
                     try {
@@ -340,7 +366,7 @@ class GuardianMainActivity : AppCompatActivity() {
                     val respBody = response.body?.string() ?: ""
                     
                     // Immediately purge pairing token from memory
-                    android.util.Log.i("GuardianPairing", "PAIRING_TOKEN_DISCARDED: Single-use pairing token consumed and cleared from memory. Never written to persistent storage.")
+                    android.util.Log.i("GuardianPairing", "PAIRING_TOKEN_DISCARDED: Single-use pairing token consumed and cleared from memory.")
 
                     if (response.isSuccessful) {
                         val respObj = com.google.gson.JsonParser.parseString(respBody).asJsonObject
@@ -354,9 +380,9 @@ class GuardianMainActivity : AppCompatActivity() {
                         }
                         confirmationCode = respObj.get("confirmation_code")?.asString
                         successMsg = "Device enrollment requested! Confirm code: $confirmationCode on Admin phone."
-                        android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId PairingID: $pairingId ConfirmationCode: $confirmationCode")
+                        android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId PairingID: $pairingId")
                     } else {
-                        android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}: $respBody")
+                        android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}")
                         successMsg = "Local pairing set. Backend returned ${response.code}"
                     }
                 }

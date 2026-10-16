@@ -102,12 +102,39 @@ class AdminDashboardActivity : AppCompatActivity() {
     }
 
     private fun showCommandSelectionDialog(device: DeviceDto) {
-        val commands = arrayOf("LOCK", "RING", "STOP_RING", "LOCATE", "STOLEN_MODE", "CLEAR_DEVICE_OWNER")
+        val commands = arrayOf("LOCK", "RING", "STOP_RING", "LOCATE", "STOLEN_MODE", "EXIT_KIOSK", "UNPAIR", "CLEAR_DEVICE_OWNER")
         AlertDialog.Builder(this)
             .setTitle("Send Command to ${device.device_alias}")
             .setItems(commands) { _, which ->
                 val selectedCmd = commands[which]
-                promptForTotpAndDispatch(device.id, selectedCmd)
+                if (selectedCmd == "CLEAR_DEVICE_OWNER") {
+                    showDestructiveClearOwnerDialog(device.id)
+                } else {
+                    promptForTotpAndDispatch(device.id, selectedCmd)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showDestructiveClearOwnerDialog(targetDeviceId: String) {
+        val input = EditText(this).apply {
+            hint = "6-digit TOTP code (strictly required)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setPadding(32, 32, 32, 32)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ DANGER: CLEAR DEVICE OWNER")
+            .setMessage("This command permanently deprovisions Device Owner status on the target device, clears all theft restrictions (safe boot, factory reset protection), and revokes enterprise lockdown.\n\nEnter your 6-digit TOTP authenticator code to confirm this destructive action:")
+            .setView(input)
+            .setPositiveButton("Deprovision Device") { _, _ ->
+                val totpCode = input.text.toString().trim()
+                if (totpCode.isBlank() || totpCode.length != 6) {
+                    Toast.makeText(this, "Valid 6-digit TOTP code is strictly required to clear Device Owner", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                dispatchCommandOnline(targetDeviceId, "CLEAR_DEVICE_OWNER", totpCode)
             }
             .setNegativeButton("Cancel", null)
             .show()

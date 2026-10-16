@@ -98,4 +98,49 @@ class SmsCommandSecurityTest {
         // 6. Completely garbage string
         assertNull(SmsPduSerializer.parseInboundCommand("Random text from SMS spam", validKey))
     }
+
+    @Test
+    fun testAcceptedSmsReplayRejection() {
+        val nowEpoch = 1729040000L
+        val expiryEpoch = nowEpoch + 600L
+        val seq = 99999L
+
+        // Format an inbound SMS command
+        val pdu = SmsPduSerializer.formatInboundCommand("LOCATE", seq, expiryEpoch, validKey)
+        val parsed1 = SmsPduSerializer.parseInboundCommand(pdu, validKey)
+        assertNotNull(parsed1)
+        assertTrue(parsed1!!.isHmacValid)
+
+        // Simulated inbound sequence tracker in Direct Boot DE storage
+        var lastInboundSmsSequence = 0L
+
+        // Step 1: First reception of sequence 99999
+        assertTrue("Initial sequence 99999 > 0 must be accepted", parsed1.sequenceNumber > lastInboundSmsSequence)
+        // Upon acceptance, receiver persists the accepted inbound sequence counter:
+        lastInboundSmsSequence = parsed1.sequenceNumber
+        assertEquals(99999L, lastInboundSmsSequence)
+
+        // Step 2: Adversary replays the EXACT SAME accepted SMS PDU with sequence 99999
+        val parsedReplay = SmsPduSerializer.parseInboundCommand(pdu, validKey)
+        assertNotNull(parsedReplay)
+        assertTrue(parsedReplay!!.isHmacValid) // HMAC is valid because it was captured off the air
+
+        val isReplayAcceptable = parsedReplay.sequenceNumber > lastInboundSmsSequence
+        assertFalse(
+            "Replaying accepted SMS #99999 must be REJECTED! (seq ${parsedReplay.sequenceNumber} <= lastInbound $lastInboundSmsSequence)",
+            isReplayAcceptable
+        )
+
+        // Step 3: Adversary replays an older sequence (e.g. #50)
+        val oldPdu = SmsPduSerializer.formatInboundCommand("LOCATE", 50L, expiryEpoch, validKey)
+        val parsedOld = SmsPduSerializer.parseInboundCommand(oldPdu, validKey)
+        assertNotNull(parsedOld)
+        assertTrue(parsedOld!!.isHmacValid)
+
+        val isOldAcceptable = parsedOld.sequenceNumber > lastInboundSmsSequence
+        assertFalse(
+            "Stale counter #50 must be REJECTED against accepted sequence #99999! (seq 50 <= lastInbound $lastInboundSmsSequence)",
+            isOldAcceptable
+        )
+    }
 }

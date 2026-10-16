@@ -177,6 +177,32 @@ class DirectBootStorageHelper(context: Context) {
         prefs.edit().putBoolean(KEY_IS_STOLEN_MODE, enabled).apply()
     }
 
+    fun isPaired(): Boolean {
+        return !getAdminPublicKeyPem().isNullOrBlank()
+    }
+
+    @Synchronized
+    fun clearPairing() {
+        prefs.edit()
+            .remove(KEY_ADMIN_PUBLIC_KEY)
+            .remove(KEY_PAIRING_ID)
+            .remove(KEY_LAST_ADMIN_CMD_SEQ)
+            .remove(KEY_LAST_INBOUND_SMS_SEQ)
+            .remove(KEY_IS_STOLEN_MODE)
+            .commit()
+        secureStorage.remove(KEY_PAIRING_SECRET)
+    }
+
+    @Synchronized
+    fun getLastInboundSmsSequence(): Long {
+        return prefs.getLong(KEY_LAST_INBOUND_SMS_SEQ, 0L)
+    }
+
+    @Synchronized
+    fun setLastInboundSmsSequence(seq: Long) {
+        prefs.edit().putLong(KEY_LAST_INBOUND_SMS_SEQ, seq).commit()
+    }
+
     companion object {
         private const val PREFS_NAME = "guardian_de_storage"
         private const val SECURE_PREFS_NAME = "guardian_de_secure_storage"
@@ -190,6 +216,7 @@ class DirectBootStorageHelper(context: Context) {
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
         private const val KEY_ADMIN_PUBLIC_KEY = "admin_public_key"
         private const val KEY_LAST_ADMIN_CMD_SEQ = "last_admin_cmd_seq"
+        private const val KEY_LAST_INBOUND_SMS_SEQ = "last_inbound_sms_seq"
         private const val KEY_IS_STOLEN_MODE = "is_stolen_mode"
         private const val KEY_PAIRING_ID = "pairing_id"
     }

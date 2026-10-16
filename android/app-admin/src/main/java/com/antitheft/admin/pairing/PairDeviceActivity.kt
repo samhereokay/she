@@ -90,7 +90,6 @@ class PairDeviceActivity : AppCompatActivity() {
             )
 
             val jsonString = Gson().toJson(pairingPayload)
-            android.util.Log.i("AdminPairing", "PAIRING_PAYLOAD:$jsonString")
 
             try {
                 val barcodeEncoder = BarcodeEncoder()

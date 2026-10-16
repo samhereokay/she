@@ -72,6 +72,10 @@ class KeystoreAesGcmStorage(
         prefs.edit().putString(key, encoded).apply()
     }
 
+    fun remove(key: String) {
+        prefs.edit().remove(key).apply()
+    }
+
     fun getDecryptedString(key: String, defaultValue: String? = null): String? {
         val encoded = prefs.getString(key, null) ?: return defaultValue
         return try {

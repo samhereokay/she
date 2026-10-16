@@ -28,7 +28,8 @@ object CommandExecutionManager {
             "STOP_RING" -> executeStopRing()
             "LOCK" -> executeLock(context)
             "STOLEN_MODE" -> executeStolenMode(context, true, parametersJson)
-            "RECOVERED" -> executeStolenMode(context, false)
+            "RECOVERED", "EXIT_KIOSK" -> executeStolenMode(context, false)
+            "UNPAIR" -> executeUnpair(context)
             "CLEAR_DEVICE_OWNER" -> executeClearDeviceOwner(context)
             else -> {
                 Log.w(TAG, "Unknown recovery command type: $commandType")
@@ -107,11 +108,40 @@ object CommandExecutionManager {
             if (deviceOwnerManager.isDeviceOwner(context)) {
                 deviceOwnerManager.clearTheftRestrictions(context)
                 deviceOwnerManager.setDeviceOwnerLockScreenInfo(context, null)
+                try {
+                    val exitKioskIntent = Intent(context, com.antitheft.guardian.ui.GuardianMainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra("INTERNAL_EXIT_KIOSK", true)
+                    }
+                    context.startActivity(exitKioskIntent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to dispatch exit kiosk intent", e)
+                }
             }
         }
 
         // Restart or update tracking service with new stolen mode cadence
         TrackingForegroundService.start(context)
+        return true
+    }
+
+    fun executeUnpair(context: Context): Boolean {
+        Log.i(TAG, "Executing verified UNPAIR command from registered owner. Clearing pairing credentials.")
+        val storage = DirectBootStorageHelper(context)
+        storage.clearPairing()
+        if (deviceOwnerManager.isDeviceOwner(context)) {
+            deviceOwnerManager.clearTheftRestrictions(context)
+            deviceOwnerManager.setDeviceOwnerLockScreenInfo(context, null)
+            try {
+                val exitKioskIntent = Intent(context, com.antitheft.guardian.ui.GuardianMainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra("INTERNAL_EXIT_KIOSK", true)
+                }
+                context.startActivity(exitKioskIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to dispatch exit kiosk intent", e)
+            }
+        }
         return true
     }
 

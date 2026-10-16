@@ -55,7 +55,7 @@ class LocationCaptureManager(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun captureCurrentLocation(timeoutMs: Long = 10000): LocationEntity? {
+    suspend fun captureCurrentLocation(timeoutMs: Long = 10000): LocationEntity? = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
         val location: Location? = if (hasPlayServices && fusedLocationClient != null) {
             val cts = CancellationTokenSource()
             try {
@@ -70,7 +70,7 @@ class LocationCaptureManager(private val context: Context) {
             nativeFallback.requestSingleFix(timeoutMs)
         }
 
-        return location?.let { persistLocation(it) } ?: getLastKnownLocation()
+        location?.let { persistLocation(it) } ?: getLastKnownLocation()
     }
 
     private suspend fun persistLocation(loc: Location): LocationEntity {

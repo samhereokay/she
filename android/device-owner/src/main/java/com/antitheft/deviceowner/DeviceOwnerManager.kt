@@ -195,16 +195,22 @@ class DeviceOwnerManager {
         }
 
         try {
-            // Allow this package to run in lock-task mode
-            dpm.setLockTaskPackages(admin, arrayOf(activity.packageName))
+            // Allow this package and system dialer to run in lock-task mode for emergency return
+            val allowedPackages = (arrayOf(
+                activity.packageName,
+                "com.android.dialer",
+                "com.google.android.dialer",
+                "com.android.phone"
+            )).distinct().toTypedArray()
+            dpm.setLockTaskPackages(admin, allowedPackages)
 
-            // Suppress power menu, status bar, home, overview, and notifications
+            // Enable Keyguard feature so lock-screen recovery message displays upon lockNow()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_KEYGUARD)
             }
 
             activity.startLockTask()
-            Log.i(TAG, "ACTIVATED_LOCK_TASK_MODE: Kiosk stolen recovery mode active.")
+            Log.i(TAG, "ACTIVATED_LOCK_TASK_MODE: Kiosk stolen recovery mode active with dialer whitelisted.")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed entering lock-task mode", e)
@@ -219,9 +225,14 @@ class DeviceOwnerManager {
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager ?: return false
         val admin = getAdminComponent(context)
         return try {
-            dpm.setLockTaskPackages(admin, packages)
+            val allowedPackages = (packages + arrayOf(
+                "com.android.dialer",
+                "com.google.android.dialer",
+                "com.android.phone"
+            )).distinct().toTypedArray()
+            dpm.setLockTaskPackages(admin, allowedPackages)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_KEYGUARD)
             }
             true
         } catch (e: Exception) {

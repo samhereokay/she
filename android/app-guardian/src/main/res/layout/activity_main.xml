@@ -10,6 +10,73 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
+        <!-- Emergency Recovery Card (Shown during Stolen Kiosk Mode) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardEmergencyContact"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="6dp"
+            app:cardBackgroundColor="#FEE2E2">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/tvEmergencyHeader"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STOLEN DEVICE: RECOVERY ACTIVE"
+                    android:textColor="#991B1B"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvEmergencyContactMsg"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="This device is protected by Anti-Theft Guardian. If found, please return to owner immediately:"
+                    android:textColor="#7F1D1D"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvEmergencyPhone"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Owner Emergency Contact: +1-555-0199"
+                    android:textColor="#991B1B"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnCallEmergencyContact"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="#DC2626"
+                    android:text="CALL OWNER EMERGENCY CONTACT"
+                    android:textColor="#FFFFFF" />
+
+                <TextView
+                    android:id="@+id/tvKioskExitNotice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Kiosk lockdown can only be lifted by an owner-signed EXIT_KIOSK command from the registered Admin phone."
+                    android:textColor="#7F1D1D"
+                    android:textSize="11sp"
+                    android:textStyle="italic" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Header Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
