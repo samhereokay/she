@@ -1,0 +1,26 @@
+{
+  "description": "Shared cryptographic test vectors for ECDSA P-256 signing and 48-bit truncated HMAC-SHA256, verified across Python backend and Android Kotlin common-core",
+  "hmac_48bit_vector": {
+    "key_ascii": "shared_pairing_secret_key_32b!!",
+    "message_ascii": "ST:Pixel8|37.77492,-122.41941|14|1729036800|104",
+    "full_hmac_sha256_hex": "D7D35CACE30016FBFFC4046D4F7D030A1AB6CEA4587919E7727B4A8C62BCB6CA",
+    "expected_truncated_hmac_48bit_hex": "D7D35CACE300",
+    "full_sms_pdu": "ST:Pixel8|37.77492,-122.41941|14|1729036800|104|D7D35CACE300"
+  },
+  "inbound_sms_command_vector": {
+    "key_ascii": "shared_pairing_secret_key_32b!!",
+    "command_type": "LOCATE",
+    "sequence_number": 201,
+    "expiry_epoch_sec": 1729037400,
+    "command_body_without_hmac": "CMD:LOCATE|201|1729037400",
+    "full_hmac_sha256_hex": "5CF65B4789710AB2A3E8E7A94D11FD0D0832D9AA6FDE346A178CFB6F3BA03AA5",
+    "expected_truncated_hmac_48bit_hex": "5CF65B478971",
+    "full_sms_pdu": "CMD:LOCATE|201|1729037400|5CF65B478971"
+  },
+  "ecdsa_p256_vector": {
+    "private_key_pkcs8_pem": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgeKMNsojWcQGawOGP\nh8vuLV4Wg1HN7uK4dlad1+x3HcehRANCAARTfFSx6cKwOQ4IZj3kGDLTS0tttSOz\nRfKUNjFZxc974vgKb38enafiBRYRC8c42rb2RNQrMfMBLS0aHxVZajD/\n-----END PRIVATE KEY-----",
+    "public_key_spki_pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEU3xUsenCsDkOCGY95Bgy00tLbbUj\ns0XylDYxWcXPe+L4Cm9/Hp2n4gUWEQvHONq29kTUKzHzAS0tGh8VWWow/w==\n-----END PUBLIC KEY-----",
+    "canonical_payload_string": "device-abc-123|100|1729000000|37.774929|-122.419416|12.5",
+    "signature_der_base64": "MEQCIC39XomullhKQCiTlpVKbSaCXW/PXfH4/dsFBRGiv17yAiBqUTjvQdgs/OmCEb54epg5QiUK3YEiFgtm/iTlN5Wf1Q=="
+  }
+}

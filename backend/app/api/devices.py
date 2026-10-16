@@ -15,23 +15,23 @@ router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
 
 def compute_device_status(last_location: LocationEvent) -> str:
     """
-    Calculate dynamic device status:
-    - LIVE: fix acquired within the last 5 minutes
-    - DELAYED: fix acquired between 5 minutes and 24 hours ago
-    - UNAVAILABLE: no fix, or fix older than 24 hours
+    Calculate dynamic device status based on TRUSTED SERVER CLOCK (server_receipt_time):
+    - RECENT: server received fix within the last 5 minutes
+    - DELAYED: server received fix between 5 minutes and 24 hours ago
+    - UNAVAILABLE: no fix, or server receipt older than 24 hours
     """
     if not last_location:
         return "UNAVAILABLE"
     
     now = datetime.now(timezone.utc)
-    cap_time = last_location.capture_time
-    if cap_time.tzinfo is None:
-        cap_time = cap_time.replace(tzinfo=timezone.utc)
+    receipt_time = last_location.server_receipt_time
+    if receipt_time.tzinfo is None:
+        receipt_time = receipt_time.replace(tzinfo=timezone.utc)
         
-    diff_seconds = (now - cap_time).total_seconds()
+    diff_seconds = (now - receipt_time).total_seconds()
     
     if diff_seconds < 300:  # 5 minutes
-        return "LIVE"
+        return "RECENT"
     elif diff_seconds < 86400:  # 24 hours
         return "DELAYED"
     else:
@@ -125,13 +125,14 @@ def get_device(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
-    """Get single protected device with its latest location and calculated status."""
+    """Get single protected device with strict ownership enforcement."""
     device = db.query(ProtectedDevice).filter(
         ProtectedDevice.id == device_id,
         ProtectedDevice.user_id == current_user.id
     ).first()
     
     if not device:
+        # Cross-user authorization: return 404
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
         
     latest_loc = (
@@ -155,3 +156,34 @@ def get_device(
         last_location=loc_resp,
         calculated_status=calc_status
     )
+
+
+@router.get("/{device_id}/sync-status")
+def get_device_sync_status(
+    device_id: str,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Called by Guardian during pairing or after reinstall to resolve sequence number resets.
+    Returns the highest acknowledged sequence number so client can resume without duplicate conflicts.
+    """
+    device = db.query(ProtectedDevice).filter(ProtectedDevice.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    highest_seq = (
+        db.query(LocationEvent.sequence_number)
+        .filter(LocationEvent.protected_device_id == device.id)
+        .order_by(LocationEvent.sequence_number.desc())
+        .first()
+    )
+
+    last_ack = highest_seq[0] if highest_seq else 0
+
+    return {
+        "device_id": device.id,
+        "status": device.status,
+        "highest_acknowledged_sequence": last_ack,
+        "next_expected_sequence": last_ack + 1
+    }
+

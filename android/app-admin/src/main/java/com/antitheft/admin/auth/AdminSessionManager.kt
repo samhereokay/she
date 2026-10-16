@@ -1,35 +1,30 @@
 package com.antitheft.admin.auth
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import com.antitheft.common.crypto.KeystoreAesGcmStorage
 
+/**
+ * Session manager backed by hardware-backed Keystore AES-256-GCM storage.
+ * Completely replaces deprecated EncryptedSharedPreferences library.
+ */
 class AdminSessionManager(context: Context) {
 
-    private val prefs: SharedPreferences
-
-    init {
-        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-        prefs = EncryptedSharedPreferences.create(
-            "admin_secure_prefs",
-            masterKeyAlias,
-            context,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    private val secureStorage = KeystoreAesGcmStorage(
+        context = context,
+        prefsName = "admin_secure_storage",
+        keyAlias = "admin_session_aes_key"
+    )
 
     fun saveToken(token: String) {
-        prefs.edit().putString(KEY_TOKEN, token).apply()
+        secureStorage.putEncryptedString(KEY_TOKEN, token)
     }
 
     fun getToken(): String? {
-        return prefs.getString(KEY_TOKEN, null)
+        return secureStorage.getDecryptedString(KEY_TOKEN)
     }
 
     fun clearSession() {
-        prefs.edit().remove(KEY_TOKEN).apply()
+        secureStorage.putEncryptedString(KEY_TOKEN, null)
     }
 
     fun isLoggedIn(): Boolean {
@@ -37,11 +32,11 @@ class AdminSessionManager(context: Context) {
     }
 
     fun getServerUrl(): String {
-        return prefs.getString(KEY_SERVER_URL, "http://10.0.2.2:8000") ?: "http://10.0.2.2:8000"
+        return secureStorage.getDecryptedString(KEY_SERVER_URL, "http://10.0.2.2:8000") ?: "http://10.0.2.2:8000"
     }
 
     fun setServerUrl(url: String) {
-        prefs.edit().putString(KEY_SERVER_URL, url).apply()
+        secureStorage.putEncryptedString(KEY_SERVER_URL, url)
     }
 
     companion object {

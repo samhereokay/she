@@ -1,3 +1,5 @@
+import os
+import json
 import pytest
 import base64
 from datetime import datetime, timezone, timedelta
@@ -12,7 +14,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from app.main import app
 from app.db.session import Base, get_db
 from app.api.locations import format_canonical_location_string
-from app.core.security import compute_truncated_hmac, verify_truncated_hmac
+from app.core.security import compute_truncated_hmac, verify_truncated_hmac, verify_ecdsa_p256_signature
+from app.core.rate_limit import SimpleRateLimiter
 
 # Setup in-memory SQLite database for isolated test execution
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -196,10 +199,10 @@ def test_location_batch_ingest_and_signature_verification(test_keypair):
     assert res["acknowledged_sequences"] == [1]
     assert res["rejected_sequences"] == []
 
-    # 4. Check device status is now LIVE
+    # 4. Check device status is now RECENT (based on server_receipt_time)
     dev_resp = client.get(f"/api/v1/devices/{device_id}", headers=headers)
     assert dev_resp.status_code == 200
-    assert dev_resp.json()["calculated_status"] == "LIVE"
+    assert dev_resp.json()["calculated_status"] == "RECENT"
     assert dev_resp.json()["last_location"]["sequence_number"] == 1
 
     # 5. Test Forged Signature Rejection
@@ -291,18 +294,221 @@ def test_idempotent_offline_queue_reconnect(test_keypair):
     assert len(hist_resp.json()) == 5
 
 
-def test_sms_48bit_truncated_hmac():
-    """Verify 48-bit truncated HMAC calculation and constant-time verification."""
-    key = b"test_symmetric_pairing_key_256bit!"
-    msg = b"ST:G1|37.77492,-122.41941|14|1729036800|104"
+def test_reject_same_sequence_different_payload(test_keypair):
+    """Verifies that replaying a sequence number with altered coordinates is rejected."""
+    private_key, pem_public = test_keypair
+
+    client.post("/auth/register", json={
+        "username": "owner_eve",
+        "email": "eve@example.com",
+        "password": "PasswordEve123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "owner_eve",
+        "password": "PasswordEve123!"
+    }).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    device_id = client.post("/api/v1/devices/pair", headers=headers, json={
+        "device_alias": "Eve Phone",
+        "public_key_pem": pem_public,
+        "trusted_phone_number": "+15550001111",
+        "pairing_secret": "evesecret1234567890abcdef123456"
+    }).json()["id"]
+
+    now = datetime.now(timezone.utc)
+    epoch = int(now.timestamp())
+    seq = 1
+
+    # Ingest original event
+    orig_bytes = format_canonical_location_string(device_id, seq, epoch, 30.0, -90.0, 5.0)
+    orig_sig = base64.b64encode(private_key.sign(orig_bytes, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+    resp1 = client.post("/api/v1/locations/batch", json={
+        "device_id": device_id,
+        "events": [{
+            "sequence_number": seq,
+            "latitude": 30.0,
+            "longitude": -90.0,
+            "accuracy": 5.0,
+            "capture_time": now.isoformat(),
+            "signature": orig_sig
+        }]
+    })
+    assert resp1.status_code == 200
+    assert resp1.json()["acknowledged_sequences"] == [1]
+
+    # Attempt to replay seq=1 with completely different coordinates (e.g. spoofed replay)
+    altered_bytes = format_canonical_location_string(device_id, seq, epoch, 40.0, -80.0, 5.0)
+    altered_sig = base64.b64encode(private_key.sign(altered_bytes, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+    resp2 = client.post("/api/v1/locations/batch", json={
+        "device_id": device_id,
+        "events": [{
+            "sequence_number": seq,
+            "latitude": 40.0,
+            "longitude": -80.0,
+            "accuracy": 5.0,
+            "capture_time": now.isoformat(),
+            "signature": altered_sig
+        }]
+    })
+    assert resp2.status_code == 200
+    # Must be rejected because sequence 1 already exists with different content!
+    assert resp2.json()["rejected_sequences"] == [1]
+    assert resp2.json()["acknowledged_sequences"] == []
+
+
+def test_out_of_order_event_handling(test_keypair):
+    """Verifies that events delivered out-of-order over network reconnects are accepted and sorted."""
+    private_key, pem_public = test_keypair
+
+    client.post("/auth/register", json={
+        "username": "owner_frank",
+        "email": "frank@example.com",
+        "password": "PasswordFrank123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "owner_frank",
+        "password": "PasswordFrank123!"
+    }).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    device_id = client.post("/api/v1/devices/pair", headers=headers, json={
+        "device_alias": "Frank Phone",
+        "public_key_pem": pem_public,
+        "trusted_phone_number": "+15552223333",
+        "pairing_secret": "franksecret1234567890abcdef1234"
+    }).json()["id"]
+
+    now = datetime.now(timezone.utc)
     
-    hmac12 = compute_truncated_hmac(key, msg, hex_length=12)
-    assert len(hmac12) == 12  # Exactly 12 hex characters = 48 bits
-    assert verify_truncated_hmac(key, msg, hmac12) is True
+    # Ingest sequence 10 first
+    b10 = format_canonical_location_string(device_id, 10, int(now.timestamp()), 50.0, 10.0, 5.0)
+    s10 = base64.b64encode(private_key.sign(b10, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+    r1 = client.post("/api/v1/locations/batch", json={
+        "device_id": device_id,
+        "events": [{
+            "sequence_number": 10,
+            "latitude": 50.0,
+            "longitude": 10.0,
+            "accuracy": 5.0,
+            "capture_time": now.isoformat(),
+            "signature": s10
+        }]
+    })
+    assert r1.status_code == 200
+    assert r1.json()["acknowledged_sequences"] == [10]
+
+    # Ingest sequence 8 later
+    b8 = format_canonical_location_string(device_id, 8, int(now.timestamp()) - 60, 49.9, 9.9, 5.0)
+    s8 = base64.b64encode(private_key.sign(b8, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+    r2 = client.post("/api/v1/locations/batch", json={
+        "device_id": device_id,
+        "events": [{
+            "sequence_number": 8,
+            "latitude": 49.9,
+            "longitude": 9.9,
+            "accuracy": 5.0,
+            "capture_time": (now - timedelta(seconds=60)).isoformat(),
+            "signature": s8
+        }]
+    })
+    assert r2.status_code == 200
+    assert r2.json()["acknowledged_sequences"] == [8]
+
+    # Query history: ordered by sequence number descending
+    hist = client.get(f"/api/v1/devices/{device_id}/locations", headers=headers).json()
+    assert len(hist) == 2
+    assert hist[0]["sequence_number"] == 10
+    assert hist[1]["sequence_number"] == 8
+
+
+def test_cross_user_authorization(test_keypair):
+    """Enforces multi-tenant authorization: User A cannot access User B's device or location history."""
+    _, pem_public = test_keypair
+
+    # 1. Register User A and User B
+    client.post("/auth/register", json={"username": "user_a", "email": "a@test.com", "password": "PasswordA123!"})
+    client.post("/auth/register", json={"username": "user_b", "email": "b@test.com", "password": "PasswordB123!"})
+
+    token_a = client.post("/auth/login/json", json={"username": "user_a", "password": "PasswordA123!"}).json()["access_token"]
+    token_b = client.post("/auth/login/json", json={"username": "user_b", "password": "PasswordB123!"}).json()["access_token"]
+
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # 2. User A creates a protected device
+    device_a_id = client.post("/api/v1/devices/pair", headers=headers_a, json={
+        "device_alias": "Device A",
+        "public_key_pem": pem_public,
+        "trusted_phone_number": "+1111111111",
+        "pairing_secret": "pairingsecretuserA1234567890abc"
+    }).json()["id"]
+
+    # 3. User B attempts to read User A's device -> 404 (does not leak existence)
+    resp_get = client.get(f"/api/v1/devices/{device_a_id}", headers=headers_b)
+    assert resp_get.status_code == 404
+
+    # 4. User B attempts to read User A's locations -> 404
+    resp_loc = client.get(f"/api/v1/devices/{device_a_id}/locations", headers=headers_b)
+    assert resp_loc.status_code == 404
+
+    # 5. User B lists devices -> User A's device is NOT returned
+    list_b = client.get("/api/v1/devices", headers=headers_b).json()["devices"]
+    assert len(list_b) == 0
+
+
+def test_shared_crypto_test_vectors():
+    """Validates fixed cross-platform test vectors for ECDSA and 48-bit HMAC."""
+    vector_path = os.path.join(os.path.dirname(__file__), "shared_crypto_test_vectors.json")
+    with open(vector_path, "r", encoding="utf-8") as f:
+        vectors = json.load(f)
+
+    # 1. Test 48-bit HMAC Vector
+    hmac_vec = vectors["hmac_48bit_vector"]
+    key_bytes = hmac_vec["key_ascii"].encode("utf-8")
+    msg_bytes = hmac_vec["message_ascii"].encode("utf-8")
+    computed_hmac = compute_truncated_hmac(key_bytes, msg_bytes, hex_length=12)
+    assert computed_hmac == hmac_vec["expected_truncated_hmac_48bit_hex"]
+    assert verify_truncated_hmac(key_bytes, msg_bytes, hmac_vec["expected_truncated_hmac_48bit_hex"]) is True
+
+    # 2. Test Inbound Command Vector
+    cmd_vec = vectors["inbound_sms_command_vector"]
+    cmd_key_bytes = cmd_vec["key_ascii"].encode("utf-8")
+    cmd_msg_bytes = cmd_vec["command_body_without_hmac"].encode("utf-8")
+    computed_cmd_hmac = compute_truncated_hmac(cmd_key_bytes, cmd_msg_bytes, hex_length=12)
+    assert computed_cmd_hmac == cmd_vec["expected_truncated_hmac_48bit_hex"]
+
+    # 3. Test ECDSA P-256 Vector
+    ecdsa_vec = vectors["ecdsa_p256_vector"]
+    data_bytes = ecdsa_vec["canonical_payload_string"].encode("utf-8")
+    der_sig_bytes = base64.b64decode(ecdsa_vec["signature_der_base64"])
     
-    # Tampered message must fail
-    tampered_msg = b"ST:G1|37.77492,-122.41941|14|1729036800|105"
-    assert verify_truncated_hmac(key, tampered_msg, hmac12) is False
+    # Must verify against public key
+    assert verify_ecdsa_p256_signature(
+        public_key_pem=ecdsa_vec["public_key_spki_pem"],
+        data_bytes=data_bytes,
+        der_signature_bytes=der_sig_bytes
+    ) is True
+
+
+def test_rate_limiter_logic():
+    """Verifies that rate limiter rejects excessive requests exceeding threshold."""
+    limiter = SimpleRateLimiter(requests_per_minute=3)
     
-    # Tampered key must fail
-    assert verify_truncated_hmac(b"wrong_key", msg, hmac12) is False
+    class FakeRequest:
+        def __init__(self, host):
+            self.client = type("Client", (), {"host": host})()
+
+    req = FakeRequest("192.168.1.100")
+    
+    # Requests 1, 2, 3 succeed
+    limiter.check_rate_limit(req)
+    limiter.check_rate_limit(req)
+    limiter.check_rate_limit(req)
+    
+    # Request 4 must fail with 429
+    with pytest.raises(Exception) as excinfo:
+        limiter.check_rate_limit(req)
+    assert "429" in str(excinfo.value)

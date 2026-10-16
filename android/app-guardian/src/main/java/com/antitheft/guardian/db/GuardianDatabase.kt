@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import net.zetetic.database.sqlcipher.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(entities = [LocationEntity::class], version = 1, exportSchema = false)
 abstract class GuardianDatabase : RoomDatabase() {
@@ -26,7 +26,7 @@ abstract class GuardianDatabase : RoomDatabase() {
                     context.createDeviceProtectedStorageContext()
                 }
 
-                val factory = SupportFactory(dbPassphrase)
+                val factory = SupportOpenHelperFactory(dbPassphrase)
                 val instance = Room.databaseBuilder(
                     deContext,
                     GuardianDatabase::class.java,

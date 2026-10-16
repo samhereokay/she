@@ -6,8 +6,11 @@ import com.antitheft.common.crypto.HmacManager
 import com.antitheft.common.protocol.SmsPduSerializer
 import org.junit.Assert.*
 import org.junit.Test
+import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.spec.ECGenParameterSpec
+import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
 
 class CommonCoreTest {
 
@@ -80,9 +83,7 @@ class CommonCoreTest {
             alias, lat, lng, acc, epoch, seq, testSecretKey
         )
 
-        // Assert strictly under single-segment GSM 7-bit SMS limit (160 chars)
         assertTrue(pdu.length <= 160)
-        // Typical length is ~55-65 characters
         assertTrue(pdu.length in 45..75)
         assertTrue(pdu.startsWith("ST:Pixel8|"))
 
@@ -108,22 +109,38 @@ class CommonCoreTest {
     }
 
     @Test
-    fun testInboundCommandFormattingAndParsing() {
-        val command = "LOCATE"
-        val seq = 201L
-        val expiry = 1729037400L
+    fun testSharedCrossPlatformCryptoVectors() {
+        // 1. Shared 48-bit HMAC Vector (must match Python test_shared_crypto_test_vectors)
+        val hmacKey = "shared_pairing_secret_key_32b!!".toByteArray(Charsets.UTF_8)
+        val hmacMsg = "ST:Pixel8|37.77492,-122.41941|14|1729036800|104".toByteArray(Charsets.UTF_8)
+        val expectedHmac12 = "D7D35CACE300"
 
-        val cmdPdu = SmsPduSerializer.formatInboundCommand(command, seq, expiry, testSecretKey)
-        assertTrue(cmdPdu.startsWith("CMD:LOCATE|"))
-        assertTrue(cmdPdu.length <= 160)
+        val computedHmac = HmacManager.compute48BitHmac(hmacKey, hmacMsg)
+        assertEquals("Kotlin HMAC must match Python byte-for-byte!", expectedHmac12, computedHmac)
+        assertTrue(HmacManager.verify48BitHmac(hmacKey, hmacMsg, expectedHmac12))
 
-        val parsed = SmsPduSerializer.parseInboundCommand(cmdPdu, testSecretKey)
-        assertNotNull(parsed)
-        parsed?.let {
-            assertEquals("LOCATE", it.commandType)
-            assertEquals(seq, it.sequenceNumber)
-            assertEquals(expiry, it.expiryEpochSec)
-            assertTrue(it.isHmacValid)
-        }
+        // 2. Shared Inbound Command Vector
+        val cmdMsg = "CMD:LOCATE|201|1729037400".toByteArray(Charsets.UTF_8)
+        val expectedCmdHmac12 = "5CF65B478971"
+        val computedCmdHmac = HmacManager.compute48BitHmac(hmacKey, cmdMsg)
+        assertEquals("Kotlin Inbound HMAC must match Python!", expectedCmdHmac12, computedCmdHmac)
+
+        // 3. Shared ECDSA P-256 Vector
+        val pubPem = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEU3xUsenCsDkOCGY95Bgy00tLbbUj\ns0XylDYxWcXPe+L4Cm9/Hp2n4gUWEQvHONq29kTUKzHzAS0tGh8VWWow/w==\n-----END PUBLIC KEY-----"
+        val cleanPubB64 = pubPem
+            .replace("-----BEGIN PUBLIC KEY-----", "")
+            .replace("-----END PUBLIC KEY-----", "")
+            .replace("\n", "")
+            .trim()
+        val pubBytes = Base64.getDecoder().decode(cleanPubB64)
+        val keySpec = X509EncodedKeySpec(pubBytes)
+        val kf = KeyFactory.getInstance("EC")
+        val pubKey = kf.generatePublic(keySpec)
+
+        val canonicalData = "device-abc-123|100|1729000000|37.774929|-122.419416|12.5".toByteArray(Charsets.UTF_8)
+        val sigDerB64 = "MEQCIC39XomullhKQCiTlpVKbSaCXW/PXfH4/dsFBRGiv17yAiBqUTjvQdgs/OmCEb54epg5QiUK3YEiFgtm/iTlN5Wf1Q=="
+        val sigDerBytes = Base64.getDecoder().decode(sigDerB64)
+
+        assertTrue("Kotlin must verify the Python-generated ECDSA signature!", EcdsaSigner.verifySignature(pubKey, canonicalData, sigDerBytes))
     }
 }

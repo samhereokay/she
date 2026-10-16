@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_db
-from app.db.models import User, ProtectedDevice, LocationEvent
+from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent
 from app.schemas.location import (
     LocationBatchIngestRequest,
     LocationBatchIngestResponse,
@@ -42,9 +42,13 @@ def ingest_location_batch(
     """
     Guardian sync endpoint: ingests batched location fixes.
     - Authenticates via device ECDSA P-256 signature against registered public key.
-    - Idempotent: replayed identical sequences are acknowledged without error.
-    - Enforces monotonically increasing sequence numbers.
-    - Records separate capture_time vs server_receipt_time.
+    - Idempotency & Conflict Handling:
+      - Identical sequence + identical payload -> Acknowledged (safe idempotent retry).
+      - Identical sequence + different payload -> REJECTED & AUDITED (replay / tampering conflict).
+    - Out-of-order event handling:
+      - Events are stored and indexed by (protected_device_id, sequence_number).
+      - Non-contiguous sequence numbers are permitted to support out-of-order delivery during network reconnects.
+    - Records separate capture_time (untrusted client clock) vs server_receipt_time (trusted server clock).
     """
     device = db.query(ProtectedDevice).filter(ProtectedDevice.id == batch_in.device_id).first()
     if not device:
@@ -62,19 +66,35 @@ def ingest_location_batch(
     acknowledged_seqs = []
     rejected_seqs = []
     
-    # Sort events by sequence number to guarantee in-order processing
-    sorted_events = sorted(batch_in.events, key=lambda e: e.sequence_number)
-    
-    for event in sorted_events:
-        # Check if already ingested (Idempotency check)
+    for event in batch_in.events:
+        # Check if sequence already exists
         existing = db.query(LocationEvent).filter(
             LocationEvent.protected_device_id == device.id,
             LocationEvent.sequence_number == event.sequence_number
         ).first()
         
         if existing:
-            # Already acknowledged previously
-            acknowledged_seqs.append(event.sequence_number)
+            # Check if payload and signature are identical (safe retry)
+            is_same_payload = (
+                abs(existing.latitude - event.latitude) < 0.000001 and
+                abs(existing.longitude - event.longitude) < 0.000001 and
+                abs(existing.accuracy - event.accuracy) < 0.1 and
+                existing.signature == event.signature
+            )
+            
+            if is_same_payload:
+                acknowledged_seqs.append(event.sequence_number)
+            else:
+                # Same sequence with different payload: REJECT and log tampering attempt
+                rejected_seqs.append(event.sequence_number)
+                audit = AuditEvent(
+                    user_id=device.user_id,
+                    protected_device_id=device.id,
+                    event_type="REPLAY_CONFLICT_DETECTED",
+                    details=f"Sequence {event.sequence_number} replayed with altered payload! Existing lat/lng: {existing.latitude},{existing.longitude}; Received: {event.latitude},{event.longitude}"
+                )
+                db.add(audit)
+                db.commit()
             continue
             
         # Verify ECDSA P-256 Signature
@@ -102,6 +122,14 @@ def ingest_location_batch(
         
         if not is_valid:
             rejected_seqs.append(event.sequence_number)
+            audit = AuditEvent(
+                user_id=device.user_id,
+                protected_device_id=device.id,
+                event_type="INVALID_SIGNATURE",
+                details=f"Signature check failed on sequence {event.sequence_number}"
+            )
+            db.add(audit)
+            db.commit()
             continue
             
         # Insert verified location fix
@@ -124,8 +152,7 @@ def ingest_location_batch(
             acknowledged_seqs.append(event.sequence_number)
         except IntegrityError:
             db.rollback()
-            # Handled duplicate gracefully
-            acknowledged_seqs.append(event.sequence_number)
+            rejected_seqs.append(event.sequence_number)
             
     return LocationBatchIngestResponse(
         device_id=device.id,
@@ -149,12 +176,13 @@ def get_device_location_history(
     ).first()
     
     if not device:
+        # Cross-user authorization check: returns 404 to avoid leaking device existence
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
         
     locations = (
         db.query(LocationEvent)
         .filter(LocationEvent.protected_device_id == device.id)
-        .order_by(LocationEvent.capture_time.desc())
+        .order_by(LocationEvent.sequence_number.desc())
         .limit(limit)
         .all()
     )

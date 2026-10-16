@@ -13,39 +13,64 @@ import com.antitheft.guardian.db.DirectBootStorageHelper
 import com.antitheft.guardian.db.GuardianDatabase
 import com.antitheft.guardian.db.LocationEntity
 import com.antitheft.guardian.sync.LocationSyncWorker
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import kotlinx.coroutines.tasks.await
 import java.util.Base64
 
 class LocationCaptureManager(private val context: Context) {
 
-    private val fusedLocationClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context)
+    private val hasPlayServices: Boolean by lazy {
+        GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+    }
+
+    private val fusedLocationClient: FusedLocationProviderClient? by lazy {
+        if (hasPlayServices) LocationServices.getFusedLocationProviderClient(context) else null
+    }
+
+    private val nativeFallback: AndroidLocationManagerFallback by lazy {
+        AndroidLocationManagerFallback(context)
+    }
+
     private val storageHelper = DirectBootStorageHelper(context)
     private val keystoreManager = KeystoreManager()
     private val db = GuardianDatabase.getInstance(context, storageHelper.getDbPassphrase())
 
     @SuppressLint("MissingPermission")
     suspend fun getLastKnownLocation(): LocationEntity? {
-        val location: Location? = fusedLocationClient.lastLocation.await()
+        val location: Location? = if (hasPlayServices && fusedLocationClient != null) {
+            try {
+                fusedLocationClient!!.lastLocation.await() ?: nativeFallback.getLastKnownLocation()
+            } catch (e: Exception) {
+                nativeFallback.getLastKnownLocation()
+            }
+        } else {
+            nativeFallback.getLastKnownLocation()
+        }
+
         return location?.let { persistLocation(it) }
     }
 
     @SuppressLint("MissingPermission")
     suspend fun captureCurrentLocation(timeoutMs: Long = 10000): LocationEntity? {
-        val cts = CancellationTokenSource()
-        return try {
-            val location: Location? = fusedLocationClient.getCurrentLocation(
-                Priority.PRIORITY_HIGH_ACCURACY,
-                cts.token
-            ).await()
-            location?.let { persistLocation(it) }
-        } catch (e: Exception) {
-            getLastKnownLocation()
+        val location: Location? = if (hasPlayServices && fusedLocationClient != null) {
+            val cts = CancellationTokenSource()
+            try {
+                fusedLocationClient!!.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    cts.token
+                ).await() ?: nativeFallback.requestSingleFix(timeoutMs)
+            } catch (e: Exception) {
+                nativeFallback.requestSingleFix(timeoutMs)
+            }
+        } else {
+            nativeFallback.requestSingleFix(timeoutMs)
         }
+
+        return location?.let { persistLocation(it) } ?: getLastKnownLocation()
     }
 
     private suspend fun persistLocation(loc: Location): LocationEntity {
