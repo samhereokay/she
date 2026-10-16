@@ -6,6 +6,7 @@ from app.schemas.location import LocationResponse
 
 class DevicePairRequest(BaseModel):
     """Enroll a new Guardian device using pairing parameters."""
+    device_id: Optional[str] = None
     device_alias: str = Field(..., min_length=1, max_length=64)
     public_key_pem: str = Field(..., description="Guardian ECDSA P-256 public key in PEM format")
     trusted_phone_number: str = Field(..., min_length=5, max_length=32)
@@ -37,3 +38,44 @@ class QRPairingPayload(BaseModel):
     pairing_token: str
     pairing_secret_hex: str
     trusted_phone_number: str
+
+
+class TrustedDeviceRegisterRequest(BaseModel):
+    device_name: str = Field(..., min_length=1, max_length=128)
+    public_key_pem: str = Field(..., description="Admin device ECDSA P-256 public key PEM")
+
+
+class TrustedDeviceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    device_name: str
+    public_key_pem: str
+    created_at: datetime
+
+
+class CommandDispatchRequest(BaseModel):
+    trusted_device_id: str
+    target_device_id: str
+    command_type: str = Field(..., pattern=r"^(LOCATE|RING|LOCK|STOLEN_MODE)$")
+    sequence_counter: int = Field(..., ge=1)
+    expiry_epoch: int = Field(..., description="Unix epoch timestamp when command expires")
+    parameters_json: str = Field(default="{}", description="JSON string of command parameters")
+    admin_signature: str = Field(..., description="Base64 ASN.1 DER signature from Admin device ECDSA key")
+
+
+class CommandResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    trusted_device_id: str
+    protected_device_id: str
+    command_type: str
+    sequence_counter: int
+    expiry_epoch: int
+    parameters_json: str
+    admin_signature: str
+    status: str
+    created_at: datetime
+    executed_at: Optional[datetime] = None
+

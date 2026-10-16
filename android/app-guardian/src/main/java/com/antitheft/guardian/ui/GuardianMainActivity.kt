@@ -45,6 +45,10 @@ class GuardianMainActivity : AppCompatActivity() {
         storageHelper = DirectBootStorageHelper(this)
         captureManager = LocationCaptureManager(this)
 
+        val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
+        android.util.Log.i("GuardianPairing", "PAIRING_PUBLIC_KEY:${keystoreManager.getPublicKeyPem().replace("\n", "\\n")}")
+        android.util.Log.i("GuardianPairing", "DEVICE_ID:${storageHelper.getDeviceId()}")
+
         setupViews()
         checkAndRequestPermissions()
     }

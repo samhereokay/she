@@ -17,35 +17,7 @@ from app.api.locations import format_canonical_location_string
 from app.core.security import compute_truncated_hmac, verify_truncated_hmac, verify_ecdsa_p256_signature
 from app.core.rate_limit import SimpleRateLimiter
 
-# Setup in-memory SQLite database for isolated test execution
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
 client = TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def setup_database():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture

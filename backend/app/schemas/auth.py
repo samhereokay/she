@@ -27,7 +27,23 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in_minutes: int
+    is_2fa: bool = False
 
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
+    is_2fa: bool = False
+
+
+class TotpSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TotpVerifyRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class TotpStatusResponse(BaseModel):
+    totp_enabled: bool
+

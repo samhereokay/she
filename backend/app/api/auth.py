@@ -5,11 +5,26 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    generate_totp_secret,
+    get_totp_uri,
+    verify_totp_code
+)
 from app.core.rate_limit import auth_limiter
 from app.db.session import get_db
 from app.db.models import User
-from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin
+from app.schemas.auth import (
+    UserCreate,
+    UserResponse,
+    Token,
+    UserLogin,
+    TotpSetupResponse,
+    TotpVerifyRequest,
+    TotpStatusResponse
+)
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -55,10 +70,7 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ) -> Any:
-    """
-    Temporary Phase 2 MVP Login (OAuth2 Password Flow).
-    NOTE: In Phase 3, this endpoint is upgraded with mandatory 2FA + trusted device approval.
-    """
+    """OAuth2 password login issuing baseline session."""
     auth_limiter.check_rate_limit(request)
 
     user = db.query(User).filter(
@@ -73,14 +85,18 @@ def login(
         )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # If TOTP is enabled, issue 1FA token (cannot run commands without 2FA step)
+    is_2fa = not user.totp_enabled
     token = create_access_token(
         subject=user.id,
+        is_2fa=is_2fa,
         expires_delta=access_token_expires
     )
     return {
         "access_token": token,
         "token_type": "bearer",
-        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "is_2fa": is_2fa
     }
 
 
@@ -105,14 +121,96 @@ def login_json(
         )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    is_2fa = not user.totp_enabled
     token = create_access_token(
         subject=user.id,
+        is_2fa=is_2fa,
         expires_delta=access_token_expires
     )
     return {
         "access_token": token,
         "token_type": "bearer",
-        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "is_2fa": is_2fa
+    }
+
+
+@router.post("/totp/setup", response_model=TotpSetupResponse)
+def setup_totp(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Generate a new TOTP secret for the authenticated owner."""
+    secret = generate_totp_secret()
+    current_user.totp_secret = secret
+    db.commit()
+    return {
+        "secret": secret,
+        "otpauth_uri": get_totp_uri(secret, current_user.username)
+    }
+
+
+@router.post("/totp/verify", response_model=Token)
+def verify_totp(
+    req: TotpVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Verify initial TOTP code to activate 2FA and return an upgraded 2FA token."""
+    if not current_user.totp_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TOTP setup not initiated. Call /auth/totp/setup first."
+        )
+    
+    if not verify_totp_code(current_user.totp_secret, req.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid TOTP authentication code"
+        )
+    
+    current_user.totp_enabled = True
+    db.commit()
+
+    token = create_access_token(
+        subject=current_user.id,
+        is_2fa=True
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "is_2fa": True
+    }
+
+
+@router.post("/totp/validate", response_model=Token)
+def validate_totp(
+    req: TotpVerifyRequest,
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """Upgrade a 1FA session to a full 2FA session via TOTP code verification."""
+    if not current_user.totp_enabled or not current_user.totp_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TOTP is not enabled for this user."
+        )
+    
+    if not verify_totp_code(current_user.totp_secret, req.code):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid TOTP authentication code"
+        )
+    
+    token = create_access_token(
+        subject=current_user.id,
+        is_2fa=True
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "is_2fa": True
     }
 
 

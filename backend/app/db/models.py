@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Text,
+    Boolean,
     UniqueConstraint
 )
 from sqlalchemy.orm import relationship
@@ -29,10 +30,13 @@ class User(Base):
     username = Column(String(64), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
+    totp_secret = Column(String(64), nullable=True)
+    totp_enabled = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     trusted_devices = relationship("TrustedDevice", back_populates="user", cascade="all, delete-orphan")
     protected_devices = relationship("ProtectedDevice", back_populates="user", cascade="all, delete-orphan")
+    commands = relationship("DeviceCommand", back_populates="user", cascade="all, delete-orphan")
 
 
 class TrustedDevice(Base):
@@ -99,3 +103,29 @@ class AuditEvent(Base):
     event_type = Column(String(64), nullable=False)
     details = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class DeviceCommand(Base):
+    """
+    Remote recovery commands signed by Owner Admin device and verified by Guardian device.
+    Includes command_id, target device, command_type, sequence_counter, expiry, parameters, and Admin ECDSA signature.
+    """
+    __tablename__ = "device_commands"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    trusted_device_id = Column(String(36), ForeignKey("trusted_devices.id", ondelete="CASCADE"), nullable=False)
+    protected_device_id = Column(String(36), ForeignKey("protected_devices.id", ondelete="CASCADE"), nullable=False)
+    command_type = Column(String(32), nullable=False)  # LOCATE, RING, LOCK, STOLEN_MODE
+    sequence_counter = Column(BigInteger, nullable=False)
+    expiry_epoch = Column(BigInteger, nullable=False)
+    parameters_json = Column(Text, default="{}", nullable=False)
+    admin_signature = Column(Text, nullable=False)  # Base64 ASN.1 DER signature from Admin device key
+    status = Column(String(32), default="PENDING", nullable=False)  # PENDING, DELIVERED, EXECUTED, EXPIRED, FAILED
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    executed_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="commands")
+    trusted_device = relationship("TrustedDevice")
+    protected_device = relationship("ProtectedDevice")
+

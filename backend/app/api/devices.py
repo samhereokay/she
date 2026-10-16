@@ -1,3 +1,5 @@
+import base64
+import time
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, List
@@ -5,10 +7,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent
-from app.schemas.device import DevicePairRequest, DeviceResponse, DeviceListResponse
+from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent, TrustedDevice, DeviceCommand
+from app.schemas.device import (
+    DevicePairRequest,
+    DeviceResponse,
+    DeviceListResponse,
+    TrustedDeviceRegisterRequest,
+    TrustedDeviceResponse,
+    CommandDispatchRequest,
+    CommandResponse
+)
 from app.schemas.location import LocationResponse
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_2fa
+from app.core.security import verify_ecdsa_p256_signature, create_canonical_command_bytes
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
 
@@ -47,17 +58,44 @@ def pair_device(
     """Enroll and pair a new Guardian phone with the authenticated owner."""
     pairing_hash = hashlib.sha256(pair_in.pairing_secret.encode("utf-8")).hexdigest()
     
-    device = ProtectedDevice(
-        user_id=current_user.id,
-        device_alias=pair_in.device_alias,
-        public_key_pem=pair_in.public_key_pem,
-        trusted_phone_number=pair_in.trusted_phone_number,
-        pairing_secret_hash=pairing_hash,
-        status="ACTIVE"
-    )
-    db.add(device)
-    db.commit()
-    db.refresh(device)
+    if pair_in.device_id:
+        existing = db.query(ProtectedDevice).filter(ProtectedDevice.id == pair_in.device_id).first()
+        if existing:
+            if existing.user_id != current_user.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device ID registered to another user")
+            existing.device_alias = pair_in.device_alias
+            existing.public_key_pem = pair_in.public_key_pem
+            existing.trusted_phone_number = pair_in.trusted_phone_number
+            existing.pairing_secret_hash = pairing_hash
+            existing.status = "ACTIVE"
+            db.commit()
+            db.refresh(existing)
+            device = existing
+        else:
+            device = ProtectedDevice(
+                id=pair_in.device_id,
+                user_id=current_user.id,
+                device_alias=pair_in.device_alias,
+                public_key_pem=pair_in.public_key_pem,
+                trusted_phone_number=pair_in.trusted_phone_number,
+                pairing_secret_hash=pairing_hash,
+                status="ACTIVE"
+            )
+            db.add(device)
+            db.commit()
+            db.refresh(device)
+    else:
+        device = ProtectedDevice(
+            user_id=current_user.id,
+            device_alias=pair_in.device_alias,
+            public_key_pem=pair_in.public_key_pem,
+            trusted_phone_number=pair_in.trusted_phone_number,
+            pairing_secret_hash=pairing_hash,
+            status="ACTIVE"
+        )
+        db.add(device)
+        db.commit()
+        db.refresh(device)
     
     # Audit trail
     audit = AuditEvent(
@@ -186,4 +224,174 @@ def get_device_sync_status(
         "highest_acknowledged_sequence": last_ack,
         "next_expected_sequence": last_ack + 1
     }
+
+
+@router.post("/trusted", response_model=TrustedDeviceResponse, status_code=status.HTTP_201_CREATED)
+def register_trusted_device(
+    req: TrustedDeviceRegisterRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Register an Owner Admin companion device and its ECDSA P-256 public key."""
+    trusted = TrustedDevice(
+        user_id=current_user.id,
+        device_name=req.device_name,
+        public_key_pem=req.public_key_pem
+    )
+    db.add(trusted)
+    db.commit()
+    db.refresh(trusted)
+    return trusted
+
+
+@router.get("/trusted", response_model=List[TrustedDeviceResponse])
+def list_trusted_devices(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """List approved Admin companion devices for the authenticated owner."""
+    return db.query(TrustedDevice).filter(
+        TrustedDevice.user_id == current_user.id,
+        TrustedDevice.revoked_at.is_(None)
+    ).all()
+
+
+@router.post("/commands/dispatch", response_model=CommandResponse, status_code=status.HTTP_201_CREATED)
+def dispatch_command(
+    req: CommandDispatchRequest,
+    current_user: User = Depends(get_current_user_2fa),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Dispatch an emergency recovery command (LOCATE, RING, LOCK, STOLEN_MODE).
+    STRICT SECURITY ENFORCEMENT:
+    1. Caller must have authenticated with 2FA / TOTP (is_2fa=True).
+    2. Trusted Admin device must belong to current user and be active.
+    3. Target Guardian device must belong to current user.
+    4. Command must be cryptographically signed by the Admin device private key (P-256 ASN.1 DER).
+    5. Command must not be expired (expiry_epoch > now).
+    6. Sequence counter must be monotonically increasing.
+    """
+    now_epoch = int(time.time())
+    if req.expiry_epoch <= now_epoch:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Command expired. expiry_epoch ({req.expiry_epoch}) <= now ({now_epoch})"
+        )
+
+    trusted = db.query(TrustedDevice).filter(
+        TrustedDevice.id == req.trusted_device_id,
+        TrustedDevice.user_id == current_user.id,
+        TrustedDevice.revoked_at.is_(None)
+    ).first()
+    if not trusted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Trusted Admin device not recognized or revoked for this user."
+        )
+
+    target = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == req.target_device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target protected device not found for this user."
+        )
+
+    # Check monotonic counter
+    max_cmd_seq = (
+        db.query(DeviceCommand.sequence_counter)
+        .filter(DeviceCommand.trusted_device_id == trusted.id)
+        .order_by(DeviceCommand.sequence_counter.desc())
+        .first()
+    )
+    last_seq = max_cmd_seq[0] if max_cmd_seq else 0
+    if req.sequence_counter <= last_seq:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Command counter replayed or non-monotonic: {req.sequence_counter} <= last_seen ({last_seq})"
+        )
+
+    # Reconstruct canonical command bytes
+    canonical_bytes = create_canonical_command_bytes(
+        command_id="",  # Placeholder to be filled or derived
+        target_device_id=req.target_device_id,
+        command_type=req.command_type,
+        sequence_counter=req.sequence_counter,
+        expiry_epoch=req.expiry_epoch,
+        parameters_json=req.parameters_json
+    )
+
+    try:
+        der_sig = base64.b64decode(req.admin_signature)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid base64 encoding for admin_signature"
+        )
+
+    is_valid = verify_ecdsa_p256_signature(
+        public_key_pem=trusted.public_key_pem,
+        data_bytes=canonical_bytes,
+        der_signature_bytes=der_sig
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Cryptographic verification failed for Admin device signature. Command rejected."
+        )
+
+    command = DeviceCommand(
+        user_id=current_user.id,
+        trusted_device_id=trusted.id,
+        protected_device_id=target.id,
+        command_type=req.command_type,
+        sequence_counter=req.sequence_counter,
+        expiry_epoch=req.expiry_epoch,
+        parameters_json=req.parameters_json,
+        admin_signature=req.admin_signature,
+        status="PENDING"
+    )
+    db.add(command)
+    db.commit()
+    db.refresh(command)
+    return command
+
+
+@router.get("/{device_id}/commands/pending", response_model=List[CommandResponse])
+def get_pending_commands(
+    device_id: str,
+    db: Session = Depends(get_db)
+) -> Any:
+    """Endpoint for Guardian device foreground service to poll for pending recovery commands."""
+    now_epoch = int(time.time())
+    commands = db.query(DeviceCommand).filter(
+        DeviceCommand.protected_device_id == device_id,
+        DeviceCommand.status == "PENDING",
+        DeviceCommand.expiry_epoch > now_epoch
+    ).order_by(DeviceCommand.sequence_counter.asc()).all()
+    return commands
+
+
+@router.post("/{device_id}/commands/{command_id}/ack", status_code=status.HTTP_200_OK)
+def acknowledge_command(
+    device_id: str,
+    command_id: str,
+    db: Session = Depends(get_db)
+) -> Any:
+    """Acknowledge execution of a recovery command by the Guardian phone."""
+    command = db.query(DeviceCommand).filter(
+        DeviceCommand.id == command_id,
+        DeviceCommand.protected_device_id == device_id
+    ).first()
+    if not command:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Command not found")
+    
+    command.status = "EXECUTED"
+    command.executed_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"status": "success", "command_id": command_id}
+
 

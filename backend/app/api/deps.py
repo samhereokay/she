@@ -17,11 +17,41 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    user_id = verify_access_token(token)
-    if user_id is None:
+    payload = verify_access_token(token)
+    if not payload or "sub" not in payload:
         raise credentials_exception
     
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == payload["sub"]).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+def get_current_user_2fa(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Strict dependency enforcing verified Two-Factor Authentication (is_2fa=True).
+    Mandated before any recovery command endpoint is permitted to execute.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    two_factor_required_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Two-factor authentication (2FA/TOTP) required before issuing commands",
+    )
+    payload = verify_access_token(token)
+    if not payload or "sub" not in payload:
+        raise credentials_exception
+    
+    if not payload.get("is_2fa", False):
+        raise two_factor_required_exception
+
+    user = db.query(User).filter(User.id == payload["sub"]).first()
     if user is None:
         raise credentials_exception
     return user

@@ -36,10 +36,60 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+import base64
+import os
+import struct
+
+
+def generate_totp_secret() -> str:
+    """Generate 160-bit (20 bytes) base32-encoded TOTP secret."""
+    return base64.b32encode(os.urandom(20)).decode('utf-8').replace('=', '')
+
+
+def get_totp_uri(secret_b32: str, username: str, issuer: str = "AntiTheftRecovery") -> str:
+    """Generate standard otpauth URI for authenticator apps."""
+    return f"otpauth://totp/{issuer}:{username}?secret={secret_b32}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
+
+
+def verify_totp_code(secret_b32: str, code: str, valid_windows: int = 1) -> bool:
     """
-    Generate temporary Phase 2 JWT Bearer token.
-    NOTE: Temporary baseline for Phase 2 MVP. Phase 3 mandates 2FA + trusted-device approval.
+    Verify RFC 6238 TOTP code with time drift window.
+    valid_windows=1 checks t-30s, t, t+30s.
+    """
+    if not secret_b32 or not code:
+        return False
+    clean_code = code.strip()
+    if len(clean_code) != 6 or not clean_code.isdigit():
+        return False
+
+    # Pad secret if missing padding
+    padded_secret = secret_b32.upper()
+    missing_padding = len(padded_secret) % 8
+    if missing_padding:
+        padded_secret += "=" * (8 - missing_padding)
+
+    try:
+        key = base64.b32decode(padded_secret, casefold=True)
+    except Exception:
+        return False
+
+    current_counter = int(time.time() // 30)
+    for offset in range(-valid_windows, valid_windows + 1):
+        counter = current_counter + offset
+        msg = struct.pack(">Q", counter)
+        h = hmac.new(key, msg, hashlib.sha1).digest()
+        idx = h[-1] & 0x0F
+        code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+        expected_code = f"{code_int % 1000000:06d}"
+        if hmac.compare_digest(expected_code, clean_code):
+            return True
+    return False
+
+
+def create_access_token(subject: Union[str, Any], is_2fa: bool = False, expires_delta: Optional[timedelta] = None) -> str:
+    """
+    Generate JWT Bearer token with 2FA status claim.
+    Phase 3 commands strictly require is_2fa=True.
     """
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -49,22 +99,46 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     to_encode = {
         "exp": expire,
         "sub": str(subject),
+        "is_2fa": is_2fa,
         "iat": datetime.now(timezone.utc)
     }
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
-def verify_access_token(token: str) -> Optional[str]:
-    """Verify JWT token and extract subject (user ID)."""
+def verify_access_token(token: str) -> Optional[dict]:
+    """Verify JWT token and extract payload dictionary."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        if "sub" not in payload:
             return None
-        return user_id
+        return payload
     except (jwt.PyJWTError, Exception):
         return None
+
+
+def create_canonical_command_bytes(
+    command_id: str,
+    target_device_id: str,
+    command_type: str,
+    sequence_counter: int,
+    expiry_epoch: int,
+    parameters_json: str = "{}"
+) -> bytes:
+    """
+    Constructs deterministic canonical bytes for Owner Admin command signing.
+    Enforces format: command_id|target_device_id|command_type|sequence_counter|expiry_epoch|<sha256(parameters)>
+    """
+    params_hash = hashlib.sha256(parameters_json.strip().encode("utf-8")).hexdigest()
+    canonical_str = (
+        f"{command_id.strip()}|"
+        f"{target_device_id.strip()}|"
+        f"{command_type.strip().upper()}|"
+        f"{sequence_counter}|"
+        f"{expiry_epoch}|"
+        f"{params_hash}"
+    )
+    return canonical_str.encode("utf-8")
 
 
 def compute_truncated_hmac(key_bytes: bytes, message_bytes: bytes, hex_length: int = 12) -> str:

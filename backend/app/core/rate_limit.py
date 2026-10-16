@@ -6,6 +6,12 @@ class SimpleRateLimiter:
     """
     In-memory sliding window rate limiter.
     Keyed by client IP or client ID.
+
+    KNOWN LIMITATION:
+    This rate limiter maintains state purely in-process memory. It resets
+    upon server restart or process reload and does not synchronize across
+    multiple uvicorn worker processes or cluster nodes. For production
+    multi-worker deployments, replace or back with a distributed Redis store.
     """
     def __init__(self, requests_per_minute: int = 60):
         self.requests_per_minute = requests_per_minute
