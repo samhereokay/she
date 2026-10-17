@@ -47,11 +47,18 @@ android {
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
-            val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+            var releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            if (releasePassword.isNullOrBlank()) {
+                val console = System.console()
+                if (console != null) {
+                    val chars = console.readPassword("Enter Release Keystore Password: ")
+                    if (chars != null) releasePassword = String(chars)
+                }
+            }
             storeFile = file(keystorePath)
-            storePassword = releasePassword
+            storePassword = releasePassword ?: ""
             keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "antitheft_release"
-            keyPassword = releasePassword
+            keyPassword = releasePassword ?: ""
         }
     }
 

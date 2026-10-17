@@ -37,7 +37,7 @@ class LocationCaptureManager(private val context: Context) {
 
     private val storageHelper = DirectBootStorageHelper(context)
     private val keystoreManager = KeystoreManager()
-    private val db = GuardianDatabase.getInstance(context, storageHelper.getDbPassphrase())
+    private val db = GuardianDatabase.getInstance(context, storageHelper)
 
     @SuppressLint("MissingPermission")
     suspend fun getLastKnownLocation(): LocationEntity? {

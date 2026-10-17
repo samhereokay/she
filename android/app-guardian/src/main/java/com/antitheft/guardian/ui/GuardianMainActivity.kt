@@ -544,7 +544,7 @@ class GuardianMainActivity : AppCompatActivity() {
 
     private fun refreshDashboardData() {
         lifecycleScope.launch(Dispatchers.IO) {
-            val db = GuardianDatabase.getInstance(this@GuardianMainActivity, storageHelper.getDbPassphrase())
+            val db = GuardianDatabase.getInstance(this@GuardianMainActivity, storageHelper)
             val latest = db.locationDao().getLatestLocation()
             val pendingCount = db.locationDao().getPendingCount()
 

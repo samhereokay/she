@@ -15,12 +15,23 @@ abstract class GuardianDatabase : RoomDatabase() {
 
     companion object {
         const val DB_NAME = "guardian_encrypted.db"
+        const val MAX_QUARANTINE_SETS = 5
         private const val TAG = "GuardianDatabase"
 
         @Volatile
         private var INSTANCE: GuardianDatabase? = null
 
-        fun getInstance(context: Context, dbPassphrase: ByteArray): GuardianDatabase {
+        fun getInstance(context: Context, storageHelper: DirectBootStorageHelper): GuardianDatabase {
+            return getInstance(context, storageHelper.getDbPassphrase()) {
+                storageHelper.rotateDbPassphrase()
+            }
+        }
+
+        fun getInstance(
+            context: Context,
+            dbPassphrase: ByteArray,
+            onKeyRotation: (() -> ByteArray)? = null
+        ): GuardianDatabase {
             return INSTANCE ?: synchronized(this) {
                 val existing = INSTANCE
                 if (existing != null) return@synchronized existing
@@ -32,8 +43,8 @@ abstract class GuardianDatabase : RoomDatabase() {
                     context.createDeviceProtectedStorageContext()
                 }
 
-                fun createBuilder(): RoomDatabase.Builder<GuardianDatabase> {
-                    val factory = SupportOpenHelperFactory(dbPassphrase)
+                fun createBuilder(passphrase: ByteArray): RoomDatabase.Builder<GuardianDatabase> {
+                    val factory = SupportOpenHelperFactory(passphrase)
                     return Room.databaseBuilder(
                         deContext,
                         GuardianDatabase::class.java,
@@ -43,29 +54,78 @@ abstract class GuardianDatabase : RoomDatabase() {
                         .fallbackToDestructiveMigration()
                 }
 
-                var db = createBuilder().build()
+                var currentPassphrase = dbPassphrase
+                var db = createBuilder(currentPassphrase).build()
                 try {
                     // Force database open to test passphrase validity immediately
                     db.openHelper.writableDatabase
                 } catch (e: Exception) {
-                    Log.e(TAG, "Guardian database corrupted or passphrase invalid. Quarantining corrupted database files.", e)
+                    if (!isCorruptionOrKeyError(e)) {
+                        logSafe(TAG, "Transient disk or I/O error opening database. Preserving database files without quarantine.", e)
+                        throw e
+                    }
+
+                    logSafe(TAG, "Guardian database corrupted or passphrase invalid. Quarantining corrupted database files.", e)
                     try { db.close() } catch (_: Exception) {}
 
                     val dbFile = deContext.getDatabasePath(DB_NAME)
-                    quarantineCorruptedFiles(dbFile)
+                    val quarantined = quarantineCorruptedFiles(dbFile)
+                    logSafe(TAG, "Quarantine completed. Moved ${quarantined.size} files for forensic audit: ${quarantined.map { it.name }}")
 
-                    db = createBuilder().build()
+                    // Rotate database encryption key if rotation handler provided
+                    if (onKeyRotation != null) {
+                        currentPassphrase = onKeyRotation()
+                        logSafe(TAG, "Rotated database encryption passphrase post-quarantine.")
+                    }
+
+                    db = createBuilder(currentPassphrase).build()
                     try {
                         db.openHelper.writableDatabase
-                        Log.i(TAG, "Fresh encrypted database successfully recreated after corruption recovery.")
+                        logSafe(TAG, "Fresh encrypted database successfully recreated after corruption recovery.")
                     } catch (fatal: Exception) {
-                        Log.e(TAG, "Fatal failure initializing database after quarantine", fatal)
+                        logSafe(TAG, "Fatal failure initializing database after quarantine", fatal)
                     }
                 }
 
                 INSTANCE = db
                 db
             }
+        }
+
+        /**
+         * Inspects exception chain to distinguish corruption / key mismatch from transient disk I/O errors.
+         * Only returns true for corruption, header invalidation, passphrase mismatch, or malformed DB.
+         * Returns false for SQLiteDiskIOException, SQLiteFullException, lock timeouts, etc.
+         */
+        fun isCorruptionOrKeyError(e: Throwable): Boolean {
+            var cause: Throwable? = e
+            while (cause != null) {
+                val className = cause.javaClass.name
+                val msg = cause.message?.lowercase() ?: ""
+
+                // Transient disk/lock errors that should NOT trigger database quarantine
+                if (className.contains("SQLiteDiskIOException") ||
+                    className.contains("SQLiteFullException") ||
+                    className.contains("SQLiteTableLockedException") ||
+                    className.contains("SQLiteDatabaseLockedException") ||
+                    cause is java.io.InterruptedIOException) {
+                    return false
+                }
+
+                // Explicit corruption or key invalidation errors
+                if (className.contains("SQLiteDatabaseCorruptException") ||
+                    msg.contains("file is not a database") ||
+                    msg.contains("file is encrypted or is not a database") ||
+                    msg.contains("passphrase") ||
+                    msg.contains("corrupt") ||
+                    msg.contains("malformed") ||
+                    msg.contains("unsupported file format")
+                ) {
+                    return true
+                }
+                cause = cause.cause
+            }
+            return false
         }
 
         /**
@@ -103,7 +163,36 @@ abstract class GuardianDatabase : RoomDatabase() {
                     }
                 }
             }
+
+            // Cap quarantine sets to prevent unbounded disk usage
+            pruneQuarantinedFiles(parentDir, baseName, MAX_QUARANTINE_SETS)
+
             return quarantined
+        }
+
+        fun pruneQuarantinedFiles(parentDir: File, baseName: String, maxSets: Int = MAX_QUARANTINE_SETS) {
+            val prefix = "${baseName}.corrupted_"
+            val matchingFiles = parentDir.listFiles { file ->
+                file.name.startsWith(prefix)
+            } ?: return
+
+            val setsByTimestamp = matchingFiles.groupBy { file ->
+                val afterPrefix = file.name.substring(prefix.length)
+                afterPrefix.split("-", "_", ".").firstOrNull() ?: afterPrefix
+            }
+
+            if (setsByTimestamp.size > maxSets) {
+                val sortedTimestamps = setsByTimestamp.keys.sorted()
+                val excessCount = sortedTimestamps.size - maxSets
+                for (i in 0 until excessCount) {
+                    val oldTimestamp = sortedTimestamps[i]
+                    setsByTimestamp[oldTimestamp]?.forEach { oldFile ->
+                        if (oldFile.delete()) {
+                            logSafe(TAG, "Pruned old quarantine file to stay under cap ($maxSets): ${oldFile.name}")
+                        }
+                    }
+                }
+            }
         }
 
         /**

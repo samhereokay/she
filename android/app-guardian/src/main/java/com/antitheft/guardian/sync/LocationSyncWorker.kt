@@ -25,7 +25,7 @@ class LocationSyncWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val storageHelper = DirectBootStorageHelper(appContext)
-    private val db = GuardianDatabase.getInstance(appContext, storageHelper.getDbPassphrase())
+    private val db = GuardianDatabase.getInstance(appContext, storageHelper)
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)

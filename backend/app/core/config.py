@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     ENFORCE_HTTPS: bool = os.getenv("ENFORCE_HTTPS", "false").lower() == "true"
     ALLOW_PUBLIC_REGISTRATION: bool = os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").lower() == "true"
     REGISTRATION_TOKEN: str = os.getenv("REGISTRATION_TOKEN", "")
+    ADMIN_SETUP_TOKEN: str = os.getenv("ADMIN_SETUP_TOKEN", "")
     
     # Environment-Mandated Secrets (NO committed fallback defaults)
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")

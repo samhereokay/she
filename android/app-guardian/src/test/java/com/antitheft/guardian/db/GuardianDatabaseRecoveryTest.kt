@@ -86,4 +86,64 @@ class GuardianDatabaseRecoveryTest {
         assertTrue(expectedMain.exists())
         assertEquals("SINGLE_DB_FILE", expectedMain.readText())
     }
+
+    @Test
+    fun testIsCorruptionOrKeyErrorIdentifiesCorruptionAndKeyFailures() {
+        // SQLCipher / Room key invalidation error
+        val keyErr = RuntimeException("net.zetetic.database.sqlcipher.SQLiteException: file is not a database")
+        assertTrue(GuardianDatabase.isCorruptionOrKeyError(keyErr))
+
+        val corruptErr = RuntimeException("net.zetetic.database.sqlcipher.SQLiteDatabaseCorruptException: database disk image is malformed")
+        assertTrue(GuardianDatabase.isCorruptionOrKeyError(corruptErr))
+
+        val passphraseErr = RuntimeException("Invalid passphrase for encrypted database")
+        assertTrue(GuardianDatabase.isCorruptionOrKeyError(passphraseErr))
+
+        // Transient disk / lock errors must NOT be marked as corruption
+        val diskIoErr = RuntimeException("net.zetetic.database.sqlcipher.SQLiteDiskIOException: disk error")
+        assertFalse(GuardianDatabase.isCorruptionOrKeyError(diskIoErr))
+
+        val diskFullErr = RuntimeException("net.zetetic.database.sqlcipher.SQLiteFullException: disk full")
+        assertFalse(GuardianDatabase.isCorruptionOrKeyError(diskFullErr))
+
+        val lockErr = RuntimeException("net.zetetic.database.sqlcipher.SQLiteDatabaseLockedException: database is locked")
+        assertFalse(GuardianDatabase.isCorruptionOrKeyError(lockErr))
+    }
+
+    @Test
+    fun testQuarantinePruningCapsMaxSets() {
+        val dbDir = tempFolder.newFolder("databases_cap")
+        val baseName = GuardianDatabase.DB_NAME
+
+        // Create 7 distinct quarantine sets (timestamps 1000..7000)
+        for (i in 1..7) {
+            val ts = 1000L * i
+            File(dbDir, "${baseName}.corrupted_${ts}").writeText("DB_$i")
+            File(dbDir, "${baseName}.corrupted_${ts}-wal").writeText("WAL_$i")
+            File(dbDir, "${baseName}.corrupted_${ts}-shm").writeText("SHM_$i")
+        }
+
+        // 7 sets * 3 files = 21 files initially
+        assertEquals(21, dbDir.listFiles()?.size)
+
+        // Prune keeping at most 5 sets
+        GuardianDatabase.pruneQuarantinedFiles(dbDir, baseName, maxSets = 5)
+
+        val remainingFiles = dbDir.listFiles() ?: emptyArray()
+        // 5 sets * 3 files = 15 files remaining
+        assertEquals(15, remainingFiles.size)
+
+        // Oldest sets (1000 and 2000) should be gone
+        assertFalse(File(dbDir, "${baseName}.corrupted_1000").exists())
+        assertFalse(File(dbDir, "${baseName}.corrupted_1000-wal").exists())
+        assertFalse(File(dbDir, "${baseName}.corrupted_2000").exists())
+
+        // Newer sets (3000..7000) must still exist
+        for (i in 3..7) {
+            val ts = 1000L * i
+            assertTrue(File(dbDir, "${baseName}.corrupted_${ts}").exists())
+            assertTrue(File(dbDir, "${baseName}.corrupted_${ts}-wal").exists())
+            assertTrue(File(dbDir, "${baseName}.corrupted_${ts}-shm").exists())
+        }
+    }
 }

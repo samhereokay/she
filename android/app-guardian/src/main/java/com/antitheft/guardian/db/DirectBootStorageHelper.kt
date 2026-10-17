@@ -130,6 +130,15 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
         return hexToByteArray(passHex)
     }
 
+    @Synchronized
+    fun rotateDbPassphrase(): ByteArray {
+        val randomBytes = ByteArray(32)
+        SecureRandom().nextBytes(randomBytes)
+        val passHex = randomBytes.joinToString("") { "%02X".format(it) }
+        secureStorage.putEncryptedString(KEY_DB_PASSPHRASE, passHex)
+        return randomBytes
+    }
+
     private fun hexToByteArray(hex: String): ByteArray {
         val result = ByteArray(hex.length / 2)
         for (i in 0 until hex.length step 2) {

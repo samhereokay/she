@@ -129,13 +129,6 @@ class AdminVaultManager(
      * 1. Generates random 256-bit AES Data Key (DEK).
      * 2. Encrypts payload with DEK.
      * 3. Wraps DEK with Keystore Master Key (auth-required).
-     * 4. Wraps DEK with Passphrase-derived Key (PBKDF2 600,000 iter).
-     */
-    /**
-     * Envelope Encryption (User Key Hierarchy):
-     * 1. Generates random 256-bit AES Data Key (DEK).
-     * 2. Encrypts payload with DEK.
-     * 3. Wraps DEK with Keystore Master Key (auth-required).
      * 4. Generates a fresh cryptographically random 16-byte salt per vault item.
      * 5. Derives Passphrase Key via PBKDF2 (600,000 iterations) using the item salt.
      * 6. Wraps DEK with Passphrase-derived Key.
@@ -146,6 +139,9 @@ class AdminVaultManager(
         passphrase: String,
         keyVersion: Long = 1
     ): VaultEncryptedContainer {
+        require(passphrase.length >= 16) {
+            "Vault master passphrase must be at least 16 characters for zero-knowledge envelope protection."
+        }
         val dek = cryptoManager.generateRandomDataKey()
         val dataContainer = cryptoManager.encrypt(plaintext, dek, keyVersion)
 

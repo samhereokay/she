@@ -42,16 +42,25 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     """Register a new owner admin user with lockdown check and rate limiting."""
     auth_limiter.check_rate_limit(request)
 
+    existing_users = db.query(User).count()
+
+    # If ADMIN_SETUP_TOKEN is configured in environment, require it for bootstrapping initial owner
+    if settings.ADMIN_SETUP_TOKEN:
+        setup_header = request.headers.get("X-Admin-Setup-Token", "")
+        if not secrets.compare_digest(setup_header, settings.ADMIN_SETUP_TOKEN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or missing admin setup token. Set X-Admin-Setup-Token header to initialize owner."
+            )
+
     # Registration lockdown: The platform operates under a single-owner model.
     # In production (ALLOW_PUBLIC_REGISTRATION=False), once the first owner account exists,
     # public registration is permanently closed.
-    if not settings.ALLOW_PUBLIC_REGISTRATION:
-        existing_users = db.query(User).count()
-        if existing_users > 0:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Public registration is permanently closed. Owner account already initialized."
-            )
+    if not settings.ALLOW_PUBLIC_REGISTRATION and existing_users > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is permanently closed. Owner account already initialized."
+        )
 
     # Check if username or email exists
     if db.query(User).filter(User.username == user_in.username).first():

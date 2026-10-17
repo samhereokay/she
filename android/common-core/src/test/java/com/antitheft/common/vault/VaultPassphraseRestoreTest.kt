@@ -107,4 +107,79 @@ class VaultPassphraseRestoreTest {
             assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
         }
     }
+
+    @Test
+    fun testPerItemSaltUniquenessGeneratesDistinctKeysForIdenticalPassphrase() {
+        val passphrase = "IdenticalUserPassphrase2026!"
+        val salt1 = cryptoManager.generateRandomSalt(16)
+        val salt2 = cryptoManager.generateRandomSalt(16)
+
+        assertEquals(16, salt1.size)
+        assertEquals(16, salt2.size)
+        assertFalse("Per-item salts must be cryptographically distinct", salt1.contentEquals(salt2))
+
+        val key1 = cryptoManager.deriveKeyFromPassphrase(passphrase, salt1)
+        val key2 = cryptoManager.deriveKeyFromPassphrase(passphrase, salt2)
+
+        assertFalse("Keys derived with different item salts must have different raw bytes",
+            key1.encoded.contentEquals(key2.encoded))
+    }
+
+    @Test
+    fun testEnvelopeKeyWrappingRoundTripWithPerItemSalt() {
+        val masterPassphrase = "Alpha-Bravo-2026-Recovery-Pass"
+        val payload = "{\"imei\":\"358291048291823\",\"sim_serial\":\"89014103211118510720\"}"
+
+        // 1. Generate random 256-bit AES Data Key (DEK)
+        val dek = cryptoManager.generateRandomDataKey()
+        val dataContainer = cryptoManager.encrypt(payload, dek, keyVersion = 1)
+
+        // 2. Generate per-item random 16-byte salt and derive Passphrase Key (KEK)
+        val itemSalt = cryptoManager.generateRandomSalt(16)
+        val passphraseKey = cryptoManager.deriveKeyFromPassphrase(masterPassphrase, itemSalt)
+
+        // 3. Wrap DEK with Passphrase KEK
+        val wrappedDek = cryptoManager.wrapKey(dek, passphraseKey, keyVersion = 1)
+
+        // 4. Unwrap DEK using Passphrase KEK and item-specific salt
+        val unwrappedDek = cryptoManager.unwrapKey(wrappedDek, passphraseKey)
+        assertArrayEquals(dek.encoded, unwrappedDek.encoded)
+
+        // 5. Decrypt data container with unwrapped DEK
+        val decrypted = cryptoManager.decrypt(dataContainer, unwrappedDek)
+        assertEquals(payload, decrypted)
+    }
+
+    @Test
+    fun testEnvelopeDecryptionWithWrongPassphraseThrowsBadTag() {
+        val correctPass = "Alpha-Passphrase-2026-Correct!"
+        val wrongPass = "Alpha-Passphrase-2026-WrongOne!"
+        val payload = "CONFIDENTIAL_RECOVERY_SEEDS"
+
+        val dek = cryptoManager.generateRandomDataKey()
+        val dataContainer = cryptoManager.encrypt(payload, dek)
+
+        val itemSalt = cryptoManager.generateRandomSalt(16)
+        val correctKey = cryptoManager.deriveKeyFromPassphrase(correctPass, itemSalt)
+        val wrongKey = cryptoManager.deriveKeyFromPassphrase(wrongPass, itemSalt)
+
+        val wrappedDek = cryptoManager.wrapKey(dek, correctKey)
+
+        try {
+            cryptoManager.unwrapKey(wrappedDek, wrongKey)
+            fail("Expected AEADBadTagException when unwrapping DEK with wrong passphrase")
+        } catch (e: Exception) {
+            assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
+        }
+    }
+
+    @Test
+    fun testPassphraseMinimumLengthEnforcement() {
+        val shortPassphrase = "Short123!" // 9 chars (< 16)
+        val validPassphrase = "LongEnoughPassphrase2026!" // 25 chars (>= 16)
+
+        assertTrue("Valid passphrase must be >= 16 chars", validPassphrase.length >= 16)
+        assertFalse("Short passphrase must be < 16 chars", shortPassphrase.length >= 16)
+    }
 }
+

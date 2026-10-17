@@ -1463,6 +1463,94 @@ def test_argon2id_recovery_code_one_time_consumption(client, db_session):
     assert "Invalid TOTP" in val_resp2.json()["detail"]
 
 
+def test_admin_setup_token_requirement(client, db_session):
+    """
+    Verifies that when ADMIN_SETUP_TOKEN is configured in environment,
+    initial registration requires X-Admin-Setup-Token header to prevent
+    first-come first-served takeover over public tunnels.
+    """
+    from app.core.config import settings
+    orig_token = settings.ADMIN_SETUP_TOKEN
+    settings.ADMIN_SETUP_TOKEN = "SuperSecureAdminSetupToken2026!"
+    try:
+        # 1. Attempt to register without setup token -> 403 Forbidden
+        no_tok_resp = client.post("/auth/register", json={
+            "username": "intruder_user",
+            "email": "intruder@example.com",
+            "password": "IntruderPassword123!"
+        })
+        assert no_tok_resp.status_code == 403
+        assert "setup token" in no_tok_resp.json()["detail"].lower()
+
+        # 2. Attempt to register with wrong setup token -> 403 Forbidden
+        bad_tok_resp = client.post("/auth/register", json={
+            "username": "intruder_user",
+            "email": "intruder@example.com",
+            "password": "IntruderPassword123!"
+        }, headers={"X-Admin-Setup-Token": "WrongToken123"})
+        assert bad_tok_resp.status_code == 403
+
+        # 3. Register with correct setup token -> 201 Created
+        good_resp = client.post("/auth/register", json={
+            "username": "legit_owner",
+            "email": "owner@example.com",
+            "password": "OwnerPassword123!"
+        }, headers={"X-Admin-Setup-Token": "SuperSecureAdminSetupToken2026!"})
+        assert good_resp.status_code == 201
+
+        # 4. Subsequent registrations fail permanently even with token
+        subsequent_resp = client.post("/auth/register", json={
+            "username": "second_user",
+            "email": "second@example.com",
+            "password": "SecondPassword123!"
+        }, headers={"X-Admin-Setup-Token": "SuperSecureAdminSetupToken2026!"})
+        assert subsequent_resp.status_code == 403
+        assert "permanently closed" in subsequent_resp.json()["detail"].lower()
+    finally:
+        settings.ADMIN_SETUP_TOKEN = orig_token
+
+
+def test_cli_owner_create_and_reset_workflow(db_session):
+    """
+    Verifies CLI owner creation and reset functionality.
+    """
+    from app.cli.admin import handle_create_owner, handle_reset_owner
+    from app.db.models import User
+    import argparse
+    import pytest
+
+    # Ensure clean state
+    db_session.query(User).delete()
+    db_session.commit()
+
+    # 1. Create owner via CLI
+    args_create = argparse.Namespace(
+        username="cli_test_owner",
+        email="cli_owner@example.com",
+        password="TestPassword123!",
+        db=db_session
+    )
+    handle_create_owner(args_create)
+
+    # Verify user exists in db
+    user = db_session.query(User).filter(User.username == "cli_test_owner").first()
+    assert user is not None
+    assert user.email == "cli_owner@example.com"
+
+    # 2. Duplicate create fails with SystemExit(1)
+    with pytest.raises(SystemExit) as exc_info:
+        handle_create_owner(args_create)
+    assert exc_info.value.code == 1
+
+    # 3. Reset owner via CLI
+    args_reset = argparse.Namespace(force=True, db=db_session)
+    handle_reset_owner(args_reset)
+
+    # Verify user table is cleared
+    assert db_session.query(User).count() == 0
+
+
+
 
 
 

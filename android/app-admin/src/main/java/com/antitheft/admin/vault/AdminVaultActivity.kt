@@ -57,6 +57,7 @@ class AdminVaultActivity : AppCompatActivity() {
         btnExportBackup.setOnClickListener { showExportBackupDialog() }
         btnRestoreVault.setOnClickListener { showRestoreVaultDialog() }
         btnEmergencyShred.setOnClickListener { confirmEmergencyShred() }
+        tvStatus.setOnClickListener { promptTotpUpgrade { loadVaultItems() } }
 
         authenticateBiometricGate()
     }
@@ -80,17 +81,35 @@ class AdminVaultActivity : AppCompatActivity() {
                 val title = intent.getStringExtra("title") ?: "Recovery Secret"
                 val type = intent.getStringExtra("type") ?: "RECOVERY_CODE"
                 val secret = intent.getStringExtra("secret") ?: ""
-                val passphrase = intent.getStringExtra("passphrase") ?: activePassphrase ?: "MasterVaultPassphrase2026!"
+                val passphrase = intent.getStringExtra("passphrase") ?: activePassphrase ?: "Alpha-Bravo-2026-Secure-Key"
                 if (secret.isNotBlank()) {
                     encryptAndUploadSecret(title, type, secret, passphrase)
                 }
             }
             "export_backup" -> {
-                val passphrase = intent.getStringExtra("passphrase") ?: activePassphrase ?: "MasterVaultPassphrase2026!"
+                val passphrase = intent.getStringExtra("passphrase") ?: activePassphrase ?: "Alpha-Bravo-2026-Secure-Key"
                 exportVaultWithPassphrase(passphrase)
             }
             "emergency_shred" -> {
                 confirmEmergencyShred()
+            }
+            "validate_totp" -> {
+                val code = intent.getStringExtra("totp_code")
+                if (!code.isNullOrBlank()) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        try {
+                            val api = ApiClient.create(sessionManager)
+                            val resp = api.validateTotp(TotpValidateRequest(code))
+                            sessionManager.saveToken(resp.access_token)
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@AdminVaultActivity, "2FA Authenticated", Toast.LENGTH_SHORT).show()
+                                loadVaultItems()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "TOTP validation failed", e)
+                        }
+                    }
+                }
             }
         }
     }
