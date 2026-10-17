@@ -54,4 +54,13 @@
         android:layout_marginTop="24dp"
         android:text="Sign In" />
 
+    <Button
+        android:id="@+id/btnRegister"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Register Owner Account"
+        android:backgroundTint="#37474F" />
+
 </LinearLayout>
+

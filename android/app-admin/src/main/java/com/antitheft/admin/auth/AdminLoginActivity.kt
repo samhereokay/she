@@ -35,6 +35,8 @@ class AdminLoginActivity : AppCompatActivity() {
 
         etServerUrl.setText(sessionManager.getServerUrl())
 
+        val btnRegister = findViewById<Button>(R.id.btnRegister)
+
         btnLogin.setOnClickListener {
             val serverUrl = etServerUrl.text.toString().trim()
             val username = etUsername.text.toString().trim()
@@ -43,8 +45,37 @@ class AdminLoginActivity : AppCompatActivity() {
             performLogin(username, password, serverUrl)
         }
 
+        btnRegister.setOnClickListener {
+            val serverUrl = etServerUrl.text.toString().trim()
+            val username = etUsername.text.toString().trim()
+            val password = etPassword.text.toString().trim()
+            if (username.isBlank() || password.isBlank()) {
+                Toast.makeText(this, "Enter username and password to register", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            performRegister(username, password, serverUrl)
+        }
+
         handleIncomingLoginIntent(intent)
     }
+
+    private fun performRegister(username: String, password: String, serverUrl: String) {
+        sessionManager.setServerUrl(serverUrl)
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val email = if (username.contains("@")) username else "$username@example.com"
+                api.register(com.antitheft.admin.network.RegisterRequest(username, email, password))
+                android.util.Log.i("AdminLogin", "REGISTER_SUCCESSFUL user:$username")
+                Toast.makeText(this@AdminLoginActivity, "Owner registered successfully! Signing in...", Toast.LENGTH_SHORT).show()
+                performLogin(username, password, serverUrl)
+            } catch (e: Exception) {
+                android.util.Log.e("AdminLogin", "REGISTER_FAILED", e)
+                Toast.makeText(this@AdminLoginActivity, "Registration failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

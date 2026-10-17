@@ -23,6 +23,9 @@ local.properties
 # Environment & Secrets
 .env
 .env.local
+*.keystore
+*.jks
+*.bundle
 
 # Local Build Tools
 .tools/

@@ -16,6 +16,7 @@ from app.db.session import Base, get_db
 from app.api.locations import format_canonical_location_string
 from app.core.security import compute_truncated_hmac, verify_truncated_hmac, verify_ecdsa_p256_signature
 from app.core.rate_limit import SimpleRateLimiter
+from app.core.config import settings
 
 client = TestClient(app)
 
@@ -426,6 +427,7 @@ def test_cross_user_authorization(client, test_keypair, pair_device):
     _, pem_public = test_keypair
 
     # 1. Register User A and User B
+    settings.ALLOW_PUBLIC_REGISTRATION = True
     client.post("/auth/register", json={"username": "user_a", "email": "a@test.com", "password": "PasswordA123!"})
     client.post("/auth/register", json={"username": "user_b", "email": "b@test.com", "password": "PasswordB123!"})
 

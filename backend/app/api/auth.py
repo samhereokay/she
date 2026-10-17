@@ -43,10 +43,12 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     auth_limiter.check_rate_limit(request)
 
     if not settings.ALLOW_PUBLIC_REGISTRATION:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Public registration is disabled. Administrator invitation required."
-        )
+        existing_users = db.query(User).count()
+        if existing_users > 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Public registration is disabled. Administrator invitation required."
+            )
 
     # Check if username or email exists
     if db.query(User).filter(User.username == user_in.username).first():

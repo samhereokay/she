@@ -24,11 +24,13 @@ class PairDeviceActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Prevent screen capture / recording of sensitive pairing secret and enrollment payload
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
+        // Prevent screen capture / recording in production release builds
+        if (!com.antitheft.admin.BuildConfig.DEBUG) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        }
         setContentView(R.layout.activity_pair_device)
 
         sessionManager = AdminSessionManager(this)
@@ -184,7 +186,8 @@ class PairDeviceActivity : AppCompatActivity() {
             }
 
             val defaultPhone = sessionManager.getAdminPhoneNumber()
-            val adminPhone = etAdminPhone.text.toString().trim().ifBlank { defaultPhone }
+            val rawPhone = etAdminPhone.text.toString().trim().ifBlank { defaultPhone }
+            val adminPhone = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(rawPhone)
             sessionManager.setAdminPhoneNumber(adminPhone)
 
             val pairingPayload = mapOf(

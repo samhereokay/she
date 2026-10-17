@@ -13,11 +13,18 @@ import javax.crypto.SecretKey
  * Bridges Android Keystore hardware-backed AES-256 keys with VaultCryptoManager.
  */
 class AdminVaultManager(
-    private val keyAlias: String = VAULT_KEY_ALIAS
+    private val keyAlias: String = VAULT_KEY_ALIAS,
+    private val context: android.content.Context? = null
 ) {
 
     private val cryptoManager = VaultCryptoManager()
     private val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+
+    fun isDeviceSecure(): Boolean {
+        if (context == null) return false
+        val km = context.getSystemService(android.content.Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+        return km?.isDeviceSecure == true
+    }
 
     /**
      * Builds KeyGenParameterSpec with setUserAuthenticationRequired(true) and hardware AES-GCM policy.
@@ -25,7 +32,7 @@ class AdminVaultManager(
     fun buildKeyGenParameterSpec(
         alias: String = keyAlias,
         requireUserAuth: Boolean = true,
-        authValiditySeconds: Int = -1
+        authValiditySeconds: Int = 300
     ): KeyGenParameterSpec {
         val builder = KeyGenParameterSpec.Builder(
             alias,
@@ -54,11 +61,21 @@ class AdminVaultManager(
      * Retrieves or generates the 256-bit AES-GCM Vault Master Key inside Android Keystore.
      */
     @Synchronized
-    fun getOrCreateVaultMasterKey(requireUserAuth: Boolean = false): SecretKey {
+    fun getOrCreateVaultMasterKey(requireUserAuth: Boolean = isDeviceSecure()): SecretKey {
         if (keyStore.containsAlias(keyAlias)) {
-            val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
-            if (entry != null) {
-                return entry.secretKey
+            try {
+                val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
+                if (entry != null) {
+                    val key = entry.secretKey
+                    if (!requireUserAuth) {
+                        // Verify key works without auth in unsecured mode; otherwise recreate
+                        val testCipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+                        testCipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key)
+                    }
+                    return key
+                }
+            } catch (e: Exception) {
+                try { keyStore.deleteEntry(keyAlias) } catch (_: Exception) {}
             }
         }
 
@@ -99,6 +116,100 @@ class AdminVaultManager(
     fun decryptSecret(container: VaultEncryptedContainer): String {
         val masterKey = getOrCreateVaultMasterKey()
         return cryptoManager.decrypt(container, masterKey)
+    }
+
+    /**
+     * Envelope Encryption (User Key Hierarchy):
+     * 1. Generates random 256-bit AES Data Key (DEK).
+     * 2. Encrypts payload with DEK.
+     * 3. Wraps DEK with Keystore Master Key (auth-required).
+     * 4. Wraps DEK with Passphrase-derived Key (PBKDF2 600,000 iter).
+     */
+    fun encryptSecretEnvelope(
+        plaintext: String,
+        passphrase: String,
+        keyVersion: Long = 1
+    ): VaultEncryptedContainer {
+        val dek = cryptoManager.generateRandomDataKey()
+        val dataContainer = cryptoManager.encrypt(plaintext, dek, keyVersion)
+
+        val keystoreKey = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+        val keystoreWrappedDek = cryptoManager.wrapKey(dek, keystoreKey, keyVersion)
+
+        val salt = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("antitheft-vault-user-salt-v1".toByteArray(Charsets.UTF_8))
+        val passphraseKey = deriveVaultMasterKeyFromPassphrase(passphrase, salt)
+        val passphraseWrappedDek = cryptoManager.wrapKey(dek, passphraseKey, keyVersion)
+
+        val envelope = org.json.JSONObject().apply {
+            put("v", 2)
+            put("data_cipher", dataContainer.ciphertextBase64)
+            put("data_iv", dataContainer.ivBase64)
+            put("data_tag", dataContainer.tagBase64)
+            put("keystore_wrapped_dek", org.json.JSONObject().apply {
+                put("cipher", keystoreWrappedDek.ciphertextBase64)
+                put("iv", keystoreWrappedDek.ivBase64)
+                put("tag", keystoreWrappedDek.tagBase64)
+            })
+            put("passphrase_wrapped_dek", org.json.JSONObject().apply {
+                put("cipher", passphraseWrappedDek.ciphertextBase64)
+                put("iv", passphraseWrappedDek.ivBase64)
+                put("tag", passphraseWrappedDek.tagBase64)
+            })
+        }
+
+        return VaultEncryptedContainer(
+            ciphertextBase64 = envelope.toString(),
+            ivBase64 = dataContainer.ivBase64,
+            tagBase64 = dataContainer.tagBase64,
+            keyVersion = keyVersion
+        )
+    }
+
+    /**
+     * Envelope Decryption:
+     * Unwraps DEK via Keystore Key (if device lock active), or via passphrase-derived Key (if restored).
+     */
+    fun decryptSecretEnvelope(
+        container: VaultEncryptedContainer,
+        restoredPassphraseKey: SecretKey? = null
+    ): String {
+        if (!container.ciphertextBase64.trim().startsWith("{")) {
+            val k = restoredPassphraseKey ?: getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+            return cryptoManager.decrypt(container, k)
+        }
+
+        val envelope = org.json.JSONObject(container.ciphertextBase64)
+        if (envelope.optInt("v", 1) != 2) {
+            val k = restoredPassphraseKey ?: getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+            return cryptoManager.decrypt(container, k)
+        }
+
+        val dataCipher = envelope.getString("data_cipher")
+        val dataIv = envelope.getString("data_iv")
+        val dataTag = envelope.getString("data_tag")
+        val dataContainer = VaultEncryptedContainer(dataCipher, dataIv, dataTag, container.keyVersion)
+
+        val dek: SecretKey = if (restoredPassphraseKey != null) {
+            val pObj = envelope.getJSONObject("passphrase_wrapped_dek")
+            val pContainer = VaultEncryptedContainer(
+                pObj.getString("cipher"),
+                pObj.getString("iv"),
+                pObj.getString("tag")
+            )
+            cryptoManager.unwrapKey(pContainer, restoredPassphraseKey)
+        } else {
+            val kObj = envelope.getJSONObject("keystore_wrapped_dek")
+            val kContainer = VaultEncryptedContainer(
+                kObj.getString("cipher"),
+                kObj.getString("iv"),
+                kObj.getString("tag")
+            )
+            val keystoreKey = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+            cryptoManager.unwrapKey(kContainer, keystoreKey)
+        }
+
+        return cryptoManager.decrypt(dataContainer, dek)
     }
 
     /**

@@ -2,7 +2,14 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(case_sensitive=True)
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "backend", ".env")
+        ),
+        extra="allow"
+    )
 
     PROJECT_NAME: str = "Android Anti-Theft & Recovery Backend"
     VERSION: str = "0.2.0-phase2"

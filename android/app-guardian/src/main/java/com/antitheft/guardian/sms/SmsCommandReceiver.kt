@@ -48,7 +48,7 @@ class SmsCommandReceiver : BroadcastReceiver() {
                         "LOCATE" -> {
                             com.antitheft.guardian.commands.CommandExecutionManager.executeLocate(context)
                             try {
-                                val replyPhone = trustedPhone.trim()
+                                val replyPhone = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeForSmsDispatch(trustedPhone)
                                 if (replyPhone.isBlank()) {
                                     Log.w(TAG, "Strict routing: No registered trusted phone number! Outbound SMS response dropped.")
                                 } else {

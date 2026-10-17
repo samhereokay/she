@@ -12,6 +12,9 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import java.util.concurrent.TimeUnit
 
+data class RegisterRequest(val username: String, val email: String, val password: String)
+data class UserResponseDto(val id: String, val username: String, val email: String)
+
 data class LoginRequest(val username: String, val password: String)
 data class TokenResponse(val access_token: String, val token_type: String)
 
@@ -126,6 +129,9 @@ data class VaultPurgeResponse(
 )
 
 interface AdminApiService {
+    @POST("auth/register")
+    suspend fun register(@Body request: RegisterRequest): UserResponseDto
+
     @POST("auth/login/json")
     suspend fun login(@Body request: LoginRequest): TokenResponse
 

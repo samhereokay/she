@@ -31,11 +31,18 @@ def override_get_db():
 
 @pytest.fixture(autouse=True)
 def reset_database():
+    from app.core.rate_limit import auth_limiter, totp_limiter, batch_ingest_limiter
+    auth_limiter.history.clear()
+    totp_limiter.history.clear()
+    batch_ingest_limiter.history.clear()
     app.dependency_overrides[get_db] = override_get_db
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
     app.dependency_overrides.clear()
+    auth_limiter.history.clear()
+    totp_limiter.history.clear()
+    batch_ingest_limiter.history.clear()
 
 
 @pytest.fixture

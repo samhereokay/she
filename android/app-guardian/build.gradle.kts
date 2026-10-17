@@ -44,6 +44,22 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("${rootDir}/release.keystore")
+            storePassword = "AntiTheftReleaseProdKey2026!"
+            keyAlias = "antitheft_release"
+            keyPassword = "AntiTheftReleaseProdKey2026!"
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+
     lint {
         abortOnError = false
         checkReleaseBuilds = false

@@ -13,13 +13,15 @@ from app.db.models import User, VaultItem, AuditEvent
 def _helper_setup_user_with_2fa(client, username="vault_user", email="vault@example.com"):
     """Helper to register user and obtain 2FA-upgraded session token."""
     settings.ALLOW_PUBLIC_REGISTRATION = True
+    u = f"{username}_{os.urandom(4).hex()}"
+    e = f"{u}@example.com"
     client.post("/auth/register", json={
-        "username": username,
-        "email": email,
+        "username": u,
+        "email": e,
         "password": "VaultPassword123!"
     })
     init_token = client.post("/auth/login/json", json={
-        "username": username,
+        "username": u,
         "password": "VaultPassword123!"
     }).json()["access_token"]
 

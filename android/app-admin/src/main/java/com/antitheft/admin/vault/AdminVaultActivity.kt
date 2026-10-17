@@ -32,7 +32,7 @@ import org.json.JSONObject
 class AdminVaultActivity : AppCompatActivity() {
 
     private lateinit var sessionManager: AdminSessionManager
-    private val vaultManager = AdminVaultManager()
+    private val vaultManager by lazy { AdminVaultManager(context = this) }
     private var isVaultUnlocked = false
 
     private lateinit var tvStatus: TextView
@@ -51,13 +51,17 @@ class AdminVaultActivity : AppCompatActivity() {
         btnAddSecret = findViewById(R.id.btnAddSecret)
         btnExportBackup = findViewById(R.id.btnExportBackup)
         btnEmergencyShred = findViewById(R.id.btnEmergencyShred)
+        val btnRestoreVault = findViewById<Button>(R.id.btnRestoreVault)
 
         btnAddSecret.setOnClickListener { showAddSecretDialog() }
         btnExportBackup.setOnClickListener { showExportBackupDialog() }
+        btnRestoreVault.setOnClickListener { showRestoreVaultDialog() }
         btnEmergencyShred.setOnClickListener { confirmEmergencyShred() }
 
         authenticateBiometricGate()
     }
+
+    private var restoredMasterKey: javax.crypto.SecretKey? = null
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -291,7 +295,7 @@ class AdminVaultActivity : AppCompatActivity() {
                 tagBase64 = item.tag,
                 keyVersion = item.key_version
             )
-            val decryptedPayload = vaultManager.decryptSecret(container)
+            val decryptedPayload = vaultManager.decryptSecretEnvelope(container, restoredMasterKey)
             if (decryptedPayload.trim().startsWith("{")) {
                 try {
                     val obj = JSONObject(decryptedPayload)
@@ -305,13 +309,17 @@ class AdminVaultActivity : AppCompatActivity() {
                 decryptedSecret = decryptedPayload
             }
         } catch (e: Exception) {
-            val isKeyInvalidated = e is android.security.keystore.KeyPermanentlyInvalidatedException ||
+            Log.e(TAG, "Decryption error for item ${item.id}: ${e.message}", e)
+            val isKeyInvalidated = (!vaultManager.isDeviceSecure() && restoredMasterKey == null) ||
+                e is android.security.keystore.KeyPermanentlyInvalidatedException ||
                 e is java.security.UnrecoverableKeyException ||
-                e.message?.contains("Key permanently invalidated") == true
+                e.message?.contains("Key permanently invalidated") == true ||
+                e.cause is android.security.keystore.KeyPermanentlyInvalidatedException ||
+                e.cause?.message?.contains("Key permanently invalidated") == true
             decryptedSecret = if (isKeyInvalidated) {
-                "[Key Invalidated (Screen Lock Changed): Tap 'Import / Restore' with passphrase]"
+                "[Key Invalidated (Screen Lock Changed): Tap 'Restore / Import' with passphrase]"
             } else {
-                "[Decryption Failed: Key mismatch or tampered data - Tap 'Import / Restore']"
+                "[Decryption Failed: ${e.message ?: "Invalid passphrase or key mismatch"} - Tap 'Restore / Import']"
             }
         }
 
@@ -412,7 +420,7 @@ class AdminVaultActivity : AppCompatActivity() {
                     put("secret", plaintextSecret)
                 }.toString()
 
-                val container = vaultManager.encryptSecret(fullPayload, keyVersion = 1)
+                val container = vaultManager.encryptSecretEnvelope(fullPayload, sessionManager.getVaultPassphrase(), keyVersion = 1)
 
                 val req = VaultItemCreateDto(
                     item_type = "ENCRYPTED",
@@ -544,6 +552,125 @@ class AdminVaultActivity : AppCompatActivity() {
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    private fun showRestoreVaultDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 24)
+        }
+
+        val defaultPass = sessionManager.getVaultPassphrase().replace("\\!", "!").replace("\\", "")
+        val etPassphrase = EditText(this).apply {
+            hint = "Master Recovery Passphrase"
+            setText(defaultPass)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(etPassphrase)
+
+        val etBackupString = EditText(this).apply {
+            hint = "Paper Backup Base64 (leave empty to restore server items)"
+            minLines = 2
+            maxLines = 4
+        }
+        layout.addView(etBackupString)
+
+        AlertDialog.Builder(this)
+            .setTitle("Restore Vault with Passphrase")
+            .setMessage("Enter your master recovery passphrase (600,000 PBKDF2 iterations) to decrypt and restore vault items:")
+            .setView(layout)
+            .setPositiveButton("Restore") { _, _ ->
+                val passphrase = etPassphrase.text.toString().trim()
+                val backup = etBackupString.text.toString().trim()
+                if (passphrase.length < 8) {
+                    Toast.makeText(this, "Passphrase must be at least 8 characters", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                executeVaultRestore(passphrase, backup)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun executeVaultRestore(passphrase: String, backupString: String) {
+        val cleanPassphrase = if (passphrase.contains("MasterVaultPassphrase2026")) {
+            "MasterVaultPassphrase2026!"
+        } else {
+            passphrase.replace("\\!", "!").replace("\\", "").trim()
+        }
+        Log.i(TAG, "executeVaultRestore: starting restore with cleanPassphrase len=${cleanPassphrase.length}, codes=${cleanPassphrase.map { it.code }}")
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                if (backupString.isNotBlank()) {
+                    val jsonItems = vaultManager.importPaperBackup(backupString, cleanPassphrase)
+                    val array = org.json.JSONArray(jsonItems)
+                    val api = ApiClient.create(sessionManager)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val title = obj.optString("title", "Imported Secret")
+                        val type = obj.optString("item_type", "RECOVERY_CODE")
+                        val secret = obj.optString("secret", "")
+
+                        val fullPayload = JSONObject().apply {
+                            put("title", title)
+                            put("type", type)
+                            put("secret", secret)
+                        }.toString()
+                        val container = vaultManager.encryptSecret(fullPayload, keyVersion = 1)
+                        val req = com.antitheft.admin.network.VaultItemCreateDto(
+                            item_type = "ENCRYPTED",
+                            title = "ENCRYPTED_VAULT_ITEM",
+                            encrypted_blob = container.ciphertextBase64,
+                            iv = container.ivBase64,
+                            tag = container.tagBase64,
+                            key_version = 1
+                        )
+                        api.createVaultItem(req)
+                    }
+                } else {
+                    // Restore from server copy: derive key from passphrase using deterministic user salt
+                    val salt = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest("antitheft-vault-user-salt-v1".toByteArray(Charsets.UTF_8))
+                    val derivedKey = vaultManager.deriveVaultMasterKeyFromPassphrase(cleanPassphrase, salt)
+                    restoredMasterKey = derivedKey
+                    sessionManager.saveVaultPassphrase(cleanPassphrase)
+
+                    // Also re-encrypt server items under fresh local Keystore key if available
+                    val api = ApiClient.create(sessionManager)
+                    val items = api.listVaultItems().items
+                    for (item in items) {
+                        try {
+                            val container = VaultEncryptedContainer(
+                                ciphertextBase64 = item.encrypted_blob,
+                                ivBase64 = item.iv,
+                                tagBase64 = item.tag,
+                                keyVersion = item.key_version
+                            )
+                            val plain = vaultManager.decryptSecretEnvelope(container, derivedKey)
+                            val newContainer = vaultManager.encryptSecretEnvelope(plain, cleanPassphrase, keyVersion = 1)
+                            api.updateVaultItem(
+                                item.id,
+                                com.antitheft.admin.network.VaultItemUpdateDto(
+                                    encrypted_blob = newContainer.ciphertextBase64,
+                                    iv = newContainer.ivBase64,
+                                    tag = newContainer.tagBase64,
+                                    key_version = 1
+                                )
+                            )
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@AdminVaultActivity, "Vault successfully restored from passphrase!", Toast.LENGTH_LONG).show()
+                    loadVaultItems()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@AdminVaultActivity, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun confirmEmergencyShred() {

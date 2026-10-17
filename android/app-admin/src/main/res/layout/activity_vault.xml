@@ -52,8 +52,22 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Export Backup"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:backgroundTint="#059669"
+            android:textColor="#FFFFFF" />
+
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="wrap_content" />
+
+        <Button
+            android:id="@+id/btnRestoreVault"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Restore / Import"
+            android:textSize="11sp"
+            android:backgroundTint="#D97706"
             android:textColor="#FFFFFF" />
     </LinearLayout>
 

@@ -1392,6 +1392,85 @@ def test_backend_command_allowlist_and_lifecycle_commands(client):
         assert ack_resp.json()["command_status"] == "EXECUTED"
 
 
+def test_closed_public_registration_enforcement(client, db_session):
+    """
+    Verifies that public registration is locked down when ALLOW_PUBLIC_REGISTRATION is disabled
+    and an owner account already exists in the database.
+    """
+    from app.core.config import settings
+    original_setting = settings.ALLOW_PUBLIC_REGISTRATION
+    try:
+        # Create initial owner account
+        owner_resp = client.post("/auth/register", json={
+            "username": "bootstrap_owner",
+            "email": "bootstrap_owner@example.com",
+            "password": "SecurePassword123!"
+        })
+        assert owner_resp.status_code in (201, 400) # Created or already exists
+
+        # Disable public registration
+        settings.ALLOW_PUBLIC_REGISTRATION = False
+
+        # Attempt to register secondary user from public internet
+        intruder_resp = client.post("/auth/register", json={
+            "username": "unauthorized_user",
+            "email": "unauthorized@example.com",
+            "password": "Password123!"
+        })
+        assert intruder_resp.status_code == 403
+        assert "Public registration is disabled" in intruder_resp.json()["detail"]
+    finally:
+        settings.ALLOW_PUBLIC_REGISTRATION = original_setting
+
+
+def test_argon2id_recovery_code_one_time_consumption(client, db_session):
+    """
+    Verifies that Argon2id emergency recovery codes are strictly single-use.
+    """
+    import json
+    # Register user and enroll TOTP
+    uname = f"argon_user_{int(time.time())}"
+    reg_resp = client.post("/auth/register", json={
+        "username": uname,
+        "email": f"{uname}@example.com",
+        "password": "SecurePassword123!"
+    })
+    assert reg_resp.status_code == 201
+
+    login_resp = client.post("/auth/login/json", json={
+        "username": uname,
+        "password": "SecurePassword123!"
+    })
+    token = login_resp.json()["access_token"]
+
+    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token}"})
+    secret = setup_resp.json()["secret"]
+
+    import struct, hmac, hashlib
+    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
+    msg = struct.pack(">Q", int(time.time() // 30))
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    idx = h[-1] & 0x0F
+    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+    valid_code = f"{code_int % 1000000:06d}"
+
+    verify_resp = client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {token}"})
+    assert verify_resp.status_code == 200
+    recovery_codes = verify_resp.json()["recovery_codes"]
+    assert len(recovery_codes) == 8
+    first_code = recovery_codes[0]
+
+    # Validate first use with recovery code -> HTTP 200
+    val_resp1 = client.post("/auth/totp/validate", json={"code": first_code}, headers={"Authorization": f"Bearer {token}"})
+    assert val_resp1.status_code == 200
+    assert val_resp1.json()["is_2fa"] is True
+
+    # Validate second use with SAME code -> HTTP 401 Unauthorized (single use enforced!)
+    val_resp2 = client.post("/auth/totp/validate", json={"code": first_code}, headers={"Authorization": f"Bearer {token}"})
+    assert val_resp2.status_code == 401
+    assert "Invalid TOTP" in val_resp2.json()["detail"]
+
+
 
 
 

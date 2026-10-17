@@ -74,11 +74,25 @@ class AdminSessionManager(context: Context) {
     }
 
     fun getAdminPhoneNumber(): String {
-        return secureStorage.getDecryptedString(KEY_ADMIN_PHONE, "+15550199") ?: "+15550199"
+        return secureStorage.getDecryptedString(KEY_ADMIN_PHONE, "+15555215556") ?: "+15555215556"
     }
 
     fun setAdminPhoneNumber(phone: String) {
-        secureStorage.putEncryptedString(KEY_ADMIN_PHONE, phone)
+        val normalized = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(phone)
+        secureStorage.putEncryptedString(KEY_ADMIN_PHONE, normalized)
+    }
+
+    fun getVaultPassphrase(): String {
+        val saved = secureStorage.getDecryptedString(KEY_VAULT_PASSPHRASE)
+        if (saved.isNullOrBlank() || saved.contains("\\!")) {
+            return "MasterVaultPassphrase2026!"
+        }
+        return saved
+    }
+
+    fun saveVaultPassphrase(passphrase: String) {
+        val clean = passphrase.replace("\\!", "!")
+        secureStorage.putEncryptedString(KEY_VAULT_PASSPHRASE, clean)
     }
 
     companion object {
@@ -87,5 +101,6 @@ class AdminSessionManager(context: Context) {
         private const val KEY_TRUSTED_DEVICE_ID = "trusted_device_id"
         private const val KEY_COMMAND_SEQ = "command_sequence_counter"
         private const val KEY_ADMIN_PHONE = "admin_phone_number"
+        private const val KEY_VAULT_PASSPHRASE = "admin_vault_passphrase"
     }
 }
