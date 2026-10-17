@@ -195,4 +195,64 @@ class SmsCommandProcessorSecurityTest {
             assertEquals(seq, mockStorage.getLastInboundSmsSequence())
         }
     }
+
+    @Test
+    fun testPairingSecretRotationOldSecretFailsHmac() {
+        val nowEpoch = 1770000000L
+        val expiryEpoch = nowEpoch + 300L
+
+        // Phase 1: Device is paired with Secret A
+        val secretA = testSharedSecret
+        val cmdWithSecretA = SmsPduSerializer.formatInboundCommand(
+            commandType = "LOCATE",
+            sequenceNumber = 1L,
+            expiryEpochSec = expiryEpoch,
+            sharedSecretKeyBytes = secretA
+        )
+
+        val result1 = SmsCommandProcessor.processInboundPdu(
+            body = cmdWithSecretA,
+            storage = mockStorage,
+            nowEpochSec = nowEpoch
+        )
+        assertEquals(SmsProcessStatus.ACCEPTED, result1.status)
+        assertEquals(1L, mockStorage.getLastInboundSmsSequence())
+
+        // Phase 2: Owner executes UNPAIR, re-pairs with brand-new rotated Secret B
+        val secretB = ByteArray(32).apply { SecureRandom().nextBytes(this) }
+        val rotatedStorage = MockInboundSmsStorage(secretB, currentInboundSeq = 0L)
+
+        // Attacker attempts to send command signed with old Secret A
+        val staleCmdWithSecretA = SmsPduSerializer.formatInboundCommand(
+            commandType = "LOCK",
+            sequenceNumber = 2L,
+            expiryEpochSec = expiryEpoch,
+            sharedSecretKeyBytes = secretA // Old rotated secret!
+        )
+
+        val staleResult = SmsCommandProcessor.processInboundPdu(
+            body = staleCmdWithSecretA,
+            storage = rotatedStorage,
+            nowEpochSec = nowEpoch
+        )
+        assertEquals(SmsProcessStatus.DROPPED_HMAC_FAILURE, staleResult.status)
+        assertTrue(staleResult.reason.contains("failed HMAC"))
+        assertEquals(0L, rotatedStorage.getLastInboundSmsSequence())
+
+        // Phase 3: Legitimate Owner sends command signed with new Secret B
+        val validCmdWithSecretB = SmsPduSerializer.formatInboundCommand(
+            commandType = "LOCK",
+            sequenceNumber = 2L,
+            expiryEpochSec = expiryEpoch,
+            sharedSecretKeyBytes = secretB
+        )
+
+        val validResult = SmsCommandProcessor.processInboundPdu(
+            body = validCmdWithSecretB,
+            storage = rotatedStorage,
+            nowEpochSec = nowEpoch
+        )
+        assertEquals(SmsProcessStatus.ACCEPTED, validResult.status)
+        assertEquals(2L, rotatedStorage.getLastInboundSmsSequence())
+    }
 }
