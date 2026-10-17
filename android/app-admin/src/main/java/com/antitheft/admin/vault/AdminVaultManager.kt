@@ -28,11 +28,17 @@ class AdminVaultManager(
 
     /**
      * Builds KeyGenParameterSpec with setUserAuthenticationRequired(true) and hardware AES-GCM policy.
+     *
+     * Auth validity window is deliberately set to 60 seconds (1 minute):
+     * Setting authValiditySeconds = 0 requires a BiometricPrompt.CryptoObject per operation, degrading UX
+     * when displaying multiple vault items. Setting 60s provides a bounded window after device credential/biometric
+     * unlock to view and manage secrets, while immediately invalidating permanently (KeyPermanentlyInvalidatedException)
+     * if device lock credentials are removed or modified.
      */
     fun buildKeyGenParameterSpec(
         alias: String = keyAlias,
         requireUserAuth: Boolean = true,
-        authValiditySeconds: Int = 300
+        authValiditySeconds: Int = 60
     ): KeyGenParameterSpec {
         val builder = KeyGenParameterSpec.Builder(
             alias,
@@ -125,6 +131,16 @@ class AdminVaultManager(
      * 3. Wraps DEK with Keystore Master Key (auth-required).
      * 4. Wraps DEK with Passphrase-derived Key (PBKDF2 600,000 iter).
      */
+    /**
+     * Envelope Encryption (User Key Hierarchy):
+     * 1. Generates random 256-bit AES Data Key (DEK).
+     * 2. Encrypts payload with DEK.
+     * 3. Wraps DEK with Keystore Master Key (auth-required).
+     * 4. Generates a fresh cryptographically random 16-byte salt per vault item.
+     * 5. Derives Passphrase Key via PBKDF2 (600,000 iterations) using the item salt.
+     * 6. Wraps DEK with Passphrase-derived Key.
+     * 7. Packages ciphertext, IV, tag, salt, and wrapped keys into envelope JSON.
+     */
     fun encryptSecretEnvelope(
         plaintext: String,
         passphrase: String,
@@ -136,13 +152,14 @@ class AdminVaultManager(
         val keystoreKey = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
         val keystoreWrappedDek = cryptoManager.wrapKey(dek, keystoreKey, keyVersion)
 
-        val salt = java.security.MessageDigest.getInstance("SHA-256")
-            .digest("antitheft-vault-user-salt-v1".toByteArray(Charsets.UTF_8))
+        val salt = cryptoManager.generateRandomSalt(16)
+        val saltB64 = java.util.Base64.getEncoder().encodeToString(salt)
         val passphraseKey = deriveVaultMasterKeyFromPassphrase(passphrase, salt)
         val passphraseWrappedDek = cryptoManager.wrapKey(dek, passphraseKey, keyVersion)
 
         val envelope = org.json.JSONObject().apply {
             put("v", 2)
+            put("salt", saltB64)
             put("data_cipher", dataContainer.ciphertextBase64)
             put("data_iv", dataContainer.ivBase64)
             put("data_tag", dataContainer.tagBase64)
@@ -168,20 +185,20 @@ class AdminVaultManager(
 
     /**
      * Envelope Decryption:
-     * Unwraps DEK via Keystore Key (if device lock active), or via passphrase-derived Key (if restored).
+     * Unwraps DEK via Keystore Key (if device lock active), or via passphrase-derived Key (if restored with passphrase).
      */
     fun decryptSecretEnvelope(
         container: VaultEncryptedContainer,
-        restoredPassphraseKey: SecretKey? = null
+        passphrase: String? = null
     ): String {
         if (!container.ciphertextBase64.trim().startsWith("{")) {
-            val k = restoredPassphraseKey ?: getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+            val k = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
             return cryptoManager.decrypt(container, k)
         }
 
         val envelope = org.json.JSONObject(container.ciphertextBase64)
         if (envelope.optInt("v", 1) != 2) {
-            val k = restoredPassphraseKey ?: getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+            val k = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
             return cryptoManager.decrypt(container, k)
         }
 
@@ -190,14 +207,22 @@ class AdminVaultManager(
         val dataTag = envelope.getString("data_tag")
         val dataContainer = VaultEncryptedContainer(dataCipher, dataIv, dataTag, container.keyVersion)
 
-        val dek: SecretKey = if (restoredPassphraseKey != null) {
+        val dek: SecretKey = if (!passphrase.isNullOrBlank()) {
             val pObj = envelope.getJSONObject("passphrase_wrapped_dek")
             val pContainer = VaultEncryptedContainer(
                 pObj.getString("cipher"),
                 pObj.getString("iv"),
                 pObj.getString("tag")
             )
-            cryptoManager.unwrapKey(pContainer, restoredPassphraseKey)
+            val saltB64 = envelope.optString("salt")
+            val salt = if (saltB64.isNotEmpty()) {
+                java.util.Base64.getDecoder().decode(saltB64)
+            } else {
+                java.security.MessageDigest.getInstance("SHA-256")
+                    .digest("antitheft-vault-user-salt-v1".toByteArray(Charsets.UTF_8))
+            }
+            val passphraseKey = deriveVaultMasterKeyFromPassphrase(passphrase, salt)
+            cryptoManager.unwrapKey(pContainer, passphraseKey)
         } else {
             val kObj = envelope.getJSONObject("keystore_wrapped_dek")
             val kContainer = VaultEncryptedContainer(

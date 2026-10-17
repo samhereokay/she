@@ -46,10 +46,12 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("${rootDir}/release.keystore")
-            storePassword = "AntiTheftReleaseProdKey2026!"
-            keyAlias = "antitheft_release"
-            keyPassword = "AntiTheftReleaseProdKey2026!"
+            val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
+            val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+            storeFile = file(keystorePath)
+            storePassword = releasePassword
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "antitheft_release"
+            keyPassword = releasePassword
         }
     }
 

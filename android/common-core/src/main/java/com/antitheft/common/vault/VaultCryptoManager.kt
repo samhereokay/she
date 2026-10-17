@@ -152,6 +152,15 @@ class VaultCryptoManager {
     }
 
     /**
+     * Generates a cryptographically secure random salt for PBKDF2 key derivation.
+     */
+    fun generateRandomSalt(lengthBytes: Int = 16): ByteArray {
+        val salt = ByteArray(lengthBytes)
+        secureRandom.nextBytes(salt)
+        return salt
+    }
+
+    /**
      * Envelope Key Wrapping: Encrypts a Data Encryption Key (DEK) with a Key Encryption Key (KEK) using AES-256-GCM.
      */
     fun wrapKey(dek: SecretKey, kek: SecretKey, keyVersion: Long = 1): VaultEncryptedContainer {

@@ -32,9 +32,11 @@ def override_get_db():
 @pytest.fixture(autouse=True)
 def reset_database():
     from app.core.rate_limit import auth_limiter, totp_limiter, batch_ingest_limiter
+    from app.core.config import settings
     auth_limiter.history.clear()
     totp_limiter.history.clear()
     batch_ingest_limiter.history.clear()
+    settings.ALLOW_PUBLIC_REGISTRATION = False
     app.dependency_overrides[get_db] = override_get_db
     Base.metadata.create_all(bind=engine)
     yield
@@ -43,6 +45,7 @@ def reset_database():
     auth_limiter.history.clear()
     totp_limiter.history.clear()
     batch_ingest_limiter.history.clear()
+    settings.ALLOW_PUBLIC_REGISTRATION = False
 
 
 @pytest.fixture

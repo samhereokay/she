@@ -1,12 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:usesCleartextTraffic="true">
-        <receiver
-            android:name=".dashboard.AdminDispatchReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.antitheft.admin.DISPATCH_COMMAND" />
-            </intent-filter>
-        </receiver>
-    </application>
+    <application android:networkSecurityConfig="@xml/network_security_config" />
 </manifest>

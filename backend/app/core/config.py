@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Environment & Security
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
     ENFORCE_HTTPS: bool = os.getenv("ENFORCE_HTTPS", "false").lower() == "true"
-    ALLOW_PUBLIC_REGISTRATION: bool = os.getenv("ALLOW_PUBLIC_REGISTRATION", "true").lower() == "true"
+    ALLOW_PUBLIC_REGISTRATION: bool = os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").lower() == "true"
     REGISTRATION_TOKEN: str = os.getenv("REGISTRATION_TOKEN", "")
     
     # Environment-Mandated Secrets (NO committed fallback defaults)

@@ -42,12 +42,15 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     """Register a new owner admin user with lockdown check and rate limiting."""
     auth_limiter.check_rate_limit(request)
 
+    # Registration lockdown: The platform operates under a single-owner model.
+    # In production (ALLOW_PUBLIC_REGISTRATION=False), once the first owner account exists,
+    # public registration is permanently closed.
     if not settings.ALLOW_PUBLIC_REGISTRATION:
         existing_users = db.query(User).count()
         if existing_users > 0:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Public registration is disabled. Administrator invitation required."
+                detail="Public registration is permanently closed. Owner account already initialized."
             )
 
     # Check if username or email exists

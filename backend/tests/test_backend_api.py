@@ -426,7 +426,7 @@ def test_cross_user_authorization(client, test_keypair, pair_device):
     """Enforces multi-tenant authorization: User A cannot access User B's device or location history."""
     _, pem_public = test_keypair
 
-    # 1. Register User A and User B
+    # 1. Register User A and User B (allowed when ALLOW_PUBLIC_REGISTRATION=True)
     settings.ALLOW_PUBLIC_REGISTRATION = True
     client.post("/auth/register", json={"username": "user_a", "email": "a@test.com", "password": "PasswordA123!"})
     client.post("/auth/register", json={"username": "user_b", "email": "b@test.com", "password": "PasswordB123!"})

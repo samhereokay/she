@@ -20,10 +20,11 @@ class PhoneNumberNormalizerTest {
     }
 
     @Test
-    fun testNormalizeEmulatorShortPort() {
-        val input = "5556"
+    fun testNormalizeStandardNumberWithoutPlus() {
+        val input = "15555215556"
         val normalized = PhoneNumberNormalizer.normalizeToE164(input)
         assertEquals("+15555215556", normalized)
+        assertTrue(PhoneNumberNormalizer.isValid(normalized))
     }
 
     @Test

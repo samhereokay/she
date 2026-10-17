@@ -1397,30 +1397,22 @@ def test_closed_public_registration_enforcement(client, db_session):
     Verifies that public registration is locked down when ALLOW_PUBLIC_REGISTRATION is disabled
     and an owner account already exists in the database.
     """
-    from app.core.config import settings
-    original_setting = settings.ALLOW_PUBLIC_REGISTRATION
-    try:
-        # Create initial owner account
-        owner_resp = client.post("/auth/register", json={
-            "username": "bootstrap_owner",
-            "email": "bootstrap_owner@example.com",
-            "password": "SecurePassword123!"
-        })
-        assert owner_resp.status_code in (201, 400) # Created or already exists
+    # 1. Create initial owner account
+    owner_resp = client.post("/auth/register", json={
+        "username": "bootstrap_owner",
+        "email": "bootstrap_owner@example.com",
+        "password": "SecurePassword123!"
+    })
+    assert owner_resp.status_code in (201, 400) # Created or already exists
 
-        # Disable public registration
-        settings.ALLOW_PUBLIC_REGISTRATION = False
-
-        # Attempt to register secondary user from public internet
-        intruder_resp = client.post("/auth/register", json={
-            "username": "unauthorized_user",
-            "email": "unauthorized@example.com",
-            "password": "Password123!"
-        })
-        assert intruder_resp.status_code == 403
-        assert "Public registration is disabled" in intruder_resp.json()["detail"]
-    finally:
-        settings.ALLOW_PUBLIC_REGISTRATION = original_setting
+    # 2. Attempt to register secondary user from public internet -> Permanently closed
+    intruder_resp = client.post("/auth/register", json={
+        "username": "unauthorized_user",
+        "email": "unauthorized@example.com",
+        "password": "Password123!"
+    })
+    assert intruder_resp.status_code == 403
+    assert "Public registration is permanently closed" in intruder_resp.json()["detail"]
 
 
 def test_argon2id_recovery_code_one_time_consumption(client, db_session):

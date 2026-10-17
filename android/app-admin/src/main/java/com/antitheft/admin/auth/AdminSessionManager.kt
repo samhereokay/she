@@ -82,25 +82,11 @@ class AdminSessionManager(context: Context) {
         secureStorage.putEncryptedString(KEY_ADMIN_PHONE, normalized)
     }
 
-    fun getVaultPassphrase(): String {
-        val saved = secureStorage.getDecryptedString(KEY_VAULT_PASSPHRASE)
-        if (saved.isNullOrBlank() || saved.contains("\\!")) {
-            return "MasterVaultPassphrase2026!"
-        }
-        return saved
-    }
-
-    fun saveVaultPassphrase(passphrase: String) {
-        val clean = passphrase.replace("\\!", "!")
-        secureStorage.putEncryptedString(KEY_VAULT_PASSPHRASE, clean)
-    }
-
     companion object {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_TRUSTED_DEVICE_ID = "trusted_device_id"
         private const val KEY_COMMAND_SEQ = "command_sequence_counter"
         private const val KEY_ADMIN_PHONE = "admin_phone_number"
-        private const val KEY_VAULT_PASSPHRASE = "admin_vault_passphrase"
     }
 }
