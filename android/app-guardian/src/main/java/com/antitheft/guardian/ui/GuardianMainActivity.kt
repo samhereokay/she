@@ -85,8 +85,13 @@ class GuardianMainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnCallEmergencyContact)?.setOnClickListener {
             val phone = storageHelper.getTrustedPhoneNumber().ifBlank { "+15550199" }
-            val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$phone"))
-            startActivity(dialIntent)
+            try {
+                val callIntent = Intent(Intent.ACTION_CALL, android.net.Uri.parse("tel:$phone"))
+                startActivity(callIntent)
+            } catch (e: Exception) {
+                val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$phone"))
+                startActivity(dialIntent)
+            }
         }
 
         findViewById<Button>(R.id.btnCaptureNow).setOnClickListener {
@@ -148,11 +153,31 @@ class GuardianMainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Dialer Permitted, Nav Suppressed)", Toast.LENGTH_LONG).show()
                 }
             } else {
-                // Thief protection: Exiting kiosk mode strictly requires owner-signed command from Admin companion phone
+                // Thief protection: Exiting kiosk mode strictly requires owner-signed command from Admin companion phone,
+                // or local one-time recovery code stored in owner vault
+                val input = android.widget.EditText(this).apply {
+                    hint = "e.g. RECOVER-123456"
+                    inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                }
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Kiosk Lockdown Active")
-                    .setMessage("This device is locked into Anti-Theft Kiosk mode. To prevent thief bypass, local PIN exit is disabled. An owner-signed EXIT_KIOSK or RECOVERED command must be dispatched from the registered Admin phone.")
-                    .setPositiveButton("OK", null)
+                    .setMessage("This device is locked into Anti-Theft Kiosk mode. To exit, dispatch an owner-signed EXIT_KIOSK command from your Admin phone, or enter your offline Vault Recovery Code:")
+                    .setView(input)
+                    .setPositiveButton("Verify Recovery Code") { _, _ ->
+                        val code = input.text.toString().trim()
+                        val expected = storageHelper.getOfflineRecoveryCode()
+                        if (code.equals(expected, ignoreCase = true)) {
+                            deviceOwnerManager.exitLockTaskMode(this)
+                            storageHelper.setStolenMode(false)
+                            isLockTaskActive = false
+                            findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Lock-Task Kiosk Mode"
+                            findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.GONE
+                            Toast.makeText(this, "Recovery code verified. Kiosk mode EXITED.", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(this, "INVALID recovery code. Exit denied.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
                     .show()
             }
         }

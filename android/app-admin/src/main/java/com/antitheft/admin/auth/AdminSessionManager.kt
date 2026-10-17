@@ -50,7 +50,9 @@ class AdminSessionManager(context: Context) {
     @Synchronized
     fun getNextCommandSequence(): Long {
         val currentStr = secureStorage.getDecryptedString(KEY_COMMAND_SEQ, "0") ?: "0"
-        val next = currentStr.toLongOrNull()?.plus(1) ?: 1L
+        val saved = currentStr.toLongOrNull() ?: 0L
+        val nowEpochSec = System.currentTimeMillis() / 1000L
+        val next = AdminSequenceCalculator.computeNextSequence(saved, nowEpochSec)
         secureStorage.putEncryptedString(KEY_COMMAND_SEQ, next.toString())
         return next
     }

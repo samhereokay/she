@@ -1,0 +1,110 @@
+package com.antitheft.common.vault
+
+import org.junit.Assert.*
+import org.junit.Test
+import java.security.SecureRandom
+import javax.crypto.AEADBadTagException
+import javax.crypto.KeyGenerator
+
+/**
+ * Verifies Zero-Knowledge Vault recovery after a complete local device wipe.
+ * Proves that:
+ * 1. Vault items encrypted with PBKDF2-derived master keys can be fully recovered from server ciphertext using only the master passphrase + salt.
+ * 2. Wrong passphrases or tampered server ciphertexts fail cryptographically with AEADBadTagException.
+ * 3. Restored items can be seamlessly migrated to a new device's local Keystore master key.
+ */
+class VaultPassphraseRestoreTest {
+
+    private val cryptoManager = VaultCryptoManager()
+
+    @Test
+    fun testVaultRestoreAfterLocalDeviceWipe() {
+        val masterPassphrase = "SuperSecureMasterPassphrase2026!"
+        val userSalt = ByteArray(32).apply { SecureRandom().nextBytes(this) }
+
+        // --- Step 1: Initial Setup & Local Encryption on Device A ---
+        val originalSecretData = "{\"imei\":\"358291048291823\",\"sim_serial\":\"89014103211118510720\",\"recovery_code\":\"RECOVER-982144\"}"
+        val derivedMasterKeyDeviceA = cryptoManager.deriveKeyFromPassphrase(
+            passphrase = masterPassphrase,
+            salt = userSalt,
+            iterations = VaultCryptoManager.PBKDF2_ITERATIONS
+        )
+
+        val serverContainer = cryptoManager.encrypt(originalSecretData, derivedMasterKeyDeviceA, keyVersion = 1)
+        assertNotNull(serverContainer.ciphertextBase64)
+        assertNotNull(serverContainer.ivBase64)
+        assertNotNull(serverContainer.tagBase64)
+
+        // --- Step 2: Total Device Wipe (Loss of Device A) ---
+        // Device A is lost/wiped. All local Keystore keys, databases, and preferences on Device A are destroyed.
+        // Attacker or cloud server only has serverContainer (ciphertext, iv, tag) and public userSalt.
+
+        // --- Step 3: Fresh Install on Device B & Passphrase Restore ---
+        // User installs app on replacement phone, logs in, and enters master passphrase:
+        val derivedMasterKeyDeviceB = cryptoManager.deriveKeyFromPassphrase(
+            passphrase = masterPassphrase,
+            salt = userSalt,
+            iterations = VaultCryptoManager.PBKDF2_ITERATIONS
+        )
+
+        // Keys derived deterministically from same passphrase + salt must have identical encoded material
+        assertArrayEquals(derivedMasterKeyDeviceA.encoded, derivedMasterKeyDeviceB.encoded)
+
+        // Decrypt server ciphertext on new device
+        val restoredPlaintext = cryptoManager.decrypt(serverContainer, derivedMasterKeyDeviceB)
+        assertEquals("Decrypted secret must match original secret after wipe", originalSecretData, restoredPlaintext)
+
+        // --- Step 4: Re-encrypt under Device B's local Keystore Master Key ---
+        val deviceBKeystoreKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val deviceBLocalContainer = cryptoManager.encrypt(restoredPlaintext, deviceBKeystoreKey, keyVersion = 2)
+
+        val localDecrypted = cryptoManager.decrypt(deviceBLocalContainer, deviceBKeystoreKey)
+        assertEquals(originalSecretData, localDecrypted)
+    }
+
+    @Test
+    fun testVaultRestoreWithWrongPassphraseFails() {
+        val correctPassphrase = "CorrectPassword2026!"
+        val wrongPassphrase = "WrongPassword2026!"
+        val salt = ByteArray(32).apply { SecureRandom().nextBytes(this) }
+
+        val originalSecret = "{\"private_seed\":\"abandon ability able about above absent absorb abstract\"}"
+        val validKey = cryptoManager.deriveKeyFromPassphrase(correctPassphrase, salt)
+        val container = cryptoManager.encrypt(originalSecret, validKey)
+
+        // Attacker attempts restore with incorrect passphrase
+        val wrongKey = cryptoManager.deriveKeyFromPassphrase(wrongPassphrase, salt)
+        assertFalse("Keys derived from different passphrases must differ",
+            validKey.encoded.contentEquals(wrongKey.encoded))
+
+        try {
+            cryptoManager.decrypt(container, wrongKey)
+            fail("Expected AEADBadTagException when restoring with wrong passphrase")
+        } catch (e: Exception) {
+            assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
+        }
+    }
+
+    @Test
+    fun testVaultRestoreWithTamperedServerCiphertextFails() {
+        val passphrase = "MasterVaultPassphrase!"
+        val salt = ByteArray(32).apply { SecureRandom().nextBytes(this) }
+        val key = cryptoManager.deriveKeyFromPassphrase(passphrase, salt)
+
+        val container = cryptoManager.encrypt("sensitive_documents", key)
+
+        // Server tampered with ciphertext bytes
+        val ctBytes = java.util.Base64.getDecoder().decode(container.ciphertextBase64)
+        ctBytes[0] = (ctBytes[0].toInt() xor 0x01).toByte()
+        val tamperedContainer = container.copy(
+            ciphertextBase64 = java.util.Base64.getEncoder().encodeToString(ctBytes)
+        )
+
+        try {
+            cryptoManager.decrypt(tamperedContainer, key)
+            fail("Expected AEADBadTagException for tampered ciphertext from server")
+        } catch (e: Exception) {
+            assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
+        }
+    }
+}

@@ -20,10 +20,41 @@ class AdminVaultManager(
     private val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     /**
+     * Builds KeyGenParameterSpec with setUserAuthenticationRequired(true) and hardware AES-GCM policy.
+     */
+    fun buildKeyGenParameterSpec(
+        alias: String = keyAlias,
+        requireUserAuth: Boolean = true,
+        authValiditySeconds: Int = -1
+    ): KeyGenParameterSpec {
+        val builder = KeyGenParameterSpec.Builder(
+            alias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .setRandomizedEncryptionRequired(true)
+            .setUserAuthenticationRequired(requireUserAuth)
+
+        if (requireUserAuth) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                builder.setUserAuthenticationParameters(
+                    authValiditySeconds.coerceAtLeast(0),
+                    KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL
+                )
+            } else {
+                builder.setUserAuthenticationValidityDurationSeconds(authValiditySeconds)
+            }
+        }
+        return builder.build()
+    }
+
+    /**
      * Retrieves or generates the 256-bit AES-GCM Vault Master Key inside Android Keystore.
      */
     @Synchronized
-    fun getOrCreateVaultMasterKey(): SecretKey {
+    fun getOrCreateVaultMasterKey(requireUserAuth: Boolean = false): SecretKey {
         if (keyStore.containsAlias(keyAlias)) {
             val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
             if (entry != null) {
@@ -35,18 +66,23 @@ class AdminVaultManager(
             KeyProperties.KEY_ALGORITHM_AES,
             "AndroidKeyStore"
         )
-        val spec = KeyGenParameterSpec.Builder(
-            keyAlias,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .setRandomizedEncryptionRequired(true)
-            .build()
-
+        val spec = buildKeyGenParameterSpec(keyAlias, requireUserAuth = requireUserAuth)
         keyGenerator.init(spec)
         return keyGenerator.generateKey()
+    }
+
+    /**
+     * Creates an AES-GCM Cipher bound to a BiometricPrompt.CryptoObject for authenticated crypto operations.
+     */
+    fun createCryptoObject(mode: Int, iv: ByteArray? = null): androidx.biometric.BiometricPrompt.CryptoObject {
+        val masterKey = getOrCreateVaultMasterKey()
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        if (mode == javax.crypto.Cipher.DECRYPT_MODE && iv != null) {
+            cipher.init(mode, masterKey, javax.crypto.spec.GCMParameterSpec(128, iv))
+        } else {
+            cipher.init(mode, masterKey)
+        }
+        return androidx.biometric.BiometricPrompt.CryptoObject(cipher)
     }
 
     /**

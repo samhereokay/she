@@ -8,12 +8,14 @@ import java.util.UUID
 
 import com.antitheft.common.crypto.KeystoreAesGcmStorage
 
+import com.antitheft.guardian.sms.InboundSmsStorage
+
 /**
  * Manages device metadata and sequence numbers inside Direct Boot Device Protected Storage (DE).
  * Accessible before First Unlock.
  * Sensitive keys (SQLCipher db_passphrase and pairing_secret) are encrypted at rest with hardware Keystore AES-256-GCM.
  */
-class DirectBootStorageHelper(context: Context) {
+class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
 
     private val deContext: Context = if (context.isDeviceProtectedStorage) {
         context
@@ -69,7 +71,7 @@ class DirectBootStorageHelper(context: Context) {
         prefs.edit().putString(KEY_DEVICE_ID, id).apply()
     }
 
-    fun getDeviceAlias(): String {
+    override fun getDeviceAlias(): String {
         return prefs.getString(KEY_DEVICE_ALIAS, "GuardianDevice") ?: "GuardianDevice"
     }
 
@@ -77,7 +79,7 @@ class DirectBootStorageHelper(context: Context) {
         prefs.edit().putString(KEY_DEVICE_ALIAS, alias).apply()
     }
 
-    fun getTrustedPhoneNumber(): String {
+    override fun getTrustedPhoneNumber(): String {
         return prefs.getString(KEY_TRUSTED_PHONE, "") ?: ""
     }
 
@@ -94,14 +96,14 @@ class DirectBootStorageHelper(context: Context) {
     }
 
     @Synchronized
-    fun getNextSequenceNumber(): Long {
+    override fun getNextSequenceNumber(): Long {
         val current = prefs.getLong(KEY_SEQUENCE_COUNTER, 0L)
         val next = current + 1
         prefs.edit().putLong(KEY_SEQUENCE_COUNTER, next).commit()
         return next
     }
 
-    fun getPairingSecret(): ByteArray {
+    override fun getPairingSecret(): ByteArray {
         var secretHex = secureStorage.getDecryptedString(KEY_PAIRING_SECRET, null)
         if (secretHex == null) {
             val randomBytes = ByteArray(32)
@@ -191,16 +193,31 @@ class DirectBootStorageHelper(context: Context) {
             .remove(KEY_IS_STOLEN_MODE)
             .commit()
         secureStorage.remove(KEY_PAIRING_SECRET)
+        secureStorage.remove(KEY_OFFLINE_RECOVERY_CODE)
     }
 
     @Synchronized
-    fun getLastInboundSmsSequence(): Long {
+    override fun getLastInboundSmsSequence(): Long {
         return prefs.getLong(KEY_LAST_INBOUND_SMS_SEQ, 0L)
     }
 
     @Synchronized
-    fun setLastInboundSmsSequence(seq: Long) {
+    override fun setLastInboundSmsSequence(seq: Long) {
         prefs.edit().putLong(KEY_LAST_INBOUND_SMS_SEQ, seq).commit()
+    }
+
+    fun getOfflineRecoveryCode(): String {
+        var code = secureStorage.getDecryptedString(KEY_OFFLINE_RECOVERY_CODE, null)
+        if (code == null) {
+            val rand = SecureRandom().nextInt(900000) + 100000
+            code = "RECOVER-$rand"
+            secureStorage.putEncryptedString(KEY_OFFLINE_RECOVERY_CODE, code)
+        }
+        return code
+    }
+
+    fun setOfflineRecoveryCode(code: String) {
+        secureStorage.putEncryptedString(KEY_OFFLINE_RECOVERY_CODE, code)
     }
 
     companion object {
@@ -219,5 +236,6 @@ class DirectBootStorageHelper(context: Context) {
         private const val KEY_LAST_INBOUND_SMS_SEQ = "last_inbound_sms_seq"
         private const val KEY_IS_STOLEN_MODE = "is_stolen_mode"
         private const val KEY_PAIRING_ID = "pairing_id"
+        private const val KEY_OFFLINE_RECOVERY_CODE = "offline_recovery_code"
     }
 }
