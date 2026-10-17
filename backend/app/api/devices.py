@@ -330,7 +330,7 @@ def get_device_sync_status(
 @router.post("/trusted", response_model=TrustedDeviceResponse, status_code=status.HTTP_201_CREATED)
 def register_trusted_device(
     req: TrustedDeviceRegisterRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_2fa),
     db: Session = Depends(get_db)
 ) -> Any:
     """Register an Owner Admin companion device and its ECDSA P-256 public key."""

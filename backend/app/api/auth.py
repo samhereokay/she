@@ -89,18 +89,18 @@ def login(
         )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    # If TOTP is enabled, issue 1FA token (cannot run commands without 2FA step)
-    is_2fa = not user.totp_enabled
+    # Password authentication ALWAYS issues a 1FA token (is_2fa=False).
+    # Two-factor authentication (TOTP) is mandatory for privileged commands/vault/pairing.
     token = create_access_token(
         subject=user.id,
-        is_2fa=is_2fa,
+        is_2fa=False,
         expires_delta=access_token_expires
     )
     return {
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-        "is_2fa": is_2fa
+        "is_2fa": False
     }
 
 
@@ -125,17 +125,17 @@ def login_json(
         )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    is_2fa = not user.totp_enabled
+    # Password authentication ALWAYS issues a 1FA token (is_2fa=False).
     token = create_access_token(
         subject=user.id,
-        is_2fa=is_2fa,
+        is_2fa=False,
         expires_delta=access_token_expires
     )
     return {
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-        "is_2fa": is_2fa
+        "is_2fa": False
     }
 
 

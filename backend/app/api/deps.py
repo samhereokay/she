@@ -66,6 +66,11 @@ def get_current_user_2fa(
     user = db.query(User).filter(User.id == payload["sub"]).first()
     if user is None:
         raise credentials_exception
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Two-factor authentication (2FA/TOTP) must be enrolled and verified before accessing privileged endpoints",
+        )
     return user
 
 

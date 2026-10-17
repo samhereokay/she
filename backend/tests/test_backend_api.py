@@ -83,6 +83,8 @@ def test_device_pairing_and_list(test_keypair):
         "password": "PasswordBob123!"
     })
     token = login_resp.json()["access_token"]
+    from conftest import enroll_totp_and_get_2fa_token
+    token = enroll_totp_and_get_2fa_token(client, token)
     headers = {"Authorization": f"Bearer {token}"}
 
     # 1. Request single-use pairing token

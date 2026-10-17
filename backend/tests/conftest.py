@@ -48,8 +48,38 @@ def db_session():
         db.close()
 
 
+import time
+import base64
+import struct
+import hmac
+import hashlib
+
+
+def enroll_totp_and_get_2fa_token(client, token_1fa):
+    """Enrolls TOTP for an authenticated 1FA user and returns an upgraded 2FA JWT access token."""
+    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token_1fa}"})
+    if setup_resp.status_code != 200:
+        return token_1fa
+    totp_secret = setup_resp.json()["secret"]
+    key = base64.b32decode(totp_secret + "=" * ((8 - len(totp_secret) % 8) % 8), casefold=True)
+    counter = int(time.time() // 30)
+    msg = struct.pack(">Q", counter)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    idx = h[-1] & 0x0F
+    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+    valid_code = f"{code_int % 1000000:06d}"
+    
+    verify_resp = client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {token_1fa}"})
+    if verify_resp.status_code == 200:
+        return verify_resp.json()["access_token"]
+    return token_1fa
+
+
 def pair_device_helper(client, token, alias, pubkey, phone, secret, device_id=None):
     pt_resp = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
+    if pt_resp.status_code == 403:
+        token = enroll_totp_and_get_2fa_token(client, token)
+        pt_resp = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
     assert pt_resp.status_code == 200, pt_resp.text
     pt = pt_resp.json()["pairing_token"]
     pair_resp = client.post(
@@ -78,4 +108,9 @@ def pair_device_helper(client, token, alias, pubkey, phone, secret, device_id=No
 @pytest.fixture
 def pair_device():
     return pair_device_helper
+
+
+@pytest.fixture
+def get_2fa_token():
+    return enroll_totp_and_get_2fa_token
 

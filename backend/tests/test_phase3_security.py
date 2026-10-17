@@ -35,7 +35,7 @@ def test_totp_setup_and_verify_flow(client):
     })
     assert login_resp.status_code == 200
     token_1fa = login_resp.json()["access_token"]
-    assert login_resp.json()["is_2fa"] is True  # True initially because totp_enabled=False
+    assert login_resp.json()["is_2fa"] is False  # Password login is strictly 1FA
 
     # 3. Setup TOTP
     setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token_1fa}"})
@@ -568,7 +568,7 @@ def test_guardian_signed_polling_and_rejection_ack(client, db_session, pair_devi
     assert "POLICY_DEVICE_ADMIN_NOT_ACTIVE" in audit.details
 
 
-def test_server_side_command_auto_expiry(client, db_session, pair_device):
+def test_server_side_command_auto_expiry(client, db_session, pair_device, get_2fa_token):
     """Enforces that past-expiry commands are rejected at dispatch and overdue pending commands auto-expire on poll."""
     auth_limiter.history.clear()
     settings.ALLOW_PUBLIC_REGISTRATION = True
@@ -583,6 +583,7 @@ def test_server_side_command_auto_expiry(client, db_session, pair_device):
         "username": "expiry_user",
         "password": "SecurePassword123!"
     }).json()["access_token"]
+    token = get_2fa_token(client, token)
 
     # 2. Keys & Pairing
     guardian_priv = ec.generate_private_key(ec.SECP256R1())
@@ -658,7 +659,7 @@ def test_server_side_command_auto_expiry(client, db_session, pair_device):
     assert cmd.status == "EXPIRED"
 
 
-def test_pairing_token_single_use_and_session_token_rejected(client):
+def test_pairing_token_single_use_and_session_token_rejected(client, get_2fa_token):
     """Enforces that pairing tokens are single-use, session tokens cannot pair devices, and pairing tokens cannot access session APIs."""
     auth_limiter.history.clear()
     settings.ALLOW_PUBLIC_REGISTRATION = True
@@ -690,8 +691,9 @@ def test_pairing_token_single_use_and_session_token_rejected(client):
     assert session_pair_attempt.status_code == 401
     assert "pairing token" in session_pair_attempt.json()["detail"].lower()
 
-    # 2. Issue a restricted pairing token
-    pt_resp = client.post("/auth/pairing-token", json={}, headers={"Authorization": f"Bearer {token}"})
+    # 2. Issue a restricted pairing token (requires 2FA enrollment)
+    token_2fa = get_2fa_token(client, token)
+    pt_resp = client.post("/auth/pairing-token", json={}, headers={"Authorization": f"Bearer {token_2fa}"})
     assert pt_resp.status_code == 200
     pairing_token = pt_resp.json()["pairing_token"]
 
@@ -722,7 +724,7 @@ def test_pairing_token_single_use_and_session_token_rejected(client):
     assert "consumed" in reused_resp.json()["detail"].lower()
 
 
-def test_revoked_trusted_admin_device_cannot_dispatch(client, pair_device):
+def test_revoked_trusted_admin_device_cannot_dispatch(client, pair_device, get_2fa_token):
     """Enforces that revoking an admin device immediately blocks command dispatch signed by it."""
     auth_limiter.history.clear()
     settings.ALLOW_PUBLIC_REGISTRATION = True
@@ -737,6 +739,7 @@ def test_revoked_trusted_admin_device_cannot_dispatch(client, pair_device):
         "username": "revoke_admin_user",
         "password": "SecurePassword123!"
     }).json()["access_token"]
+    token = get_2fa_token(client, token)
 
     # Register admin device
     admin_priv = ec.generate_private_key(ec.SECP256R1())
@@ -798,7 +801,7 @@ def test_revoked_trusted_admin_device_cannot_dispatch(client, pair_device):
     assert "revoked" in dispatch_resp.json()["detail"].lower()
 
 
-def test_cross_user_command_dispatch_rejected(client, pair_device):
+def test_cross_user_command_dispatch_rejected(client, pair_device, get_2fa_token):
     """Enforces that User A cannot dispatch commands to User B's device (HTTP 404/403)."""
     auth_limiter.history.clear()
     settings.ALLOW_PUBLIC_REGISTRATION = True
@@ -813,6 +816,7 @@ def test_cross_user_command_dispatch_rejected(client, pair_device):
         "username": "user_a",
         "password": "SecurePassword123!"
     }).json()["access_token"]
+    token_a = get_2fa_token(client, token_a)
 
     admin_a_priv = ec.generate_private_key(ec.SECP256R1())
     admin_a_pub = admin_a_priv.public_key().public_bytes(
@@ -848,6 +852,7 @@ def test_cross_user_command_dispatch_rejected(client, pair_device):
         "username": "user_b",
         "password": "SecurePassword123!"
     }).json()["access_token"]
+    token_b = get_2fa_token(client, token_b)
 
     guardian_b_priv = ec.generate_private_key(ec.SECP256R1())
     guardian_b_pub = guardian_b_priv.public_key().public_bytes(
@@ -890,7 +895,7 @@ def test_cross_user_command_dispatch_rejected(client, pair_device):
     assert "not authorized" in cross_dispatch.json()["detail"].lower()
 
 
-def test_pairing_id_required_in_command_signature(client, pair_device):
+def test_pairing_id_required_in_command_signature(client, pair_device, get_2fa_token):
     """Enforces that command signature verification strictly binds to target's active pairing_id."""
     auth_limiter.history.clear()
     settings.ALLOW_PUBLIC_REGISTRATION = True
@@ -905,6 +910,7 @@ def test_pairing_id_required_in_command_signature(client, pair_device):
         "username": "pairing_binding_user",
         "password": "SecurePassword123!"
     }).json()["access_token"]
+    token = get_2fa_token(client, token)
 
     admin_priv = ec.generate_private_key(ec.SECP256R1())
     admin_pub = admin_priv.public_key().public_bytes(
@@ -1048,6 +1054,90 @@ def test_clear_device_owner_command_dispatch_and_execution(client, pair_device):
     assert dispatch_resp.status_code == 201, dispatch_resp.text
     assert dispatch_resp.json()["command_type"] == "CLEAR_DEVICE_OWNER"
     assert dispatch_resp.json()["status"] == "PENDING"
+
+
+def test_unenrolled_user_cannot_access_privileged_endpoints(client):
+    """
+    CRITICAL SECURITY INVARIANT:
+    An owner account that has ONLY completed password authentication and has NOT enrolled
+    in mandatory Two-Factor Authentication (TOTP) is strictly prohibited from:
+    1. Dispatching recovery commands (/api/v1/devices/commands/dispatch)
+    2. Generating device pairing tokens (/auth/pairing-token)
+    3. Registering trusted admin devices (/auth/trusted-devices or /api/v1/devices/trusted)
+    4. Accessing zero-knowledge vault items (/api/v1/vault/items)
+    """
+    auth_limiter.history.clear()
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+
+    # 1. Register a brand-new owner account without TOTP
+    username = f"unenrolled_{int(time.time())}"
+    reg_resp = client.post("/auth/register", json={
+        "username": username,
+        "email": f"{username}@example.com",
+        "password": "PasswordUnenrolled123!"
+    })
+    assert reg_resp.status_code == 201
+
+    # 2. Login via password (baseline 1FA)
+    login_resp = client.post("/auth/login/json", json={
+        "username": username,
+        "password": "PasswordUnenrolled123!"
+    })
+    assert login_resp.status_code == 200
+    token_data = login_resp.json()
+    assert token_data["is_2fa"] is False  # Password login is strictly 1FA!
+    token_1fa = token_data["access_token"]
+    headers = {"Authorization": f"Bearer {token_1fa}"}
+
+    # 3. Attempt to generate device pairing token -> 403 Forbidden
+    pt_resp = client.post("/auth/pairing-token", json={}, headers=headers)
+    assert pt_resp.status_code == 403
+    assert "two-factor authentication" in pt_resp.json()["detail"].lower()
+
+    # 4. Attempt to register a trusted admin device -> 403 Forbidden
+    admin_priv = ec.generate_private_key(ec.SECP256R1())
+    admin_pub = admin_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+    trusted_resp = client.post("/api/v1/devices/trusted", json={
+        "device_name": "RogueAdminPhone",
+        "public_key_pem": admin_pub
+    }, headers=headers)
+    assert trusted_resp.status_code == 403
+    assert "two-factor authentication" in trusted_resp.json()["detail"].lower()
+
+    # 5. Attempt to dispatch a recovery command -> 403 Forbidden
+    dispatch_resp = client.post("/api/v1/devices/commands/dispatch", json={
+        "trusted_device_id": "fake-trusted-id",
+        "target_device_id": "fake-target-id",
+        "command_type": "LOCK",
+        "sequence_counter": 1,
+        "expiry_epoch": int(time.time()) + 300,
+        "parameters_json": "{}",
+        "admin_signature": "ZmFrZS1zaWduYXR1cmU="
+    }, headers=headers)
+    assert dispatch_resp.status_code == 403
+    assert "two-factor authentication" in dispatch_resp.json()["detail"].lower()
+
+    # 6. Attempt to access vault items -> 403 Forbidden
+    vault_resp = client.get("/api/v1/vault/items", headers=headers)
+    assert vault_resp.status_code == 403
+    assert "two-factor authentication" in vault_resp.json()["detail"].lower()
+
+    # 7. Attempt to create a vault item -> 403 Forbidden
+    vault_create = client.post("/api/v1/vault/items", json={
+        "ciphertext": "AAAA",
+        "iv": "BBBBBBBBBBBB",
+        "tag": "CCCCCCCCCCCCCCCC",
+        "salt": "DDDDDDDDDDDDDDDD",
+        "key_version": 1,
+        "item_type": "PASSWORD",
+        "title": "Secret"
+    }, headers=headers)
+    assert vault_create.status_code == 403
+    assert "two-factor authentication" in vault_create.json()["detail"].lower()
+
 
 
 
