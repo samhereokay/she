@@ -1,3 +1,7 @@
+import os
+os.environ.setdefault("SECRET_KEY", "test-environment-jwt-secret-key-32bytes-minimum-length-for-testing")
+os.environ.setdefault("TOTP_ENCRYPTION_KEY", "test-environment-totp-encryption-key-32bytes-for-testing")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

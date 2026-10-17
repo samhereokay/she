@@ -111,12 +111,21 @@ class AdminVaultActivity : AppCompatActivity() {
                         return
                     }
                 }
-                // Emulators without screen lock configured: allow direct entry with warning
+                // Device without screen lock configured: show prominent security warning dialog
                 isVaultUnlocked = true
-                tvStatus.text = "Vault Unlocked (Device credential not enrolled on test device)"
+                tvStatus.text = "⚠️ Vault Unlocked (UNSECURED: No device screen lock enrolled)"
+                showNoScreenLockWarning()
                 loadVaultItems()
             }
         }
+    }
+
+    private fun showNoScreenLockWarning() {
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ SECURITY WARNING: NO SCREEN LOCK")
+            .setMessage("This device has no screen lock PIN, pattern, or biometric password enrolled.\n\nThe hardware-backed Android Keystore key is running in unauthenticated mode. Anyone holding this device can view decrypted vault secrets.\n\nPlease enroll a secure screen lock in Android Settings immediately.")
+            .setPositiveButton("I Understand", null)
+            .show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -296,7 +305,14 @@ class AdminVaultActivity : AppCompatActivity() {
                 decryptedSecret = decryptedPayload
             }
         } catch (e: Exception) {
-            decryptedSecret = "[Decryption Failed: Key mismatch or tampered data]"
+            val isKeyInvalidated = e is android.security.keystore.KeyPermanentlyInvalidatedException ||
+                e is java.security.UnrecoverableKeyException ||
+                e.message?.contains("Key permanently invalidated") == true
+            decryptedSecret = if (isKeyInvalidated) {
+                "[Key Invalidated (Screen Lock Changed): Tap 'Import / Restore' with passphrase]"
+            } else {
+                "[Decryption Failed: Key mismatch or tampered data - Tap 'Import / Restore']"
+            }
         }
 
         val tvTitle = TextView(this).apply {

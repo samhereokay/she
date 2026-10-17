@@ -143,7 +143,7 @@ def login_json(
 
 
 def generate_recovery_codes(count: int = 8) -> tuple[list[str], list[str]]:
-    """Generate human-readable Crockford Base32 recovery codes (XXXX-XXXX) and their SHA-256 hashes."""
+    """Generate human-readable Crockford Base32 recovery codes (XXXX-XXXX) and their Argon2id memory-hard hashes."""
     charset = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
     codes = []
     hashes = []
@@ -152,7 +152,7 @@ def generate_recovery_codes(count: int = 8) -> tuple[list[str], list[str]]:
         part2 = "".join(secrets.choice(charset) for _ in range(4))
         code = f"{part1}-{part2}"
         codes.append(code)
-        hashes.append(hashlib.sha256(code.encode()).hexdigest())
+        hashes.append(hash_password(code))
     return codes, hashes
 
 
@@ -243,12 +243,16 @@ def validate_totp(
         if verify_totp_code(plain_secret, clean_code):
             totp_valid = True
 
-    # If TOTP code didn't match, check emergency recovery codes
+    # If TOTP code didn't match, check emergency recovery codes (Argon2id verified)
     if not totp_valid and current_user.totp_recovery_hashes:
-        code_hash = hashlib.sha256(clean_code.encode()).hexdigest()
         stored_hashes = json.loads(current_user.totp_recovery_hashes or "[]")
-        if code_hash in stored_hashes:
-            stored_hashes.remove(code_hash)
+        matched_hash = None
+        for h in stored_hashes:
+            if verify_password(clean_code, h):
+                matched_hash = h
+                break
+        if matched_hash:
+            stored_hashes.remove(matched_hash)
             current_user.totp_recovery_hashes = json.dumps(stored_hashes)
             audit = AuditEvent(
                 user_id=current_user.id,

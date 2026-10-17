@@ -48,6 +48,16 @@ class GuardianMainActivity : AppCompatActivity() {
         }
     }
 
+    private val qrScanLauncher = registerForActivityResult(com.journeyapps.barcodescanner.ScanContract()) { result ->
+        if (result.contents != null) {
+            val scannedData = result.contents
+            android.util.Log.i("GuardianPairing", "Scanned QR Code successfully")
+            applyPairingPayload(scannedData)
+        } else {
+            Toast.makeText(this, "QR scanning cancelled", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -324,6 +334,10 @@ class GuardianMainActivity : AppCompatActivity() {
                 deviceOwnerManager.lockNow(this)
             }
             "clear_pairing" -> {
+                if (!com.antitheft.guardian.BuildConfig.DEBUG) {
+                    android.util.Log.w("GuardianDO", "BLOCKED: clear_pairing intent action is disabled in release builds.")
+                    return
+                }
                 storageHelper.clearPairing()
                 Toast.makeText(this, "Pairing reset for testing", Toast.LENGTH_SHORT).show()
                 refreshDashboardData()
@@ -332,16 +346,40 @@ class GuardianMainActivity : AppCompatActivity() {
     }
 
     private fun showPairingInputDialog() {
+        val options = mutableListOf<String>()
+        options.add("📷 Scan Admin QR Code (Camera)")
+        if (com.antitheft.guardian.BuildConfig.DEBUG) {
+            options.add("🛠️ Enter Payload Manually / Debug")
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Pair with Admin Phone")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    val scanOptions = com.journeyapps.barcodescanner.ScanOptions().apply {
+                        setPrompt("Point camera at Admin pairing QR code")
+                        setBeepEnabled(true)
+                        setOrientationLocked(false)
+                    }
+                    qrScanLauncher.launch(scanOptions)
+                } else {
+                    showManualPairingDialog()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showManualPairingDialog() {
         var defaultText = ""
         if (com.antitheft.guardian.BuildConfig.DEBUG) {
             try {
                 val debugFile = java.io.File(filesDir, "pairing_payload.json")
                 if (debugFile.exists()) {
                     defaultText = debugFile.readText().trim()
+                    debugFile.delete()
                 }
-            } catch (e: Exception) {
-                // Ignore
-            }
+            } catch (_: Exception) {}
         }
         val input = android.widget.EditText(this).apply {
             hint = "Paste JSON from Admin QR code"
@@ -352,8 +390,8 @@ class GuardianMainActivity : AppCompatActivity() {
             setPadding(32, 32, 32, 32)
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Pair with Admin Phone")
-            .setMessage("Paste or scan the enrollment JSON payload displayed on your Admin device:")
+            .setTitle("Manual Pairing Entry")
+            .setMessage("Paste the enrollment JSON payload displayed on your Admin device:")
             .setView(input)
             .setPositiveButton("Pair") { _, _ ->
                 val text = input.text.toString().trim()

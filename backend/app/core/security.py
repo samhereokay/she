@@ -44,7 +44,13 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 def get_totp_encryption_key() -> bytes:
-    """Derive deterministic 256-bit key for encrypting secrets at rest."""
+    """Derive or load deterministic 256-bit key for encrypting secrets at rest.
+    Mandates TOTP_ENCRYPTION_KEY or SECRET_KEY from environment with no committed defaults."""
+    totp_env = settings.TOTP_ENCRYPTION_KEY or os.getenv("TOTP_ENCRYPTION_KEY")
+    if totp_env:
+        return hashlib.sha256(totp_env.encode("utf-8")).digest()
+    if not settings.SECRET_KEY:
+        raise RuntimeError("CRITICAL SECURITY ERROR: No TOTP_ENCRYPTION_KEY or SECRET_KEY configured in environment.")
     return hashlib.sha256(f"totp-at-rest-secret-v1:{settings.SECRET_KEY}".encode("utf-8")).digest()
 
 

@@ -130,8 +130,8 @@ class AdminDashboardActivity : AppCompatActivity() {
             .setView(input)
             .setPositiveButton("Deprovision Device") { _, _ ->
                 val totpCode = input.text.toString().trim()
-                if (totpCode.isBlank() || totpCode.length != 6) {
-                    Toast.makeText(this, "Valid 6-digit TOTP code is strictly required to clear Device Owner", Toast.LENGTH_LONG).show()
+                if (totpCode.isBlank() || (totpCode.length != 6 && totpCode.length !in 8..9)) {
+                    Toast.makeText(this, "Valid 6-digit TOTP or emergency recovery code (XXXX-XXXX) required", Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
                 dispatchCommandOnline(targetDeviceId, "CLEAR_DEVICE_OWNER", totpCode)
@@ -142,8 +142,8 @@ class AdminDashboardActivity : AppCompatActivity() {
 
     private fun promptForTotpAndDispatch(targetDeviceId: String, commandType: String) {
         val input = EditText(this).apply {
-            hint = "6-digit TOTP code (or leave empty if session is 2FA)"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = "6-digit TOTP or recovery code (XXXX-XXXX)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
             setPadding(32, 32, 32, 32)
         }
 

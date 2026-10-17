@@ -65,6 +65,14 @@ class AdminSessionManager(context: Context) {
         return secureStorage.getDecryptedString("pairing_id_$deviceId")
     }
 
+    fun saveDevicePairingSecret(deviceId: String, secretHex: String) {
+        secureStorage.putEncryptedString("pairing_secret_$deviceId", secretHex)
+    }
+
+    fun getDevicePairingSecret(deviceId: String): String? {
+        return secureStorage.getDecryptedString("pairing_secret_$deviceId")
+    }
+
     fun getAdminPhoneNumber(): String {
         return secureStorage.getDecryptedString(KEY_ADMIN_PHONE, "+15550199") ?: "+15550199"
     }

@@ -71,6 +71,13 @@ class PairDeviceActivity : AppCompatActivity() {
                         com.antitheft.admin.network.ConfirmPairingRequest(confirmation_code = code)
                     )
                     sessionManager.saveDevicePairingId(target.id, confirmResp.pairing_id)
+                    sessionManager.saveDevicePairingSecret(target.id, currentPairingSecretHex)
+                    if (com.antitheft.admin.BuildConfig.DEBUG) {
+                        try {
+                            val debugFile = java.io.File(filesDir, "pairing_payload.json")
+                            if (debugFile.exists()) debugFile.delete()
+                        } catch (_: Exception) {}
+                    }
                     android.util.Log.i("AdminPairing", "CONFIRMED_PAIRING: Device ${target.id} active with pairing_id: ${confirmResp.pairing_id}")
                     Toast.makeText(this@PairDeviceActivity, "Enrollment confirmed! Device is now ACTIVE.", Toast.LENGTH_LONG).show()
                     finish()
@@ -82,6 +89,12 @@ class PairDeviceActivity : AppCompatActivity() {
         }
 
         btnDone.setOnClickListener {
+            if (com.antitheft.admin.BuildConfig.DEBUG) {
+                try {
+                    val debugFile = java.io.File(filesDir, "pairing_payload.json")
+                    if (debugFile.exists()) debugFile.delete()
+                } catch (_: Exception) {}
+            }
             finish()
         }
 
@@ -212,6 +225,16 @@ class PairDeviceActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Toast.makeText(this@PairDeviceActivity, "Failed generating QR: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (com.antitheft.admin.BuildConfig.DEBUG) {
+            try {
+                val debugFile = java.io.File(filesDir, "pairing_payload.json")
+                if (debugFile.exists()) debugFile.delete()
+            } catch (_: Exception) {}
         }
     }
 }
