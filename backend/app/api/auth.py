@@ -1,4 +1,7 @@
 from datetime import timedelta
+import hashlib
+import json
+import secrets
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -139,12 +142,32 @@ def login_json(
     }
 
 
+def generate_recovery_codes(count: int = 8) -> tuple[list[str], list[str]]:
+    """Generate human-readable Crockford Base32 recovery codes (XXXX-XXXX) and their SHA-256 hashes."""
+    charset = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    codes = []
+    hashes = []
+    for _ in range(count):
+        part1 = "".join(secrets.choice(charset) for _ in range(4))
+        part2 = "".join(secrets.choice(charset) for _ in range(4))
+        code = f"{part1}-{part2}"
+        codes.append(code)
+        hashes.append(hashlib.sha256(code.encode()).hexdigest())
+    return codes, hashes
+
+
 @router.post("/totp/setup", response_model=TotpSetupResponse)
 def setup_totp(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """Generate a new TOTP secret for the authenticated owner."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="TOTP is already enabled. Password-only (1FA) authentication cannot reset or replace TOTP. Use /auth/totp/disable with an active 2FA session first."
+        )
+
     secret = generate_totp_secret()
     current_user.totp_secret = encrypt_totp_secret(secret)
     db.commit()
@@ -161,7 +184,7 @@ def verify_totp(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
-    """Verify initial TOTP code to activate 2FA and return an upgraded 2FA token."""
+    """Verify initial TOTP code to activate 2FA, generate emergency recovery codes, and return an upgraded 2FA token."""
     totp_limiter.check_rate_limit(request, key_override=f"totp:{current_user.id}")
 
     if not current_user.totp_secret:
@@ -177,7 +200,9 @@ def verify_totp(
             detail="Invalid TOTP authentication code"
         )
     
+    plain_codes, code_hashes = generate_recovery_codes(8)
     current_user.totp_enabled = True
+    current_user.totp_recovery_hashes = json.dumps(code_hashes)
     db.commit()
 
     token = create_access_token(
@@ -188,7 +213,8 @@ def verify_totp(
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-        "is_2fa": True
+        "is_2fa": True,
+        "recovery_codes": plain_codes
     }
 
 
@@ -196,9 +222,10 @@ def verify_totp(
 def validate_totp(
     req: TotpVerifyRequest,
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> Any:
-    """Upgrade a 1FA session to a full 2FA session via TOTP code verification."""
+    """Upgrade a 1FA session to a full 2FA session via TOTP code verification or emergency recovery code."""
     totp_limiter.check_rate_limit(request, key_override=f"totp:{current_user.id}")
 
     if not current_user.totp_enabled or not current_user.totp_secret:
@@ -207,11 +234,35 @@ def validate_totp(
             detail="TOTP is not enabled for this user."
         )
     
+    clean_code = req.code.strip().upper()
+    totp_valid = False
+
+    # Check standard 6-digit TOTP code
     plain_secret = decrypt_totp_secret(current_user.totp_secret)
-    if not verify_totp_code(plain_secret, req.code):
+    if len(clean_code) == 6 and clean_code.isdigit():
+        if verify_totp_code(plain_secret, clean_code):
+            totp_valid = True
+
+    # If TOTP code didn't match, check emergency recovery codes
+    if not totp_valid and current_user.totp_recovery_hashes:
+        code_hash = hashlib.sha256(clean_code.encode()).hexdigest()
+        stored_hashes = json.loads(current_user.totp_recovery_hashes or "[]")
+        if code_hash in stored_hashes:
+            stored_hashes.remove(code_hash)
+            current_user.totp_recovery_hashes = json.dumps(stored_hashes)
+            audit = AuditEvent(
+                user_id=current_user.id,
+                event_type="TOTP_RECOVERY_CODE_CONSUMED",
+                details=f"Owner redeemed single-use emergency TOTP recovery code. Remaining: {len(stored_hashes)}"
+            )
+            db.add(audit)
+            db.commit()
+            totp_valid = True
+
+    if not totp_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid TOTP authentication code"
+            detail="Invalid TOTP authentication code or emergency recovery code"
         )
     
     token = create_access_token(
@@ -224,6 +275,32 @@ def validate_totp(
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
         "is_2fa": True
     }
+
+
+@router.post("/totp/disable", response_model=TotpStatusResponse)
+def disable_totp(
+    current_user: User = Depends(get_current_user_2fa),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Disable TOTP 2FA for the authenticated owner.
+    CRITICAL SECURITY ENFORCEMENT:
+    Requires active 2FA session (get_current_user_2fa).
+    Password-only (1FA) authentication cannot disable, reset, or replace TOTP.
+    """
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    current_user.totp_recovery_hashes = "[]"
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        event_type="TOTP_2FA_DISABLED",
+        details="Owner disabled TOTP two-factor authentication."
+    )
+    db.add(audit)
+    db.commit()
+
+    return TotpStatusResponse(totp_enabled=False)
 
 
 @router.get("/me", response_model=UserResponse)

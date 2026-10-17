@@ -187,10 +187,14 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
     fun clearPairing() {
         prefs.edit()
             .remove(KEY_ADMIN_PUBLIC_KEY)
+            .remove(KEY_DEVICE_ID)
             .remove(KEY_PAIRING_ID)
             .remove(KEY_LAST_ADMIN_CMD_SEQ)
             .remove(KEY_LAST_INBOUND_SMS_SEQ)
             .remove(KEY_IS_STOLEN_MODE)
+            .remove(KEY_TRUSTED_PHONE)
+            .remove(KEY_RECOVERY_FAILED_ATTEMPTS)
+            .remove(KEY_RECOVERY_LOCKOUT_UNTIL)
             .commit()
         secureStorage.remove(KEY_PAIRING_SECRET)
         secureStorage.remove(KEY_OFFLINE_RECOVERY_CODE)
@@ -206,11 +210,21 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
         prefs.edit().putLong(KEY_LAST_INBOUND_SMS_SEQ, seq).commit()
     }
 
+    fun generateOfflineRecoveryCode(): String {
+        // Crockford Base32 alphabet (32 characters, excluding I, L, O, U for readability)
+        val charset = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+        val sr = SecureRandom()
+        val sb = StringBuilder("RECOVER-")
+        for (i in 0 until 8) {
+            sb.append(charset[sr.nextInt(charset.length)])
+        }
+        return sb.toString()
+    }
+
     fun getOfflineRecoveryCode(): String {
         var code = secureStorage.getDecryptedString(KEY_OFFLINE_RECOVERY_CODE, null)
         if (code == null) {
-            val rand = SecureRandom().nextInt(900000) + 100000
-            code = "RECOVER-$rand"
+            code = generateOfflineRecoveryCode()
             secureStorage.putEncryptedString(KEY_OFFLINE_RECOVERY_CODE, code)
         }
         return code
@@ -218,6 +232,44 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
 
     fun setOfflineRecoveryCode(code: String) {
         secureStorage.putEncryptedString(KEY_OFFLINE_RECOVERY_CODE, code)
+    }
+
+    @Synchronized
+    fun getRecoveryLockoutRemainingSeconds(): Long {
+        val lockoutUntil = prefs.getLong(KEY_RECOVERY_LOCKOUT_UNTIL, 0L)
+        val now = System.currentTimeMillis()
+        return if (lockoutUntil > now) (lockoutUntil - now + 999) / 1000 else 0L
+    }
+
+    @Synchronized
+    fun getFailedRecoveryAttempts(): Int {
+        return prefs.getInt(KEY_RECOVERY_FAILED_ATTEMPTS, 0)
+    }
+
+    @Synchronized
+    fun recordFailedRecoveryAttempt(): Long {
+        val attempts = getFailedRecoveryAttempts() + 1
+        prefs.edit().putInt(KEY_RECOVERY_FAILED_ATTEMPTS, attempts).commit()
+        val delaySeconds: Long = when {
+            attempts <= 3 -> 0L
+            attempts == 4 -> 30L
+            attempts == 5 -> 300L       // 5 minutes
+            attempts == 6 -> 1800L      // 30 minutes
+            else -> 86400L             // 24 hours (7+ attempts)
+        }
+        if (delaySeconds > 0) {
+            val lockoutUntil = System.currentTimeMillis() + (delaySeconds * 1000)
+            prefs.edit().putLong(KEY_RECOVERY_LOCKOUT_UNTIL, lockoutUntil).commit()
+        }
+        return delaySeconds
+    }
+
+    @Synchronized
+    fun resetFailedRecoveryAttempts() {
+        prefs.edit()
+            .remove(KEY_RECOVERY_FAILED_ATTEMPTS)
+            .remove(KEY_RECOVERY_LOCKOUT_UNTIL)
+            .commit()
     }
 
     companion object {
@@ -237,5 +289,7 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
         private const val KEY_IS_STOLEN_MODE = "is_stolen_mode"
         private const val KEY_PAIRING_ID = "pairing_id"
         private const val KEY_OFFLINE_RECOVERY_CODE = "offline_recovery_code"
+        private const val KEY_RECOVERY_FAILED_ATTEMPTS = "recovery_failed_attempts"
+        private const val KEY_RECOVERY_LOCKOUT_UNTIL = "recovery_lockout_until"
     }
 }

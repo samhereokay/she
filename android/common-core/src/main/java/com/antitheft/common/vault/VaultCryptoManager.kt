@@ -142,6 +142,32 @@ class VaultCryptoManager {
         return SecretKeySpec(tmp.encoded, "AES")
     }
 
+    /**
+     * Generates a high-entropy 256-bit AES Data Encryption Key (DEK).
+     */
+    fun generateRandomDataKey(): SecretKey {
+        val keyBytes = ByteArray(32)
+        secureRandom.nextBytes(keyBytes)
+        return SecretKeySpec(keyBytes, "AES")
+    }
+
+    /**
+     * Envelope Key Wrapping: Encrypts a Data Encryption Key (DEK) with a Key Encryption Key (KEK) using AES-256-GCM.
+     */
+    fun wrapKey(dek: SecretKey, kek: SecretKey, keyVersion: Long = 1): VaultEncryptedContainer {
+        val rawDekBase64 = Base64.getEncoder().encodeToString(dek.encoded)
+        return encrypt(rawDekBase64, kek, keyVersion)
+    }
+
+    /**
+     * Envelope Key Unwrapping: Decrypts a wrapped Data Encryption Key (DEK) with a Key Encryption Key (KEK).
+     */
+    fun unwrapKey(wrappedDek: VaultEncryptedContainer, kek: SecretKey): SecretKey {
+        val rawDekBase64 = decrypt(wrappedDek, kek)
+        val rawBytes = Base64.getDecoder().decode(rawDekBase64)
+        return SecretKeySpec(rawBytes, "AES")
+    }
+
     companion object {
         const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
         const val GCM_IV_LENGTH_BYTES = 12

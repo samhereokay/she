@@ -153,20 +153,41 @@ class GuardianMainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Dialer Permitted, Nav Suppressed)", Toast.LENGTH_LONG).show()
                 }
             } else {
-                // Thief protection: Exiting kiosk mode strictly requires owner-signed command from Admin companion phone,
-                // or local one-time recovery code stored in owner vault
+                val remainingLockout = storageHelper.getRecoveryLockoutRemainingSeconds()
+                if (remainingLockout > 0) {
+                    val waitMsg = if (remainingLockout >= 60) "${remainingLockout / 60}m ${remainingLockout % 60}s" else "${remainingLockout}s"
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Lockout Active")
+                        .setMessage("Too many failed recovery code attempts. Entry is locked for $waitMsg to prevent brute-force attacks.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    return@setOnClickListener
+                }
+
+                val attempts = storageHelper.getFailedRecoveryAttempts()
+                val attemptsWarning = if (attempts > 0) "\n\n(Previous failed attempts: $attempts. Delay escalates on attempt 4+)" else ""
+
                 val input = android.widget.EditText(this).apply {
-                    hint = "e.g. RECOVER-123456"
+                    hint = "e.g. RECOVER-7K9M2W4P"
                     inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
                 }
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Kiosk Lockdown Active")
-                    .setMessage("This device is locked into Anti-Theft Kiosk mode. To exit, dispatch an owner-signed EXIT_KIOSK command from your Admin phone, or enter your offline Vault Recovery Code:")
+                    .setMessage("This device is locked into Anti-Theft Kiosk mode. To exit, dispatch an owner-signed EXIT_KIOSK command from your Admin phone, or enter your offline Vault Recovery Code (Crockford Base32, 8 characters):$attemptsWarning")
                     .setView(input)
                     .setPositiveButton("Verify Recovery Code") { _, _ ->
-                        val code = input.text.toString().trim()
-                        val expected = storageHelper.getOfflineRecoveryCode()
-                        if (code.equals(expected, ignoreCase = true)) {
+                        val currentRemaining = storageHelper.getRecoveryLockoutRemainingSeconds()
+                        if (currentRemaining > 0) {
+                            Toast.makeText(this, "Lockout active. Try again in ${currentRemaining}s.", Toast.LENGTH_LONG).show()
+                            return@setPositiveButton
+                        }
+
+                        val rawCode = input.text.toString().trim()
+                        val normalizedInput = rawCode.uppercase()
+                        val expected = storageHelper.getOfflineRecoveryCode().uppercase()
+
+                        if (normalizedInput == expected) {
+                            storageHelper.resetFailedRecoveryAttempts()
                             deviceOwnerManager.exitLockTaskMode(this)
                             storageHelper.setStolenMode(false)
                             isLockTaskActive = false
@@ -174,7 +195,13 @@ class GuardianMainActivity : AppCompatActivity() {
                             findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.GONE
                             Toast.makeText(this, "Recovery code verified. Kiosk mode EXITED.", Toast.LENGTH_LONG).show()
                         } else {
-                            Toast.makeText(this, "INVALID recovery code. Exit denied.", Toast.LENGTH_LONG).show()
+                            val delay = storageHelper.recordFailedRecoveryAttempt()
+                            val totalFailed = storageHelper.getFailedRecoveryAttempts()
+                            if (delay > 0) {
+                                Toast.makeText(this, "INVALID code. Attempt $totalFailed failed! Locked out for ${delay}s.", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(this, "INVALID code. Attempt $totalFailed/3. Delay escalates on attempt 4.", Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                     .setNegativeButton("Cancel", null)
@@ -296,12 +323,32 @@ class GuardianMainActivity : AppCompatActivity() {
                 deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
                 deviceOwnerManager.lockNow(this)
             }
+            "clear_pairing" -> {
+                storageHelper.clearPairing()
+                Toast.makeText(this, "Pairing reset for testing", Toast.LENGTH_SHORT).show()
+                refreshDashboardData()
+            }
         }
     }
 
     private fun showPairingInputDialog() {
+        var defaultText = ""
+        if (com.antitheft.guardian.BuildConfig.DEBUG) {
+            try {
+                val debugFile = java.io.File(filesDir, "pairing_payload.json")
+                if (debugFile.exists()) {
+                    defaultText = debugFile.readText().trim()
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
         val input = android.widget.EditText(this).apply {
             hint = "Paste JSON from Admin QR code"
+            if (defaultText.isNotBlank()) {
+                setText(defaultText)
+            }
+            maxLines = 4
             setPadding(32, 32, 32, 32)
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
@@ -346,36 +393,35 @@ class GuardianMainActivity : AppCompatActivity() {
                 val adminPubPem = payload.get("admin_public_key_pem")?.asString
                 val pairingSecretHex = payload.get("pairing_secret_hex")?.asString
                 val pairingToken = payload.get("pairing_token")?.asString ?: payload.get("auth_token")?.asString
-
-                if (!serverUrl.isNullOrBlank()) {
-                    storageHelper.setServerUrl(serverUrl)
-                }
-                if (!adminPubPem.isNullOrBlank()) {
-                    storageHelper.setAdminPublicKeyPem(adminPubPem)
-                    storageHelper.setLastAdminCommandSequence(0L)
-                }
-                if (!pairingSecretHex.isNullOrBlank()) {
-                    val secretBytes = hexToByteArray(pairingSecretHex)
-                    storageHelper.setPairingSecret(secretBytes)
-                }
+                val trustedPhoneNumber = payload.get("trusted_phone_number")?.asString
 
                 val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
                 keystoreManager.getSecurityInfo(this@GuardianMainActivity)
                 val guardianPubPem = keystoreManager.getPublicKeyPem()
 
-                var successMsg = "Pairing applied locally."
+                var successMsg = "Pairing failed."
                 var confirmationCode: String? = null
 
                 // If pairing token is present, register device with backend API
                 if (!pairingToken.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
                     val client = okhttp3.OkHttpClient()
-                    val pairEndpoint = serverUrl.trimEnd('/') + "/api/v1/devices/pair"
+                    val effectiveServerUrl = if (serverUrl.contains("10.0.2.2")) {
+                        try {
+                            java.net.Socket().use { s ->
+                                s.connect(java.net.InetSocketAddress("127.0.0.1", 8000), 500)
+                                "http://127.0.0.1:8000"
+                            }
+                        } catch (e: Exception) {
+                            serverUrl
+                        }
+                    } else serverUrl
+                    val pairEndpoint = effectiveServerUrl.trimEnd('/') + "/api/v1/devices/pair"
 
                     val reqBodyMap = mapOf(
                         "device_id" to storageHelper.getDeviceId(),
                         "device_alias" to (storageHelper.getDeviceAlias() ?: "Guardian Pixel"),
                         "public_key_pem" to guardianPubPem,
-                        "trusted_phone_number" to (if (storageHelper.getTrustedPhoneNumber().length >= 5) storageHelper.getTrustedPhoneNumber() else "+15551234567"),
+                        "trusted_phone_number" to (if (!trustedPhoneNumber.isNullOrBlank() && trustedPhoneNumber.length >= 3) trustedPhoneNumber else "+15551234567"),
                         "pairing_secret" to (pairingSecretHex ?: "")
                     )
                     val reqJson = com.google.gson.Gson().toJson(reqBodyMap)
@@ -394,6 +440,23 @@ class GuardianMainActivity : AppCompatActivity() {
                     android.util.Log.i("GuardianPairing", "PAIRING_TOKEN_DISCARDED: Single-use pairing token consumed and cleared from memory.")
 
                     if (response.isSuccessful) {
+                        // Atomic commit: Only persist credentials when backend pairing is successful
+                        if (!serverUrl.isNullOrBlank()) {
+                            storageHelper.setServerUrl(serverUrl)
+                        }
+                        if (!adminPubPem.isNullOrBlank()) {
+                            storageHelper.setAdminPublicKeyPem(adminPubPem)
+                            storageHelper.setLastAdminCommandSequence(0L)
+                        }
+                        if (!pairingSecretHex.isNullOrBlank()) {
+                            val secretBytes = hexToByteArray(pairingSecretHex)
+                            storageHelper.setPairingSecret(secretBytes)
+                        }
+                        if (!trustedPhoneNumber.isNullOrBlank()) {
+                            storageHelper.setTrustedPhoneNumber(trustedPhoneNumber)
+                            android.util.Log.i("GuardianPairing", "CONFIGURED_TRUSTED_PHONE: Configured trusted phone from pairing payload.")
+                        }
+
                         val respObj = com.google.gson.JsonParser.parseString(respBody).asJsonObject
                         val returnedId = respObj.get("id")?.asString
                         if (!returnedId.isNullOrBlank()) {
@@ -408,7 +471,7 @@ class GuardianMainActivity : AppCompatActivity() {
                         android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId PairingID: $pairingId")
                     } else {
                         android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}")
-                        successMsg = "Local pairing set. Backend returned ${response.code}"
+                        successMsg = "Pairing rejected by backend (HTTP ${response.code})"
                     }
                 }
 

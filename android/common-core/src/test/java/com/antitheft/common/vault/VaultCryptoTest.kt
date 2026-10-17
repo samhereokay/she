@@ -154,4 +154,46 @@ class VaultCryptoTest {
             assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
         }
     }
+
+    @Test
+    fun testVaultKeyHierarchyEnvelopeEncryption() {
+        // 1. Generate random 256-bit Data Encryption Key (DEK)
+        val dek = vaultManager.generateRandomDataKey()
+        val sensitiveData = "{\"title\":\"Master Recovery Key\",\"code\":\"RECOVER-7K9M2W4P\"}"
+
+        // 2. Encrypt vault item using DEK
+        val itemContainer = vaultManager.encrypt(sensitiveData, dek)
+
+        // 3. Local Key Encryption Key (KEK) representing hardware Keystore AES-256 key
+        val localKeystoreKek = generateTestKey()
+
+        // 4. Remote/Server Key Encryption Key (KEK) derived from user master recovery passphrase via PBKDF2
+        val salt = ByteArray(16).apply { SecureRandom().nextBytes(this) }
+        val passphraseKek = vaultManager.deriveKeyFromPassphrase("OwnerSuperSecretPassphrase123!", salt, 100_000)
+
+        // 5. Wrap DEK under local Keystore KEK (for zero-latency local unlock)
+        val wrappedByLocalKeystore = vaultManager.wrapKey(dek, localKeystoreKek)
+
+        // 6. Wrap DEK under Passphrase KEK (stored on server for cross-device recovery)
+        val wrappedByPassphrase = vaultManager.wrapKey(dek, passphraseKek)
+
+        // Verify unwrap path A: Local Hardware Keystore
+        val unwrappedDekLocal = vaultManager.unwrapKey(wrappedByLocalKeystore, localKeystoreKek)
+        val decryptedWithLocal = vaultManager.decrypt(itemContainer, unwrappedDekLocal)
+        assertEquals(sensitiveData, decryptedWithLocal)
+
+        // Verify unwrap path B: Passphrase Restore (e.g. from server backup on fresh phone)
+        val unwrappedDekPassphrase = vaultManager.unwrapKey(wrappedByPassphrase, passphraseKek)
+        val decryptedWithPassphrase = vaultManager.decrypt(itemContainer, unwrappedDekPassphrase)
+        assertEquals(sensitiveData, decryptedWithPassphrase)
+
+        // Verify wrong passphrase fails unwrapping
+        val wrongPassphraseKek = vaultManager.deriveKeyFromPassphrase("WrongPassphrase456!", salt, 100_000)
+        try {
+            vaultManager.unwrapKey(wrappedByPassphrase, wrongPassphraseKek)
+            fail("Unwrapping with wrong passphrase KEK must fail authentication")
+        } catch (e: Exception) {
+            assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
+        }
+    }
 }

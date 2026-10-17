@@ -28,6 +28,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
     expires_in_minutes: int
     is_2fa: bool = False
+    recovery_codes: Optional[list[str]] = None
 
 
 class TokenData(BaseModel):
@@ -41,7 +42,7 @@ class TotpSetupResponse(BaseModel):
 
 
 class TotpVerifyRequest(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6)
+    code: str = Field(..., min_length=6, max_length=9)
 
 
 class TotpStatusResponse(BaseModel):

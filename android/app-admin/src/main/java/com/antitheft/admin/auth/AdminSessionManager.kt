@@ -65,10 +65,19 @@ class AdminSessionManager(context: Context) {
         return secureStorage.getDecryptedString("pairing_id_$deviceId")
     }
 
+    fun getAdminPhoneNumber(): String {
+        return secureStorage.getDecryptedString(KEY_ADMIN_PHONE, "+15550199") ?: "+15550199"
+    }
+
+    fun setAdminPhoneNumber(phone: String) {
+        secureStorage.putEncryptedString(KEY_ADMIN_PHONE, phone)
+    }
+
     companion object {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_TRUSTED_DEVICE_ID = "trusted_device_id"
         private const val KEY_COMMAND_SEQ = "command_sequence_counter"
+        private const val KEY_ADMIN_PHONE = "admin_phone_number"
     }
 }

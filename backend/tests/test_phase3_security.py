@@ -1139,6 +1139,259 @@ def test_unenrolled_user_cannot_access_privileged_endpoints(client):
     assert "two-factor authentication" in vault_create.json()["detail"].lower()
 
 
+def test_totp_recovery_codes_and_tamper_prevention(client):
+    """
+    SECURITY REQUIREMENTS:
+    1. Initial TOTP verification issues 8 single-use Crockford recovery codes (XXXX-XXXX).
+    2. Once TOTP is enrolled, calling /auth/totp/setup without 2FA returns 403 Forbidden.
+    3. Password-only (1FA) authentication cannot reset, disable, or replace TOTP.
+    4. Emergency recovery code can be used in /auth/totp/validate to upgrade a 1FA session to 2FA.
+    5. A recovery code is strictly single-use: subsequent attempts with the same code return 401 Unauthorized.
+    6. Disabling TOTP requires an active 2FA session (/auth/totp/disable).
+    """
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+    auth_limiter.history.clear()
+    totp_limiter.history.clear()
+
+    # 1. Register owner
+    username = f"recovery_user_{int(time.time())}"
+    reg_resp = client.post("/auth/register", json={
+        "username": username,
+        "email": f"{username}@example.com",
+        "password": "PasswordRecovery123!"
+    })
+    assert reg_resp.status_code == 201
+
+    # 2. Login (1FA)
+    login_resp = client.post("/auth/login/json", json={
+        "username": username,
+        "password": "PasswordRecovery123!"
+    })
+    assert login_resp.status_code == 200
+    token_1fa = login_resp.json()["access_token"]
+    assert login_resp.json()["is_2fa"] is False
+
+    # 3. Setup TOTP
+    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token_1fa}"})
+    assert setup_resp.status_code == 200
+    totp_secret = setup_resp.json()["secret"]
+
+    # 4. Generate valid TOTP code and verify
+    import struct, hmac, hashlib
+    key = base64.b32decode(totp_secret + "=" * ((8 - len(totp_secret) % 8) % 8), casefold=True)
+    counter = int(time.time() // 30)
+    msg = struct.pack(">Q", counter)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    idx = h[-1] & 0x0F
+    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+    valid_totp = f"{code_int % 1000000:06d}"
+
+    verify_resp = client.post("/auth/totp/verify", json={"code": valid_totp}, headers={"Authorization": f"Bearer {token_1fa}"})
+    assert verify_resp.status_code == 200
+    data = verify_resp.json()
+    assert data["is_2fa"] is True
+    recovery_codes = data.get("recovery_codes")
+    assert recovery_codes is not None
+    assert len(recovery_codes) == 8
+    for code in recovery_codes:
+        assert len(code) == 9
+        assert code[4] == "-"
+
+    # 5. Tamper vector check: 1FA cannot call /auth/totp/setup to overwrite secret
+    tamper_setup = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token_1fa}"})
+    assert tamper_setup.status_code == 403
+    assert "already enabled" in tamper_setup.json()["detail"].lower()
+
+    # 6. Tamper vector check: 1FA cannot disable TOTP
+    tamper_disable = client.post("/auth/totp/disable", headers={"Authorization": f"Bearer {token_1fa}"})
+    assert tamper_disable.status_code == 403
+
+    # 7. Login again to get a fresh 1FA token
+    login_again = client.post("/auth/login/json", json={
+        "username": username,
+        "password": "PasswordRecovery123!"
+    })
+    token_1fa_fresh = login_again.json()["access_token"]
+    assert login_again.json()["is_2fa"] is False
+
+    # 8. Use one recovery code to validate and upgrade session to 2FA
+    test_code = recovery_codes[0]
+    recov_upgrade = client.post("/auth/totp/validate", json={"code": test_code}, headers={"Authorization": f"Bearer {token_1fa_fresh}"})
+    assert recov_upgrade.status_code == 200
+    assert recov_upgrade.json()["is_2fa"] is True
+    token_2fa_upgraded = recov_upgrade.json()["access_token"]
+
+    # 9. Verify that the used recovery code is consumed (single-use)
+    # Attempting to use test_code again must fail!
+    login_third = client.post("/auth/login/json", json={
+        "username": username,
+        "password": "PasswordRecovery123!"
+    })
+    token_1fa_third = login_third.json()["access_token"]
+    reused_recov = client.post("/auth/totp/validate", json={"code": test_code}, headers={"Authorization": f"Bearer {token_1fa_third}"})
+    assert reused_recov.status_code == 401
+    assert "invalid totp" in reused_recov.json()["detail"].lower()
+
+    # 10. Disable TOTP using the 2FA token
+    disable_resp = client.post("/auth/totp/disable", headers={"Authorization": f"Bearer {token_2fa_upgraded}"})
+    assert disable_resp.status_code == 200
+    assert disable_resp.json()["totp_enabled"] is False
+
+    # 11. Now /auth/totp/setup can be called again by 1FA user
+    new_setup = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token_1fa_third}"})
+    assert new_setup.status_code == 200
+
+
+def test_backend_command_allowlist_and_lifecycle_commands(client):
+    """
+    CRITICAL SECURITY & LIFECYCLE TESTS:
+    1. ALLOWED_COMMAND_TYPES = {"LOCATE", "RING", "STOP_RING", "LOCK", "STOLEN_MODE", "EXIT_KIOSK", "RECOVERED", "UNPAIR", "CLEAR_DEVICE_OWNER"}
+    2. Any unauthorized/unexpected command_type (e.g. FACTORY_RESET, WIPE_ROOT, ARBITRARY_SHELL) must be rejected with 400 Bad Request.
+    3. End-to-end lifecycle verification for UNPAIR, EXIT_KIOSK, RECOVERED, and CLEAR_DEVICE_OWNER:
+       - Admin device signs canonical payload
+       - Dispatched via /api/v1/devices/commands/dispatch (201 Created, status PENDING)
+       - Guardian device polls /api/v1/devices/{device_id}/commands/poll (receives command)
+       - Guardian device acknowledges /api/v1/devices/{device_id}/commands/{command_id}/ack (status EXECUTED)
+    """
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+    auth_limiter.history.clear()
+    totp_limiter.history.clear()
+
+    # 1. Setup user with 2FA
+    username = f"allowlist_user_{int(time.time())}"
+    reg_resp = client.post("/auth/register", json={
+        "username": username,
+        "email": f"{username}@example.com",
+        "password": "PasswordAllowlist123!"
+    })
+    assert reg_resp.status_code == 201
+
+    login_resp = client.post("/auth/login/json", json={
+        "username": username,
+        "password": "PasswordAllowlist123!"
+    })
+    token_1fa = login_resp.json()["access_token"]
+    from tests.conftest import enroll_totp_and_get_2fa_token, pair_device_helper
+    token_2fa = enroll_totp_and_get_2fa_token(client, token_1fa)
+
+    # 2. Register Admin ECDSA keypair
+    admin_priv = ec.generate_private_key(ec.SECP256R1())
+    admin_pub = admin_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+    trusted_resp = client.post("/api/v1/devices/trusted", json={
+        "device_name": "AdminPhoneAllowlist",
+        "public_key_pem": admin_pub
+    }, headers={"Authorization": f"Bearer {token_2fa}"})
+    assert trusted_resp.status_code == 201
+    trusted_device_id = trusted_resp.json()["id"]
+
+    # 3. Pair Guardian device
+    guardian_priv = ec.generate_private_key(ec.SECP256R1())
+    guardian_pub = guardian_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+
+    from tests.conftest import pair_device_helper
+    target_device_id, pairing_id = pair_device_helper(
+        client,
+        token_2fa,
+        "GuardianPhoneAllowlist",
+        guardian_pub,
+        "+15551234567",
+        "A1B2C3D4E5F67890"
+    )
+
+    seq = 1
+
+    # 4. Test Disallowed / Arbitrary Commands Rejected
+    for disallowed_type in ["FACTORY_RESET", "WIPE_ROOT", "ARBITRARY_SHELL", "UNKNOWN_CMD"]:
+        seq += 1
+        canonical = create_canonical_command_bytes(
+            pairing_id=pairing_id,
+            command_id=f"cmd-disallow-{disallowed_type}",
+            target_device_id=target_device_id,
+            command_type=disallowed_type,
+            sequence_counter=seq,
+            expiry_epoch=int(time.time()) + 300,
+            parameters_json="{}"
+        )
+        sig = base64.b64encode(admin_priv.sign(canonical, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+        rej_resp = client.post("/api/v1/devices/commands/dispatch", json={
+            "trusted_device_id": trusted_device_id,
+            "target_device_id": target_device_id,
+            "command_id": f"cmd-disallow-{disallowed_type}",
+            "command_type": disallowed_type,
+            "sequence_counter": seq,
+            "expiry_epoch": int(time.time()) + 300,
+            "parameters_json": "{}",
+            "admin_signature": sig
+        }, headers={"Authorization": f"Bearer {token_2fa}"})
+
+        assert rej_resp.status_code in (400, 422), f"Expected 400 or 422 for {disallowed_type}, got {rej_resp.status_code}"
+
+    # 5. Test all lifecycle commands: UNPAIR, EXIT_KIOSK, RECOVERED, CLEAR_DEVICE_OWNER
+    lifecycle_types = ["UNPAIR", "EXIT_KIOSK", "RECOVERED", "CLEAR_DEVICE_OWNER"]
+    for cmd_type in lifecycle_types:
+        seq += 1
+        cmd_id = f"cmd-lifecycle-{cmd_type}-{seq}"
+        canonical = create_canonical_command_bytes(
+            pairing_id=pairing_id,
+            command_id=cmd_id,
+            target_device_id=target_device_id,
+            command_type=cmd_type,
+            sequence_counter=seq,
+            expiry_epoch=int(time.time()) + 300,
+            parameters_json="{}"
+        )
+        sig = base64.b64encode(admin_priv.sign(canonical, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+        dispatch_resp = client.post("/api/v1/devices/commands/dispatch", json={
+            "trusted_device_id": trusted_device_id,
+            "target_device_id": target_device_id,
+            "command_id": cmd_id,
+            "command_type": cmd_type,
+            "sequence_counter": seq,
+            "expiry_epoch": int(time.time()) + 300,
+            "parameters_json": "{}",
+            "admin_signature": sig
+        }, headers={"Authorization": f"Bearer {token_2fa}"})
+
+        assert dispatch_resp.status_code == 201, f"Failed dispatching {cmd_type}: {dispatch_resp.text}"
+        assert dispatch_resp.json()["command_type"] == cmd_type
+        assert dispatch_resp.json()["status"] == "PENDING"
+
+        # Guardian polls for command with ECDSA signature
+        poll_ts = int(time.time())
+        poll_bytes = f"POLL_COMMANDS|{target_device_id}|{poll_ts}".encode("utf-8")
+        poll_sig = base64.b64encode(guardian_priv.sign(poll_bytes, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+        poll_resp = client.get(
+            f"/api/v1/devices/{target_device_id}/commands/pending",
+            headers={
+                "X-Device-Signature": poll_sig,
+                "X-Device-Timestamp": str(poll_ts)
+            }
+        )
+        assert poll_resp.status_code == 200, f"Failed poll for {cmd_type}: {poll_resp.text}"
+        pending_cmds = poll_resp.json()
+        assert len(pending_cmds) >= 1
+        matched = [c for c in pending_cmds if c["id"] == cmd_id]
+        assert len(matched) == 1
+        assert matched[0]["command_type"] == cmd_type
+
+        # Guardian acknowledges execution
+        ack_resp = client.post(
+            f"/api/v1/devices/{target_device_id}/commands/{cmd_id}/ack",
+            json={"status": "EXECUTED", "reason": f"{cmd_type}_SUCCESS"}
+        )
+        assert ack_resp.status_code == 200, f"Failed ack for {cmd_type}: {ack_resp.text}"
+        assert ack_resp.json()["command_status"] == "EXECUTED"
+
+
 
 
 

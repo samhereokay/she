@@ -422,6 +422,22 @@ def dispatch_command(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Command counter replayed or non-monotonic: {req.sequence_counter} <= last_seen ({last_seq})"
         )
+    ALLOWED_COMMAND_TYPES = {
+        "LOCATE",
+        "RING",
+        "STOP_RING",
+        "LOCK",
+        "STOLEN_MODE",
+        "EXIT_KIOSK",
+        "RECOVERED",
+        "UNPAIR",
+        "CLEAR_DEVICE_OWNER",
+    }
+    if req.command_type not in ALLOWED_COMMAND_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid command_type '{req.command_type}'. Allowed command types: {sorted(list(ALLOWED_COMMAND_TYPES))}"
+        )
 
     # Reconstruct canonical command bytes with pairing_id
     cmd_id = req.command_id or generate_uuid()

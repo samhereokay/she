@@ -43,6 +43,15 @@
             android:textSize="12sp" />
 
         <EditText
+            android:id="@+id/etAdminPhone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Admin Phone Number (for SMS replies)"
+            android:inputType="phone"
+            android:textAlignment="center" />
+
+        <EditText
             android:id="@+id/etConfirmCode"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
