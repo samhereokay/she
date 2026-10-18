@@ -76,19 +76,20 @@ User Recovery Passphrase (>= 16 chars) + Random Item Salt (16 bytes)
   - Entered `correct-horse-battery-staple-2026` in field 1 and `correct-horse-battery-staple-DIFFERENT` in field 2.
   - Tapped `ENCRYPT & STORE`.
   - The app displayed a rejection toast, cleared buffers, and blocked upload. `Vault active: 0 item(s) secured.`
-  - *Artifact*: `vault_mismatch_rejection_emulator.png`
+  - *Artifact*: [`docs/evidence/vault_mismatch_rejection_emulator.png`](evidence/vault_mismatch_rejection_emulator.png)
 - **Successful Secret Storage**:
   - Re-authenticated device PIN to refresh 60-second Keystore window.
   - Entered title `Pixel-8-Master-IMEI`, secret `359872109876543`, and matching passphrases. Pre-upload roundtrip succeeded; item uploaded and displayed decrypted on screen.
+  - *Artifact*: [`docs/evidence/vault_item_stored_dual_passphrase.png`](evidence/vault_item_stored_dual_passphrase.png)
 - **Wipe & In-App Restore**:
   - Executed `adb shell pm clear com.antitheft.admin`.
   - Logged in with owner credentials and live 2FA TOTP. Opened vault. Item loaded with message:
     `[This phone has no local key. Passphrase restore required. Tap 'Restore / Import']`
-    *Artifact*: `vault_post_wipe_reworded_message.png`
+    *Artifact*: [`docs/evidence/vault_post_wipe_reworded_message.png`](evidence/vault_post_wipe_reworded_message.png)
   - Tapped `RESTORE / IMPORT`, typed `correct-horse-battery-staple-2026` into the blank dialog, and confirmed.
   - The app derived the PBKDF2 key, unwrapped the DEK, generated a fresh local Keystore key, and restored plaintext:
     `Pixel-8-Master-IMEI`: `359872109876543`
-    *Artifact*: `vault_restored_clean_reworded_passphrase.png`
+    *Artifact*: [`docs/evidence/vault_restored_clean_reworded_passphrase.png`](evidence/vault_restored_clean_reworded_passphrase.png)
   - **Zero database manipulation occurred.**
 
 ---

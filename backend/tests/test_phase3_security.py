@@ -1162,15 +1162,40 @@ def test_clear_device_owner_totp_older_than_60s_rejected(client):
     assert reject_resp.status_code == 403, reject_resp.text
     assert "fresh TOTP" in reject_resp.json()["detail"]
 
-    # 2. Dispatch with fresh TOTP code in parameters_json -> ACCEPTED (201)
+    # 2. Attempt dispatch with stale token and INVALID totp_code -> REJECTED (403)
     import json
+    invalid_params = json.dumps({"totp_code": "000000"})
+    canonical_invalid = create_canonical_command_bytes(
+        pairing_id=pair_resp.json()["pairing_id"],
+        command_id="",
+        target_device_id=target_id,
+        command_type="CLEAR_DEVICE_OWNER",
+        sequence_counter=2,
+        expiry_epoch=now_epoch + 300,
+        parameters_json=invalid_params
+    )
+    sig_invalid = base64.b64encode(admin_priv.sign(canonical_invalid, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+    invalid_resp = client.post("/api/v1/devices/commands/dispatch", json={
+        "trusted_device_id": trusted_id,
+        "target_device_id": target_id,
+        "command_type": "CLEAR_DEVICE_OWNER",
+        "sequence_counter": 2,
+        "expiry_epoch": now_epoch + 300,
+        "parameters_json": invalid_params,
+        "admin_signature": sig_invalid
+    }, headers={"Authorization": f"Bearer {stale_token}"})
+    assert invalid_resp.status_code == 403, invalid_resp.text
+    assert "Invalid TOTP code" in invalid_resp.json()["detail"]
+
+    # 3. Dispatch with fresh valid TOTP code in parameters_json -> ACCEPTED (201)
     params_with_totp = json.dumps({"totp_code": valid_code})
     canonical_bytes_with_totp = create_canonical_command_bytes(
         pairing_id=pair_resp.json()["pairing_id"],
         command_id="",
         target_device_id=target_id,
         command_type="CLEAR_DEVICE_OWNER",
-        sequence_counter=2,
+        sequence_counter=3,
         expiry_epoch=now_epoch + 300,
         parameters_json=params_with_totp
     )
@@ -1180,7 +1205,7 @@ def test_clear_device_owner_totp_older_than_60s_rejected(client):
         "trusted_device_id": trusted_id,
         "target_device_id": target_id,
         "command_type": "CLEAR_DEVICE_OWNER",
-        "sequence_counter": 2,
+        "sequence_counter": 3,
         "expiry_epoch": now_epoch + 300,
         "parameters_json": params_with_totp,
         "admin_signature": sig2
@@ -1188,6 +1213,21 @@ def test_clear_device_owner_totp_older_than_60s_rejected(client):
 
     assert accept_resp.status_code == 201, accept_resp.text
     assert accept_resp.json()["command_type"] == "CLEAR_DEVICE_OWNER"
+    
+    # CRITICAL SECURITY INVARIANT: totp_code must be stripped from stored parameters_json!
+    dispatched_params = accept_resp.json()["parameters_json"]
+    assert "totp_code" not in dispatched_params
+    assert valid_code not in dispatched_params
+    assert json.loads(dispatched_params) == {}
+
+    # 4. Guardian polls pending commands: verify totp_code is never transmitted to the handset!
+    pending_resp = client.get(f"/api/v1/devices/{target_id}/commands/pending")
+    assert pending_resp.status_code == 200
+    pending_cmds = pending_resp.json()
+    assert len(pending_cmds) == 1
+    assert pending_cmds[0]["command_type"] == "CLEAR_DEVICE_OWNER"
+    assert "totp_code" not in pending_cmds[0]["parameters_json"]
+    assert valid_code not in pending_cmds[0]["parameters_json"]
 
 
 def test_unenrolled_user_cannot_access_privileged_endpoints(client):

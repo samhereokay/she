@@ -445,6 +445,7 @@ def dispatch_command(
             detail=f"Invalid command_type '{req.command_type}'. Allowed command types: {sorted(list(ALLOWED_COMMAND_TYPES))}"
         )
 
+    stored_parameters_json = req.parameters_json
     if req.command_type == "CLEAR_DEVICE_OWNER":
         totp_fresh = False
         try:
@@ -452,11 +453,24 @@ def dispatch_command(
         except Exception:
             params = {}
         
-        fresh_code = params.get("totp_code")
-        if fresh_code and current_user.totp_enabled and current_user.totp_secret:
-            plain_secret = decrypt_totp_secret(current_user.totp_secret)
-            if verify_totp_code(plain_secret, str(fresh_code).strip()):
-                totp_fresh = True
+        fresh_code = params.pop("totp_code", None)
+        if fresh_code is not None:
+            # Re-serialize parameters without totp_code so it is never stored in DB or transmitted to device
+            stored_parameters_json = json.dumps(params)
+            if current_user.totp_enabled and current_user.totp_secret:
+                plain_secret = decrypt_totp_secret(current_user.totp_secret)
+                if verify_totp_code(plain_secret, str(fresh_code).strip()):
+                    totp_fresh = True
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid TOTP code provided for CLEAR_DEVICE_OWNER."
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="TOTP is not configured or enabled for this user."
+                )
 
         if not totp_fresh:
             verified_epoch = getattr(current_user, "_totp_verified_at", None)
@@ -500,6 +514,23 @@ def dispatch_command(
         data_bytes=canonical_bytes,
         der_signature_bytes=der_sig
     )
+    if not is_valid and stored_parameters_json != req.parameters_json:
+        # Also check signature against cleaned parameters (if client signed canonical bytes without totp_code)
+        clean_bytes = create_canonical_command_bytes(
+            pairing_id=target.pairing_id or "",
+            command_id=req.command_id or "",
+            target_device_id=req.target_device_id,
+            command_type=req.command_type,
+            sequence_counter=req.sequence_counter,
+            expiry_epoch=req.expiry_epoch,
+            parameters_json=stored_parameters_json
+        )
+        is_valid = verify_ecdsa_p256_signature(
+            public_key_pem=trusted.public_key_pem,
+            data_bytes=clean_bytes,
+            der_signature_bytes=der_sig
+        )
+
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -515,7 +546,7 @@ def dispatch_command(
         command_type=req.command_type,
         sequence_counter=req.sequence_counter,
         expiry_epoch=req.expiry_epoch,
-        parameters_json=req.parameters_json,
+        parameters_json=stored_parameters_json,
         admin_signature=req.admin_signature,
         status="PENDING"
     )
