@@ -16,23 +16,9 @@ STATIC_ADMIN_PATH = os.path.join(REPO_ROOT, "backend/static/she-admin.apk")
 
 
 def get_latest_telemetry_snapshot():
-    """Fetch real-time location snapshot of the most recently updated device."""
-    try:
-        db = SessionLocal()
-        try:
-            device = db.query(ProtectedDevice).filter(ProtectedDevice.status == "ACTIVE").first()
-            if not device:
-                device = db.query(ProtectedDevice).first()
-            last_loc = None
-            if device:
-                last_loc = db.query(LocationEvent).filter(
-                    LocationEvent.protected_device_id == device.id
-                ).order_by(LocationEvent.server_receipt_time.desc()).first()
-            return device, last_loc
-        finally:
-            db.close()
-    except Exception:
-        return None, None
+    """Returns purely simulated static demo data. Never queries database or exposes user telemetry."""
+    return None, None
+
 
 
 def get_file_sha256(filepath: str) -> str:
@@ -737,27 +723,16 @@ def render_landing_page():
     guardian_sha = get_file_sha256(GUARDIAN_APK_PATH)
     admin_sha = get_file_sha256(ADMIN_APK_PATH)
 
-    device, last_loc = get_latest_telemetry_snapshot()
-    if last_loc and device:
-        lat = f"{last_loc.latitude:.5f}"
-        lng = f"{last_loc.longitude:.5f}"
-        acc = f"±{last_loc.accuracy:.1f}m"
-        alias = device.device_alias
-        cap_time = last_loc.capture_time.strftime("%Y-%m-%d %H:%M:%S UTC") if hasattr(last_loc.capture_time, "strftime") else str(last_loc.capture_time)
-        rec_time = last_loc.server_receipt_time.strftime("%Y-%m-%d %H:%M:%S UTC") if hasattr(last_loc.server_receipt_time, "strftime") else str(last_loc.server_receipt_time)
-        map_url = f"https://maps.google.com/?q={lat},{lng}"
-        badge_text = "Live GPS Fixed"
-        status_label = "● ACTIVE ENCRYPTED TELEMETRY"
-    else:
-        lat = "22.54438"
-        lng = "88.36703"
-        acc = "±14.2m"
-        alias = "Guardian Handset (Sample Fix)"
-        cap_time = "2026-10-18 17:38:32 UTC"
-        rec_time = "2026-10-18 17:38:33 UTC"
-        map_url = f"https://maps.google.com/?q={lat},{lng}"
-        badge_text = "Satellite Lock"
-        status_label = "● DIRECT BOOT GPS TELEMETRY"
+    lat = "28.61393"
+    lng = "77.22950"
+    acc = "±12.5m"
+    alias = "Demo Handset (Simulated Benchmark)"
+    cap_time = "2026-10-18 12:00:00 UTC"
+    rec_time = "2026-10-18 12:00:01 UTC"
+    map_url = "https://maps.google.com/?q=28.61393,77.22950"
+    badge_text = "Demo Lock"
+    status_label = "● SIMULATED SATELLITE DEMO"
+
 
     body = f"""
     <div style="padding: 0 1.5rem;">
