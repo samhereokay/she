@@ -42,7 +42,7 @@ To run the system locally on your PC and physical handset, refer to the step-by-
    ```
 2. **Initialize Owner**:
    ```bash
-   PYTHONPATH=backend python3 -m app.cli.admin create-owner --username admin_owner --email admin@example.com --password YourPassword123!
+   PYTHONPATH=backend python3 -m app.cli.admin create-owner --username admin_owner --email admin@example.com --password "<CHOOSE_A_STRONG_PASSWORD>"
    ```
 3. **Connect Phone via USB & Route Network**:
    ```bash

@@ -42,7 +42,7 @@ Registration closes after the first account. Use the CLI tool to initialize the 
 PYTHONPATH=backend python3 -m app.cli.admin create-owner \
   --username admin_owner \
   --email admin@example.com \
-  --password YourSecurePassword123!
+  --password "<CHOOSE_A_STRONG_PASSWORD>"
 ```
 
 ### 2.3 Server CLI Administrative Commands
