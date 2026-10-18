@@ -1,102 +1,129 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0F172A"
+    android:background="#000000"
     android:padding="16dp">
 
-    <!-- Header -->
-    <TextView
-        android:id="@+id/tvVaultTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Encrypted Recovery Vault"
-        android:textColor="#F8FAFC"
-        android:textSize="22sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/tvVaultSubtitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Zero-Knowledge AES-256-GCM • Keystore Protected"
-        android:textColor="#38BDF8"
-        android:textSize="12sp" />
-
-    <!-- Action Buttons Row -->
-    <LinearLayout
+    <!-- Top Card Header -->
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="16dp">
+        android:layout_marginBottom="14dp"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="0dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="#262626"
+        app:cardBackgroundColor="#121212">
 
-        <Button
-            android:id="@+id/btnAddSecret"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="+ Add Secret"
-            android:textSize="12sp"
-            android:backgroundTint="#2563EB"
-            android:textColor="#FFFFFF" />
+            android:orientation="vertical"
+            android:padding="16dp">
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="wrap_content" />
+            <TextView
+                android:id="@+id/tvVaultTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Encrypted Recovery Vault"
+                android:textColor="#F8FAFC"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnExportBackup"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Export Backup"
-            android:textSize="11sp"
-            android:backgroundTint="#059669"
-            android:textColor="#FFFFFF" />
+            <TextView
+                android:id="@+id/tvVaultSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Zero-Knowledge AES-256-GCM • Keystore Protected"
+                android:textColor="#38BDF8"
+                android:textSize="12sp" />
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="wrap_content" />
+            <!-- Action Buttons Row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="14dp">
 
-        <Button
-            android:id="@+id/btnRestoreVault"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Restore / Import"
-            android:textSize="11sp"
-            android:backgroundTint="#D97706"
-            android:textColor="#FFFFFF" />
-    </LinearLayout>
+                <Button
+                    android:id="@+id/btnAddSecret"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:text="+ Secret"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#2563EB"
+                    android:textColor="#FFFFFF"
+                    app:cornerRadius="10dp" />
 
-    <Button
-        android:id="@+id/btnEmergencyShred"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="⚠️ Emergency Shred / Purge Vault"
-        android:textSize="12sp"
-        android:backgroundTint="#DC2626"
-        android:textColor="#FFFFFF" />
+                <Space
+                    android:layout_width="6dp"
+                    android:layout_height="wrap_content" />
+
+                <Button
+                    android:id="@+id/btnExportBackup"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:text="Export"
+                    android:textSize="12sp"
+                    app:cornerRadius="10dp" />
+
+                <Space
+                    android:layout_width="6dp"
+                    android:layout_height="wrap_content" />
+
+                <Button
+                    android:id="@+id/btnRestoreVault"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:text="Restore"
+                    android:textSize="12sp"
+                    android:textColor="#38BDF8"
+                    app:strokeColor="#262626"
+                    app:cornerRadius="10dp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnEmergencyShred"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="8dp"
+                android:text="Emergency Shred / Purge Vault"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:backgroundTint="#991B1B"
+                android:textColor="#FEE2E2"
+                app:cornerRadius="10dp" />
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- Status & Count -->
     <TextView
         android:id="@+id/tvVaultStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginBottom="8dp"
         android:text="Authenticating biometric gate..."
         android:textColor="#94A3B8"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
 
     <!-- Items ScrollView -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="12dp">
+        android:clipToPadding="false"
+        android:paddingBottom="24dp">
 
         <LinearLayout
             android:id="@+id/containerVaultItems"

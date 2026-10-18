@@ -357,10 +357,10 @@ class GuardianMainActivity : AppCompatActivity() {
 
     private fun showPairingInputDialog() {
         val options = mutableListOf<String>()
-        options.add("📷 Scan Admin QR Code (Camera)")
-        options.add("📋 Pair from Clipboard (Same Device)")
+        options.add("Scan Admin QR Code (Camera)")
+        options.add("Pair from Clipboard (Same Device)")
         if (com.antitheft.guardian.BuildConfig.DEBUG) {
-            options.add("🛠️ Enter Payload Manually / Debug")
+            options.add("Enter Payload Manually / Debug")
         }
 
         androidx.appcompat.app.AlertDialog.Builder(this)
@@ -627,7 +627,7 @@ class GuardianMainActivity : AppCompatActivity() {
 
                 btnLocationInfo.setOnClickListener {
                     AlertDialog.Builder(this@GuardianMainActivity)
-                        .setTitle("🛰️ Handset Telemetry & Location Guide")
+                        .setTitle("Handset Telemetry & Location Guide")
                         .setMessage(
                             "• Real-Time GPS Tracking:\n" +
                             "  Guardian captures hardware GPS and network provider fixes, signing each coordinate packet with this phone's hardware-bound ECDSA P-256 key before transmitting it to your private server.\n\n" +

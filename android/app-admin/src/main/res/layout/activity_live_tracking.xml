@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0A0E17">
+    android:background="#000000">
 
     <!-- Edge-to-Edge Map View -->
     <WebView
@@ -17,7 +17,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentTop="true"
-        android:background="#E60A0E17"
+        android:background="#E6000000"
         android:elevation="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -76,11 +76,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
-        android:layout_margin="12dp"
-        app:cardBackgroundColor="#F2111827"
-        app:cardCornerRadius="14dp"
+        android:layout_margin="14dp"
+        app:cardBackgroundColor="#F2121212"
+        app:cardCornerRadius="20dp"
         app:cardElevation="8dp"
-        app:strokeColor="#1F293D"
+        app:strokeColor="#262626"
         app:strokeWidth="1dp">
 
         <LinearLayout
@@ -175,7 +175,7 @@
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🎯 Center"
+                    android:text="Center"
                     android:textSize="11sp" />
 
                 <Button
@@ -184,7 +184,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="6dp"
-                    android:text="🧪 Demo Drill"
+                    android:text="Demo Drill"
                     android:textSize="11sp" />
             </LinearLayout>
 
@@ -203,7 +203,7 @@
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:backgroundTint="#00D2FF"
-                    android:text="🛰️ Ping (LOCATE)"
+                    android:text="Ping (LOCATE)"
                     android:textColor="#000000"
                     android:textSize="11sp"
                     android:textStyle="bold" />
@@ -215,7 +215,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="4dp"
-                    android:text="🔊 Ring Siren"
+                    android:text="Ring Siren"
                     android:textSize="11sp" />
             </LinearLayout>
 
@@ -233,7 +233,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
-                    android:text="🗺️ Search on Google Maps"
+                    android:text="Search on Google Maps"
                     android:textSize="11sp" />
 
                 <Button
@@ -242,7 +242,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
-                    android:text="ℹ️ Commands Info"
+                    android:text="Commands Info"
                     android:textSize="11sp" />
             </LinearLayout>
 

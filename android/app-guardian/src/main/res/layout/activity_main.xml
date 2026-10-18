@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#0B1120">
+    android:background="#000000">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -35,7 +35,7 @@
                     android:id="@+id/tvEmergencyHeader"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🚨 STOLEN DEVICE: RECOVERY ACTIVE"
+                    android:text="STOLEN DEVICE: RECOVERY ACTIVE"
                     android:textColor="#FCA5A5"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -101,8 +101,8 @@
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#334155"
-            app:cardBackgroundColor="#0F172A">
+            app:strokeColor="#262626"
+            app:cardBackgroundColor="#121212">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -166,7 +166,7 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="12dp"
-                    android:background="#1E293B" />
+                    android:background="#262626" />
 
                 <TextView
                     android:id="@+id/tvDeviceId"
@@ -209,7 +209,7 @@
                         android:layout_height="40dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="6dp"
-                        android:text="🗺️ View on Map"
+                        android:text="View on Map"
                         android:textSize="12sp"
                         app:cornerRadius="10dp" />
 
@@ -218,10 +218,10 @@
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="40dp"
-                        android:text="ℹ️ Info"
+                        android:text="Info"
                         android:textSize="12sp"
                         android:textColor="#94A3B8"
-                        app:strokeColor="#334155"
+                        app:strokeColor="#262626"
                         app:cornerRadius="10dp" />
                 </LinearLayout>
 
@@ -242,7 +242,7 @@
                         android:textColor="#022C22"
                         android:textStyle="bold"
                         android:textSize="12sp"
-                        android:text="⚡ Capture Fix Now"
+                        android:text="Capture Fix Now"
                         app:cornerRadius="10dp" />
 
                     <Button
@@ -252,7 +252,7 @@
                         android:layout_height="44dp"
                         android:layout_weight="1"
                         android:textSize="12sp"
-                        android:text="☁️ Sync to Server"
+                        android:text="Sync to Server"
                         app:cornerRadius="10dp" />
                 </LinearLayout>
 
@@ -263,7 +263,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="46dp"
                     android:layout_marginTop="10dp"
-                    android:text="📷 Pair with Admin Phone (QR / Code)"
+                    android:text="Pair with Admin Phone (QR / Code)"
                     android:textColor="#38BDF8"
                     android:textSize="13sp"
                     app:strokeColor="#0284C7"
@@ -280,8 +280,8 @@
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#334155"
-            app:cardBackgroundColor="#1E293B">
+            app:strokeColor="#262626"
+            app:cardBackgroundColor="#121212">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -346,8 +346,8 @@
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#334155"
-            app:cardBackgroundColor="#1E293B">
+            app:strokeColor="#262626"
+            app:cardBackgroundColor="#121212">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -398,7 +398,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="#0F172A"
+                    android:background="#0A0A0A"
                     android:padding="10dp"
                     android:textColor="#38BDF8"
                     android:fontFamily="monospace"
@@ -432,7 +432,7 @@
                         android:layout_weight="1"
                         android:text="Clear Lockdown"
                         android:textColor="#94A3B8"
-                        app:strokeColor="#334155"
+                        app:strokeColor="#262626"
                         android:textSize="11sp"
                         app:cornerRadius="8dp" />
                 </LinearLayout>

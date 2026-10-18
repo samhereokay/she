@@ -232,7 +232,7 @@ class LiveTrackingActivity : AppCompatActivity() {
             <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                body, html, #map { width: 100%; height: 100%; background: #060911; }
+                body, html, #map { width: 100%; height: 100%; background: #000000; }
                 .radar-pin-wrap {
                     position: relative;
                     width: 36px;
@@ -497,25 +497,25 @@ class LiveTrackingActivity : AppCompatActivity() {
 
     private fun showCommandInfoDialog() {
         AlertDialog.Builder(this)
-            .setTitle("🛰️ SHE Recovery Command Guide")
+            .setTitle("SHE Recovery Command Guide")
             .setMessage(
-                "• 🛰️ LOCATE:\n" +
+                "• LOCATE:\n" +
                 "  Pings the handset's hardware GPS to capture and transmit fresh satellite coordinates over WebSocket immediately.\n\n" +
-                "• 🔊 RING:\n" +
+                "• RING:\n" +
                 "  Triggers loud acoustic emergency alarm at maximum hardware volume to pinpoint the handset nearby (overrides Silent/DND modes).\n\n" +
-                "• 🔕 STOP_RING:\n" +
+                "• STOP_RING:\n" +
                 "  Silences the active acoustic siren alert.\n\n" +
-                "• 🔒 LOCK:\n" +
+                "• LOCK:\n" +
                 "  Immediately turns off the screen and forces enterprise PIN/kiosk lockdown.\n\n" +
-                "• 🧪 TEST_MODE (Drill):\n" +
+                "• TEST_MODE (Drill):\n" +
                 "  Executes a safe security drill simulation on the handset without triggering real emergency panic escalation.\n\n" +
-                "• 🚨 STOLEN_MODE (Real OG):\n" +
+                "• STOLEN_MODE (Real OG):\n" +
                 "  Arms comprehensive theft lockdown: hides status bar, suppresses notifications, locks into kiosk, and initiates high-frequency GPS tracking beacons.\n\n" +
-                "• 🚪 EXIT_KIOSK:\n" +
+                "• EXIT_KIOSK:\n" +
                 "  Releases kiosk lock and restores normal Android home screen launcher.\n\n" +
-                "• 🔗 UNPAIR:\n" +
+                "• UNPAIR:\n" +
                 "  Revokes mutual pairing handshake between this companion and the target handset.\n\n" +
-                "• ⚠️ CLEAR_DEVICE_OWNER:\n" +
+                "• CLEAR_DEVICE_OWNER:\n" +
                 "  Deprovisions Device Owner enterprise administration status (strictly requires 6-digit TOTP confirmation)."
             )
             .setPositiveButton("Got It", null)
@@ -549,11 +549,11 @@ class LiveTrackingActivity : AppCompatActivity() {
         if (isSimulating) {
             simulationJob?.cancel()
             isSimulating = false
-            btnSimulateDrill.text = "🧪 Demo Drill"
+            btnSimulateDrill.text = "Demo Drill"
             Toast.makeText(this, "Simulation drill stopped", Toast.LENGTH_SHORT).show()
         } else {
             isSimulating = true
-            btnSimulateDrill.text = "⏹️ Stop Drill"
+            btnSimulateDrill.text = "Stop Drill"
             Toast.makeText(this, "Live drill started (India Gate Benchmark)", Toast.LENGTH_SHORT).show()
 
             simulationJob = lifecycleScope.launch {

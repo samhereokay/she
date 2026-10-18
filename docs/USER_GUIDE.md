@@ -81,8 +81,8 @@ The ecosystem consists of two distinct Android applications that communicate sec
 ### Checking Live Location
 * Open the **Admin App** dashboard.
 * Tap your protected phone's alias to view its latest location fix, battery level, accuracy radius, and last-seen timestamp.
-* **Search on Map**: Tap **`🗺️ Search on Map`** to automatically open Google Maps (or your preferred map app) with a pin placed on the phone's coordinates.
-* **Telemetry Guide**: Tap **`ℹ️ Info`** to review how GPS satellite acquisition, Direct Boot resumption, and accuracy margins work under the hood.
+* **Search on Map**: Tap **`Search on Map`** to automatically open Google Maps (or your preferred map app) with a pin placed on the phone's coordinates.
+* **Telemetry Guide**: Tap **`Info`** to review how GPS satellite acquisition, Direct Boot resumption, and accuracy margins work under the hood.
 
 ### Testing Alarms Safely: "Test Mode" vs. "Real Stolen Mode"
 When showing the app to friends or verifying that speakers work, **never** activate real stolen mode:

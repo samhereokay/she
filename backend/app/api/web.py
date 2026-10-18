@@ -34,23 +34,81 @@ def get_file_sha256(filepath: str) -> str:
 # -----------------------------------------------------------------------------
 # Base Layout & Shared CSS
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Base Layout & Shared CSS (Reference: Premium Minimal Design System with Light/Dark Themes)
+# -----------------------------------------------------------------------------
+SVG_SHIELD = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'
+SVG_PHONE = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>'
+SVG_MAP = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>'
+SVG_LOCK = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>'
+SVG_DOWNLOAD = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>'
+SVG_BOOK = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>'
+SVG_RADAR = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path><path d="M2 12h20"></path></svg>'
+SVG_CONTROLLER = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="11" x2="10" y2="11"></line><line x1="8" y1="9" x2="8" y2="13"></line><line x1="15" y1="12" x2="15.01" y2="12"></line><line x1="18" y1="10" x2="18.01" y2="10"></line><rect x="2" y="6" width="20" height="12" rx="6"></rect></svg>'
+SVG_TERMINAL = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
+SVG_RADIO = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.93 19.07a10 10 0 0 1 0-14.14"></path><path d="M7.76 16.24a6 6 0 0 1 0-8.48"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.48"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>'
+SVG_CAMERA = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>'
+SVG_KEY = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>'
+SVG_ALERT = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>'
+SVG_GLOBE = '<svg class="inline-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>'
+
 SHARED_CSS = """
 :root {
-    --bg-dark: #0a0e17;
-    --bg-card: #111827;
-    --bg-card-hover: #1a2234;
-    --primary: #00d2ff;
-    --primary-glow: rgba(0, 210, 255, 0.25);
-    --secondary: #3a7bd5;
-    --accent: #10b981;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-    --text-main: #f3f4f6;
-    --text-muted: #9ca3af;
-    --border: #1f293d;
+    --bg-dark: #000000;
+    --bg-card: #121212;
+    --bg-card-hover: #1A1A1A;
+    --bg-inset: #0A0A0A;
+    --bg-code: #0A0A0A;
+    --border: #262626;
+    --border-subtle: #1C1C1E;
+    --primary: #38BDF8;
+    --primary-glow: rgba(56, 189, 248, 0.25);
+    --primary-soft: rgba(56, 189, 248, 0.12);
+    --secondary: #2563EB;
+    --accent: #10B981;
+    --accent-soft: rgba(16, 185, 129, 0.12);
+    --danger: #EF4444;
+    --danger-soft: rgba(239, 68, 68, 0.12);
+    --warning: #F59E0B;
+    --warning-soft: rgba(245, 158, 11, 0.12);
+    --text-main: #F8FAFC;
+    --text-muted: #94A3B8;
+    --text-subtle: #64748B;
+    --nav-bg: rgba(0, 0, 0, 0.88);
+    --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.6);
+    --shadow-hover: 0 12px 30px -4px rgba(0, 0, 0, 0.7);
+    --card-radius: 20px;
+    --pill-radius: 9999px;
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 }
+
+[data-theme="light"] {
+    --bg-dark: #F8F9FB;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F8FAFC;
+    --bg-inset: #F1F5F9;
+    --bg-code: #F1F5F9;
+    --border: #E2E8F0;
+    --border-subtle: #EDF2F7;
+    --primary: #2563EB;
+    --primary-glow: rgba(37, 99, 235, 0.2);
+    --primary-soft: rgba(37, 99, 235, 0.08);
+    --secondary: #1D4ED8;
+    --accent: #059669;
+    --accent-soft: rgba(5, 150, 105, 0.08);
+    --danger: #DC2626;
+    --danger-soft: rgba(220, 38, 38, 0.08);
+    --warning: #D97706;
+    --warning-soft: rgba(217, 119, 6, 0.08);
+    --text-main: #0F172A;
+    --text-muted: #64748B;
+    --text-subtle: #94A3B8;
+    --nav-bg: rgba(248, 249, 251, 0.88);
+    --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+    --shadow-hover: 0 12px 30px -4px rgba(15, 23, 42, 0.12);
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     background: var(--bg-dark);
@@ -58,18 +116,23 @@ body {
     font-family: var(--font-sans);
     line-height: 1.6;
     overflow-x: hidden;
+    transition: background-color 0.25s ease, color 0.25s ease;
 }
+
+/* Navigation Bar */
 nav {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.1rem 2.5rem;
-    background: rgba(10, 14, 23, 0.9);
-    backdrop-filter: blur(16px);
+    padding: 1rem 2.25rem;
+    background: var(--nav-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
     z-index: 100;
+    transition: background 0.25s, border-color 0.25s;
 }
 .brand {
     display: flex;
@@ -77,45 +140,92 @@ nav {
     gap: 0.75rem;
     font-weight: 800;
     font-size: 1.25rem;
-    color: #fff;
+    color: var(--text-main);
     text-decoration: none;
     letter-spacing: -0.02em;
 }
 .brand img {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.brand-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 9999px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    border: 1px solid var(--border);
+    letter-spacing: 0.06em;
 }
 .nav-links {
     display: flex;
-    gap: 1.5rem;
+    gap: 1.25rem;
     align-items: center;
     flex-wrap: wrap;
 }
 .nav-links a {
     color: var(--text-muted);
     text-decoration: none;
-    font-size: 0.92rem;
+    font-size: 0.9rem;
     font-weight: 600;
     transition: color 0.2s;
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
 }
-.nav-links a:hover, .nav-links a.active { color: var(--primary); }
+.nav-links a:hover, .nav-links a.active {
+    color: var(--primary);
+}
+
+/* Theme Switcher Toggle Pill */
+.theme-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: var(--pill-radius);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.theme-toggle-btn:hover {
+    border-color: var(--primary);
+    background: var(--bg-card-hover);
+    transform: translateY(-1px);
+}
+.theme-icon-light { display: none; }
+.theme-icon-dark { display: inline-block; }
+[data-theme="light"] .theme-icon-light { display: inline-block; }
+[data-theme="light"] .theme-icon-dark { display: none; }
+
+/* Layout & Containers */
 .container {
     max-width: 1140px;
     margin: 0 auto;
-    padding: 2.5rem 1.5rem;
+    padding: 2.75rem 1.5rem;
 }
+
+/* Warning & Status Banners */
 .warning-banner {
-    background: rgba(245, 158, 11, 0.08);
+    background: var(--warning-soft);
     border: 1px solid rgba(245, 158, 11, 0.35);
-    border-radius: 10px;
-    padding: 1.25rem 1.5rem;
+    border-radius: 16px;
+    padding: 1.25rem 1.6rem;
     margin: 1.5rem auto 0 auto;
     max-width: 1140px;
     display: flex;
     align-items: flex-start;
     gap: 1rem;
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.08);
 }
 .warning-icon {
     font-size: 1.5rem;
@@ -124,57 +234,64 @@ nav {
 .warning-body {
     flex: 1;
     font-size: 0.92rem;
-    color: #fef3c7;
-    line-height: 1.5;
+    color: #FEF3C7;
+    line-height: 1.55;
 }
 .warning-title {
     font-weight: 800;
-    color: #f59e0b;
+    color: var(--warning);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: 0.8rem;
     margin-bottom: 0.25rem;
 }
+
+/* Hero Section */
 .hero {
     text-align: center;
-    padding: 4rem 1.5rem 2.5rem 1.5rem;
-    background: radial-gradient(circle at 50% 20%, rgba(0, 210, 255, 0.07), transparent 70%);
+    padding: 4.5rem 1.5rem 3rem 1.5rem;
+    background: radial-gradient(circle at 50% 15%, var(--primary-soft), transparent 75%);
 }
 .hero-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 1rem;
-    border-radius: 9999px;
-    background: rgba(0, 210, 255, 0.1);
-    border: 1px solid rgba(0, 210, 255, 0.3);
+    padding: 0.4rem 1.15rem;
+    border-radius: var(--pill-radius);
+    background: var(--primary-soft);
+    border: 1px solid rgba(56, 189, 248, 0.35);
     color: var(--primary);
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 700;
     margin-bottom: 1.5rem;
+    letter-spacing: 0.02em;
 }
 .hero h1 {
-    font-size: 3.2rem;
+    font-size: 3.25rem;
     font-weight: 800;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.035em;
     line-height: 1.15;
-    max-width: 820px;
-    margin: 0 auto 1.25rem auto;
+    max-width: 840px;
+    margin: 0 auto 1.35rem auto;
+    color: var(--text-main);
 }
 .hero h1 span {
-    background: linear-gradient(to right, #00d2ff, #3a7bd5);
+    background: linear-gradient(135deg, var(--primary), #3B82F6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 .hero p {
-    font-size: 1.15rem;
+    font-size: 1.12rem;
     color: var(--text-muted);
-    max-width: 650px;
+    max-width: 660px;
     margin: 0 auto 2.25rem auto;
+    line-height: 1.7;
 }
+
+/* Buttons */
 .btn-group {
     display: flex;
-    gap: 1rem;
+    gap: 0.85rem;
     justify-content: center;
     flex-wrap: wrap;
 }
@@ -183,42 +300,49 @@ nav {
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 1.5rem;
-    border-radius: 8px;
+    border-radius: 14px;
     font-weight: 700;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     text-decoration: none;
-    transition: all 0.2s ease;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     cursor: pointer;
     border: none;
+    font-family: var(--font-sans);
 }
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
-    color: #000;
-    box-shadow: 0 4px 18px var(--primary-glow);
+    background: var(--primary);
+    color: #FFFFFF;
+    box-shadow: 0 4px 16px var(--primary-glow);
 }
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 22px rgba(0, 210, 255, 0.4);
+    box-shadow: 0 6px 22px var(--primary-glow);
+    filter: brightness(1.08);
 }
 .btn-secondary {
-    background: #111827;
+    background: var(--bg-card);
     color: var(--text-main);
     border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 .btn-secondary:hover {
     border-color: var(--primary);
-    background: #1a2234;
+    background: var(--bg-card-hover);
     transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
 }
+
+/* Headers & Grids */
 .section-header {
     text-align: center;
     margin-bottom: 2.75rem;
 }
 .section-header h2 {
-    font-size: 2.1rem;
+    font-size: 2.15rem;
     font-weight: 800;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
     margin-bottom: 0.5rem;
+    color: var(--text-main);
 }
 .section-header p {
     color: var(--text-muted);
@@ -232,18 +356,22 @@ nav {
 .grid-3 {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
+    gap: 1.6rem;
 }
+
+/* Cards (Rounded 20px with subtle borders & soft shadows) */
 .card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.75rem;
-    transition: border-color 0.2s, transform 0.2s;
+    border-radius: var(--card-radius);
+    padding: 1.85rem;
+    box-shadow: var(--shadow-card);
+    transition: border-color 0.22s, transform 0.22s, box-shadow 0.22s;
 }
 .card:hover {
-    border-color: rgba(0, 210, 255, 0.4);
+    border-color: var(--primary);
     transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
 }
 .card-header {
     display: flex;
@@ -252,61 +380,92 @@ nav {
     margin-bottom: 1.25rem;
 }
 .card-title {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.22rem;
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    color: var(--text-main);
 }
+
+/* Badges & Chips */
 .card-badge {
-    display: inline-block;
-    padding: 0.2rem 0.55rem;
-    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--pill-radius);
     font-size: 0.72rem;
     font-weight: 700;
     font-family: var(--font-mono);
     text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 .badge-warning {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: var(--warning-soft);
+    color: var(--warning);
+    border: 1px solid rgba(245, 158, 11, 0.35);
 }
-.badge-info {
-    background: rgba(0, 210, 255, 0.15);
-    color: #38bdf8;
-    border: 1px solid rgba(0, 210, 255, 0.3);
+.badge-info, .badge-primary {
+    background: var(--primary-soft);
+    color: var(--primary);
+    border: 1px solid rgba(56, 189, 248, 0.35);
 }
+.badge-success {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+/* Code & Telemetry Elements */
 .code-block {
-    background: #060911;
+    background: var(--bg-code);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    padding: 0.85rem 1.15rem;
     font-family: var(--font-mono);
-    font-size: 0.82rem;
-    color: #38bdf8;
+    font-size: 0.84rem;
+    color: var(--primary);
     overflow-x: auto;
     margin: 0.75rem 0;
     user-select: all;
+    line-height: 1.55;
 }
 .code-pill {
-    background: #060911;
-    padding: 0.15rem 0.45rem;
-    border-radius: 4px;
+    background: var(--bg-code);
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
     font-family: var(--font-mono);
     font-size: 0.82rem;
-    color: #38bdf8;
-    border: 1px solid #1e293d;
+    color: var(--primary);
+    border: 1px solid var(--border);
 }
 .feature-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: rgba(0, 210, 255, 0.1);
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: var(--primary-soft);
+    border: 1px solid var(--border);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.3rem;
+    font-size: 1.35rem;
     color: var(--primary);
     flex-shrink: 0;
 }
+.feature-icon svg {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+    stroke-width: 2;
+    fill: none;
+}
+.inline-icon {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 0.35rem;
+    position: relative;
+    top: -1px;
+}
+
+/* Blog & Articles */
 .blog-section {
     margin-top: 3.5rem;
     border-top: 1px solid var(--border);
@@ -315,9 +474,10 @@ nav {
 .blog-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--card-radius);
     padding: 2.25rem;
     margin-bottom: 2rem;
+    box-shadow: var(--shadow-card);
 }
 .blog-meta {
     display: flex;
@@ -334,54 +494,59 @@ nav {
     font-weight: 800;
     margin-bottom: 1.25rem;
     line-height: 1.3;
+    color: var(--text-main);
 }
 .blog-content h4 {
     font-size: 1.2rem;
     font-weight: 700;
-    color: #fff;
+    color: var(--text-main);
     margin: 1.75rem 0 0.75rem 0;
 }
 .blog-content p {
-    color: #d1d5db;
+    color: var(--text-muted);
     margin-bottom: 1.15rem;
     font-size: 1.02rem;
     line-height: 1.75;
 }
 .blog-callout {
-    background: rgba(0, 210, 255, 0.05);
+    background: var(--primary-soft);
     border-left: 4px solid var(--primary);
     padding: 1.15rem 1.35rem;
-    border-radius: 0 8px 8px 0;
+    border-radius: 0 12px 12px 0;
     margin: 1.35rem 0;
     font-size: 0.95rem;
-    color: #e2e8f0;
+    color: var(--text-main);
 }
 .blog-callout-warning {
-    background: rgba(239, 68, 68, 0.08);
+    background: var(--danger-soft);
     border-left: 4px solid var(--danger);
     padding: 1.15rem 1.35rem;
-    border-radius: 0 8px 8px 0;
+    border-radius: 0 12px 12px 0;
     margin: 1.35rem 0;
     font-size: 0.95rem;
-    color: #fecaca;
+    color: #FECACA;
 }
+
+/* Documentation Pages */
 .doc-page {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--card-radius);
     padding: 2.5rem;
     margin-bottom: 2rem;
+    box-shadow: var(--shadow-card);
 }
 .doc-page h1 {
     font-size: 2.25rem;
     font-weight: 800;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
     margin-bottom: 0.5rem;
+    color: var(--text-main);
 }
 .doc-page h2 {
     font-size: 1.55rem;
     font-weight: 800;
-    color: #fff;
+    color: var(--text-main);
     margin: 2.25rem 0 0.85rem 0;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
@@ -393,7 +558,7 @@ nav {
     margin: 1.5rem 0 0.65rem 0;
 }
 .doc-page p, .doc-page li {
-    color: #d1d5db;
+    color: var(--text-muted);
     font-size: 1rem;
     line-height: 1.7;
     margin-bottom: 0.85rem;
@@ -407,30 +572,41 @@ nav {
     border-collapse: collapse;
     margin: 1.5rem 0;
     font-size: 0.92rem;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
 }
 .doc-page th, .doc-page td {
-    padding: 0.75rem 1rem;
+    padding: 0.85rem 1rem;
     border: 1px solid var(--border);
     text-align: left;
 }
 .doc-page th {
-    background: #060911;
+    background: var(--bg-inset);
     color: var(--primary);
     font-family: var(--font-mono);
+    font-weight: 700;
 }
+.doc-page td {
+    background: var(--bg-card);
+    color: var(--text-muted);
+}
+
+/* Footer */
 footer {
     border-top: 1px solid var(--border);
-    padding: 3rem 1.5rem;
+    padding: 3.5rem 1.5rem;
     text-align: center;
     color: var(--text-muted);
     font-size: 0.9rem;
     margin-top: 4rem;
+    background: var(--bg-dark);
 }
 .footer-links {
     display: flex;
     gap: 1.5rem;
     justify-content: center;
-    margin-bottom: 1rem;
+    margin-bottom: 1.25rem;
     flex-wrap: wrap;
 }
 .footer-links a {
@@ -438,8 +614,50 @@ footer {
     text-decoration: none;
     font-weight: 600;
     font-size: 0.88rem;
+    transition: color 0.2s;
 }
 .footer-links a:hover { color: var(--primary); }
+
+/* Theme Overrides for Light Mode */
+[data-theme="light"] h1, [data-theme="light"] h2, [data-theme="light"] h3, [data-theme="light"] h4 {
+    color: var(--text-main) !important;
+}
+[data-theme="light"] [style*="color: #fff"],
+[data-theme="light"] [style*="color:#fff"],
+[data-theme="light"] [style*="color: #f3f4f6"],
+[data-theme="light"] [style*="color:#f3f4f6"] {
+    color: var(--text-main) !important;
+}
+[data-theme="light"] [style*="color: #d1d5db"],
+[data-theme="light"] [style*="color:#d1d5db"],
+[data-theme="light"] [style*="color: #cbd5e1"],
+[data-theme="light"] [style*="color: #94a3b8"],
+[data-theme="light"] [style*="color: #9ca3af"] {
+    color: var(--text-muted) !important;
+}
+[data-theme="light"] [style*="background: #0A0A0A"],
+[data-theme="light"] [style*="background: #121212"],
+[data-theme="light"] [style*="background: #1C1C1E"] {
+    background: var(--bg-inset) !important;
+    border-color: var(--border) !important;
+}
+[data-theme="light"] .warning-body {
+    color: #92400E !important;
+}
+[data-theme="light"] .blog-callout {
+    color: #18181B !important;
+}
+[data-theme="light"] .blog-callout-warning {
+    color: #991B1B !important;
+    background: #FEF2F2 !important;
+}
+[data-theme="light"] #locationInfoModal .card {
+    background: #FFFFFF !important;
+    border-color: var(--border) !important;
+}
+[data-theme="light"] #locationInfoModal button[onclick*="locationInfoModal"] {
+    color: var(--text-muted) !important;
+}
 """
 
 
@@ -469,6 +687,15 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        (function() {{
+            var saved = localStorage.getItem('she_theme');
+            if (!saved) {{
+                saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+            }}
+            document.documentElement.setAttribute('data-theme', saved);
+        }})();
+    </script>
     <style>{SHARED_CSS}</style>
 </head>
 <body>
@@ -476,9 +703,15 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
         <a href="/" class="brand">
             <img src="/logo.png" alt="SHE Logo" />
             <span>SHE</span>
+            <span class="brand-badge">ANTI-THEFT</span>
         </a>
         <div class="nav-links">
             {nav_items_html}
+            <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Light/Dark Theme" title="Toggle Light/Dark Theme">
+                <span class="theme-icon-dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span>
+                <span class="theme-icon-light"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg></span>
+                <span id="theme-text">Theme</span>
+            </button>
         </div>
     </nav>
 
@@ -494,10 +727,33 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
             <a href="/#blog">Security Blog</a>
         </div>
         <p>&copy; 2026 SHE (Sentinel for Handheld Equipment). Free & Open-Source Software under Apache 2.0.</p>
-        <p style="margin-top: 0.5rem; font-size: 0.8rem; color: #6b7280;">
+        <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-subtle);">
             Complies with Indian ERSS 112 & Sanchar Saathi CEIR mobile handset defense guidelines.
         </p>
     </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            var btn = document.getElementById('theme-toggle');
+            var txt = document.getElementById('theme-text');
+            function refreshThemeText() {{
+                var current = document.documentElement.getAttribute('data-theme') || 'dark';
+                if (txt) {{
+                    txt.textContent = current === 'light' ? 'Light' : 'Dark';
+                }}
+            }}
+            refreshThemeText();
+            if (btn) {{
+                btn.addEventListener('click', function() {{
+                    var current = document.documentElement.getAttribute('data-theme') || 'dark';
+                    var next = current === 'light' ? 'dark' : 'light';
+                    document.documentElement.setAttribute('data-theme', next);
+                    localStorage.setItem('she_theme', next);
+                    refreshThemeText();
+                }});
+            }}
+        }});
+    </script>
 </body>
 </html>"""
 
@@ -564,13 +820,13 @@ def render_releases_page():
     content = f"""
     <header class="hero">
         <img src="/logo.png" alt="SHE Logo" style="width: 110px; height: 110px; object-fit: contain; margin-bottom: 1.5rem; filter: drop-shadow(0 0 25px rgba(0, 210, 255, 0.35));" />
-        <div class="hero-badge">🛡️ Official Community Release &bull; Version 0.3.0</div>
+        <div class="hero-badge">{SVG_SHIELD} Official Community Release &bull; Version 0.3.0</div>
         <h1>Download <span>SHE Handset Defense</span></h1>
         <p>Verified, open-source Android binaries for autonomous anti-theft tracking, Direct Boot GPS recovery, and zero-knowledge vault protection.</p>
         <div class="btn-group">
-            <a href="#downloads" class="btn btn-primary">⬇️ Download APKs</a>
-            <a href="#sideloading" class="btn btn-secondary">📲 Installation Guide</a>
-            <a href="/docs/user-guide" class="btn btn-secondary">📖 User Manual</a>
+            <a href="#downloads" class="btn btn-primary">{SVG_DOWNLOAD} Download APKs</a>
+            <a href="#sideloading" class="btn btn-secondary">{SVG_PHONE} Installation Guide</a>
+            <a href="/docs/user-guide" class="btn btn-secondary">{SVG_BOOK} User Manual</a>
         </div>
     </header>
 
@@ -585,7 +841,7 @@ def render_releases_page():
             <!-- Guardian Card -->
             <div class="card">
                 <div class="card-header">
-                    <div class="feature-icon">📱</div>
+                    <div class="feature-icon">{SVG_PHONE}</div>
                     <div>
                         <div class="card-title">SHE Guardian</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Protected Handset Agent</div>
@@ -609,7 +865,7 @@ def render_releases_page():
                     <div class="code-block" style="font-size: 0.75rem; margin-top: 0.4rem;">{guardian_sha}</div>
 
                     <a href="/releases/download/she-guardian.apk" class="btn btn-primary" style="width: 100%; margin-top: 0.75rem; justify-content: center; text-decoration: none;">
-                        ⬇️ Download SHE Guardian APK
+                        {SVG_DOWNLOAD} Download SHE Guardian APK
                     </a>
                 </div>
             </div>
@@ -617,7 +873,7 @@ def render_releases_page():
             <!-- Admin Companion Card -->
             <div class="card">
                 <div class="card-header">
-                    <div class="feature-icon">🎮</div>
+                    <div class="feature-icon">{SVG_CONTROLLER}</div>
                     <div>
                         <div class="card-title">SHE Admin Companion</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Controller &amp; Vault Handset</div>
@@ -641,7 +897,7 @@ def render_releases_page():
                     <div class="code-block" style="font-size: 0.75rem; margin-top: 0.4rem;">{admin_sha}</div>
 
                     <a href="/releases/download/she-admin.apk" class="btn btn-primary" style="width: 100%; margin-top: 0.75rem; justify-content: center; text-decoration: none;">
-                        ⬇️ Download SHE Admin APK
+                        {SVG_DOWNLOAD} Download SHE Admin APK
                     </a>
                 </div>
             </div>
@@ -651,7 +907,7 @@ def render_releases_page():
     <!-- Sideloading Walkthrough -->
     <div class="container" id="sideloading">
         <div class="section-header">
-            <h2>📲 Sideloading Walkthrough (Android 10 - 15)</h2>
+            <h2>{SVG_PHONE} Sideloading Walkthrough (Android 10 - 15)</h2>
             <p>Four easy steps to install and enable high-level defense capabilities on physical handsets.</p>
         </div>
 
@@ -698,7 +954,7 @@ def render_releases_page():
     <div class="container" id="safety">
         <div style="background: rgba(16, 185, 129, 0.08); border-left: 4px solid var(--accent); padding: 1.5rem; border-radius: 0 10px 10px 0;">
             <h3 style="color: var(--accent); font-size: 1.25rem; font-weight: 800; margin-bottom: 0.75rem;">
-                🛡️ Zero Harm &amp; Safety Commitment
+                {SVG_SHIELD} Zero Harm &amp; Safety Commitment
             </h3>
             <p style="color: #d1fae5; font-size: 0.95rem; line-height: 1.7; margin-bottom: 0.75rem;">
                 <strong>1. Zero Device Damage:</strong> SHE never bricks devices, never executes destructive wipes, and never corrupts personal filesystems.
@@ -737,7 +993,7 @@ def render_landing_page():
     body = f"""
     <div style="padding: 0 1.5rem;">
         <div class="warning-banner">
-            <div class="warning-icon">⚠️</div>
+            <div class="warning-icon">{SVG_ALERT}</div>
             <div class="warning-body">
                 <div class="warning-title">Pre-Release / Hardware Verification in Progress</div>
                 SHE is currently undergoing active hardware testing on physical test devices. Official signed release builds have not yet been published. Direct APK downloads are paused to prevent distribution of unauthenticated debug binaries. Please build directly from the verified open-source repository via Gradle.
@@ -747,12 +1003,12 @@ def render_landing_page():
 
     <header class="hero">
         <img src="/logo.png" alt="SHE Logo" style="width: 110px; height: 110px; object-fit: contain; margin-bottom: 1.5rem; filter: drop-shadow(0 0 25px rgba(0, 210, 255, 0.35));" />
-        <div class="hero-badge">🛡️ Version 0.3.0 &bull; Open-Source Handset Security</div>
+        <div class="hero-badge">{SVG_SHIELD} Version 0.3.0 &bull; Open-Source Handset Security</div>
         <h1>Sentinel for <span>Handheld Equipment</span></h1>
         <p>A zero-compromise, open-source Android anti-theft and remote handset recovery ecosystem designed for high-stress offline environments.</p>
         <div class="btn-group">
-            <a href="/releases" class="btn btn-primary">⬇️ Download Release APKs</a>
-            <a href="#telemetry" class="btn btn-secondary">🗺️ Live Map Search</a>
+            <a href="/releases" class="btn btn-primary">{SVG_DOWNLOAD} Download Release APKs</a>
+            <a href="#telemetry" class="btn btn-secondary">{SVG_MAP} Live Map Search</a>
             <a href="#downloads" class="btn btn-secondary">Build from Source</a>
             <a href="/docs/user-guide" class="btn btn-secondary">Read User Guide</a>
             <a href="/docs/setup-order" class="btn btn-secondary">10-Step Setup Runbook</a>
@@ -765,9 +1021,9 @@ def render_landing_page():
             <h2>Live Telemetry &amp; Map Search</h2>
             <p>Real-time encrypted GPS fixes captured from physical hardware with one-click map verification.</p>
         </div>
-        <div class="card" style="max-width: 820px; margin: 0 auto; border-color: rgba(0, 210, 255, 0.4); background: #0c121e;">
+        <div class="card" style="max-width: 820px; margin: 0 auto; border-color: rgba(0, 210, 255, 0.4); background: var(--bg-card);">
             <div class="card-header">
-                <div class="feature-icon">🛰️</div>
+                <div class="feature-icon">{SVG_RADAR}</div>
                 <div>
                     <div class="card-title">{alias}</div>
                     <div style="font-size: 0.85rem; color: var(--accent); font-weight: 600;">
@@ -777,7 +1033,7 @@ def render_landing_page():
                 <span class="card-badge badge-success" style="margin-left: auto;">{badge_text}</span>
             </div>
 
-            <div style="background: #080c14; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin: 1rem 0;">
+            <div style="background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin: 1rem 0;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                     <div>
                         <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Satellite Coordinates:</div>
@@ -792,7 +1048,7 @@ def render_landing_page():
                         </div>
                     </div>
                 </div>
-                <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed #1e293b; font-size: 0.82rem; color: #9ca3af; display: flex; flex-direction: column; gap: 0.3rem;">
+                <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px dashed var(--border); font-size: 0.82rem; color: #9ca3af; display: flex; flex-direction: column; gap: 0.3rem;">
                     <div>• <strong>Capture Time:</strong> {cap_time} (Satellite fix on handset)</div>
                     <div>• <strong>Server Receipt:</strong> {rec_time} (Verified hardware ECDSA signature)</div>
                 </div>
@@ -801,10 +1057,10 @@ def render_landing_page():
             <!-- Action Buttons: Search on Map & Info -->
             <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1.25rem;">
                 <a href="{map_url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="flex: 1; justify-content: center; text-decoration: none;">
-                    🗺️ Search on Google Maps
+                    {SVG_MAP} Search on Google Maps
                 </a>
                 <button onclick="document.getElementById('locationInfoModal').style.display='flex'" class="btn btn-secondary" style="justify-content: center; cursor: pointer;">
-                    ℹ️ How It Works
+                    {SVG_BOOK} How It Works
                 </button>
             </div>
         </div>
@@ -820,7 +1076,7 @@ def render_landing_page():
             <!-- Guardian Card -->
             <div class="card">
                 <div class="card-header">
-                    <div class="feature-icon">📱</div>
+                    <div class="feature-icon">{SVG_PHONE}</div>
                     <div>
                         <div class="card-title">SHE Guardian</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Protected Handset Agent</div>
@@ -831,7 +1087,7 @@ def render_landing_page():
                     Runs Direct Boot tracking in Device Encrypted Storage, offline AT1 SMS beacons, remote sirens, and device owner kiosk restrictions.
                 </p>
                 <a href="/releases/download/she-guardian.apk" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem; text-decoration: none;">
-                    ⬇️ Download SHE Guardian APK (33.7 MB)
+                    {SVG_DOWNLOAD} Download SHE Guardian APK (33.7 MB)
                 </a>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Compile via Gradle:</div>
                 <div class="code-block">./gradlew :app-guardian:assembleDirectDebug</div>
@@ -845,7 +1101,7 @@ def render_landing_page():
             <!-- Admin Card -->
             <div class="card">
                 <div class="card-header">
-                    <div class="feature-icon">💻</div>
+                    <div class="feature-icon">{SVG_TERMINAL}</div>
                     <div>
                         <div class="card-title">SHE Admin Companion</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Controller & Vault Manager</div>
@@ -856,7 +1112,7 @@ def render_landing_page():
                     Monitors live GPS fixes, dispatches signed HMAC commands, and manages zero-knowledge client-side encrypted vault secrets.
                 </p>
                 <a href="/releases/download/she-admin.apk" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem; text-decoration: none;">
-                    ⬇️ Download SHE Admin APK (32.0 MB)
+                    {SVG_DOWNLOAD} Download SHE Admin APK (32.0 MB)
                 </a>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Compile via Gradle:</div>
                 <div class="code-block">./gradlew :app-admin:assembleDebug</div>
@@ -877,63 +1133,63 @@ def render_landing_page():
         </div>
         <div class="grid-3">
             <div class="card">
-                <div class="feature-icon">⚡</div>
+                <div class="feature-icon">{SVG_RADAR}</div>
                 <div class="card-title" style="margin-top: 1rem;">1. Direct Boot Resumption</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     Runs in <span class="code-pill">Device Encrypted Storage</span>. If a thief reboots the device, SHE resumes tracking and SMS command listeners before the first user PIN entry.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">📡</div>
+                <div class="feature-icon">{SVG_RADIO}</div>
                 <div class="card-title" style="margin-top: 1rem;">2. Zero-Internet SMS Channel</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     Mobile data severed? Structured <span class="code-pill">AT1 PDU</span> frames authenticated by 48-bit truncated HMAC-SHA256 and monotonic counters trigger location replies over cellular SMS.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">🔒</div>
+                <div class="feature-icon">{SVG_LOCK}</div>
                 <div class="card-title" style="margin-top: 1rem;">3. Zero-Knowledge Vault</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     Stores IMEIs, recovery seeds, and purchase receipts protected by client-side PBKDF2 (600,000 iterations) and AES-256-GCM. The server never holds the decryption keys.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">🛡️</div>
+                <div class="feature-icon">{SVG_SHIELD}</div>
                 <div class="card-title" style="margin-top: 1rem;">4. Device Owner Kiosk Lock</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     Enforces hardware volume lockdown (<span class="code-pill">DISALLOW_ADJUST_VOLUME</span>), suppresses factory reset from settings, and pins the screen to the Emergency Return Card.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">📸</div>
+                <div class="feature-icon">{SVG_CAMERA}</div>
                 <div class="card-title" style="margin-top: 1rem;">5. Intruder Photo Capture</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     Hooks into <span class="code-pill">ACTION_SECURITY_PASSWORD_FAILED</span>. Three consecutive wrong PIN attempts quietly trigger front-camera capture tagged with GPS coordinates.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">🔑</div>
+                <div class="feature-icon">{SVG_KEY}</div>
                 <div class="card-title" style="margin-top: 1rem;">6. 2FA & Single-Use Recovery</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     RFC 6238 TOTP with AES-256 encrypted secrets at rest, backed by 8 single-use Argon2id hashed emergency recovery codes designed for lost/stolen authenticator scenarios.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">📲</div>
+                <div class="feature-icon">{SVG_PHONE}</div>
                 <div class="card-title" style="margin-top: 1rem;">7. Mutual Camera QR Pairing</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     Zero cloud relay during handshake. Direct in-person camera QR exchange negotiates 256-bit symmetric pairing secrets verified with a mutual 3-digit human visual confirmation code.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">🚨</div>
+                <div class="feature-icon">{SVG_ALERT}</div>
                 <div class="card-title" style="margin-top: 1rem;">8. Indian ERSS 112 & CEIR</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     One-touch emergency dialing for India National ERSS (112) and pre-formatted Sanchar Saathi CEIR data export (IMEI 1 & 2) for immediate nationwide telecom carrier blacklisting.
                 </p>
             </div>
             <div class="card">
-                <div class="feature-icon">🌐</div>
+                <div class="feature-icon">{SVG_GLOBE}</div>
                 <div class="card-title" style="margin-top: 1rem;">9. Zero-Telemetry Backend</div>
                 <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">
                     High-performance FastAPI backend supporting SQLite and PostgreSQL, automated 30-day telemetry purging, zero external analytics trackers, and zero advertising SDKs.
@@ -963,7 +1219,7 @@ def render_landing_page():
                 </p>
                 
                 <div class="blog-callout-warning" style="font-family: var(--font-mono); font-size: 0.88rem;">
-                    ⚠️ <strong>"Blocked by Play Protect"</strong> or <strong>"High Risk App Detected: This app can access your personal data, track your location, and manage your device."</strong>
+                    {SVG_ALERT} <strong>"Blocked by Play Protect"</strong> or <strong>"High Risk App Detected: This app can access your personal data, track your location, and manage your device."</strong>
                 </div>
 
                 <p>
@@ -1001,9 +1257,9 @@ def render_landing_page():
                 </p>
 
                 <!-- Brand 1: Google Play Protect -->
-                <div style="background: #0d131f; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
                     <div style="font-weight: 700; color: var(--primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>🛡️</span> Google Play Protect (Pixel, Motorola, Nothing, Stock Android)
+                        <span>{SVG_SHIELD}</span> Google Play Protect (Pixel, Motorola, Nothing, Stock Android)
                     </div>
                     <ol style="margin-left: 1.25rem; color: #d1d5db; font-size: 0.95rem; line-height: 1.7;">
                         <li>When the <strong>"Blocked by Play Protect"</strong> modal appears, tap <strong>"More details"</strong> (or the small down arrow).</li>
@@ -1013,9 +1269,9 @@ def render_landing_page():
                 </div>
 
                 <!-- Brand 2: Xiaomi / Redmi / POCO -->
-                <div style="background: #0d131f; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
                     <div style="font-weight: 700; color: var(--primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>⚡</span> Xiaomi / Redmi / POCO (MIUI / HyperOS)
+                        <span>{SVG_RADAR}</span> Xiaomi / Redmi / POCO (MIUI / HyperOS)
                     </div>
                     <ol style="margin-left: 1.25rem; color: #d1d5db; font-size: 0.95rem; line-height: 1.7;">
                         <li>When the package installer warns of <em>"High Risk / Dangerous App"</em> with a 10-second countdown timer:</li>
@@ -1026,9 +1282,9 @@ def render_landing_page():
                 </div>
 
                 <!-- Brand 3: Samsung One UI -->
-                <div style="background: #0d131f; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
                     <div style="font-weight: 700; color: var(--primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>📱</span> Samsung Galaxy (One UI / Knox)
+                        <span>{SVG_PHONE}</span> Samsung Galaxy (One UI / Knox)
                     </div>
                     <ol style="margin-left: 1.25rem; color: #d1d5db; font-size: 0.95rem; line-height: 1.7;">
                         <li>When the system displays <em>"Unrecognized App / Blocked by Play Protect"</em>:</li>
@@ -1038,9 +1294,9 @@ def render_landing_page():
                 </div>
 
                 <!-- Brand 4: Oppo / Realme / Vivo -->
-                <div style="background: #0d131f; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;">
                     <div style="font-weight: 700; color: var(--primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>🔒</span> Oppo, Realme, Vivo &amp; OnePlus (ColorOS, OxygenOS, OriginOS)
+                        <span>{SVG_LOCK}</span> Oppo, Realme, Vivo &amp; OnePlus (ColorOS, OxygenOS, OriginOS)
                     </div>
                     <ol style="margin-left: 1.25rem; color: #d1d5db; font-size: 0.95rem; line-height: 1.7;">
                         <li>If the Security Scan warns of an <em>"Unknown Source / High Risk"</em>:</li>
@@ -1091,7 +1347,7 @@ def render_landing_page():
                 <p>
                     If you are on the street and mobile data or Wi-Fi has been disabled by the thief, you do not need an active internet connection. Dispatched directly from the Admin Companion App via carrier SMS, SHE transmits structured <strong>AT1 Protocol Data Units (PDUs)</strong>:
                 </p>
-                <div style="background: #060911; padding: 1rem 1.25rem; border-radius: 8px; font-family: var(--font-mono); color: #38bdf8; font-size: 0.85rem; line-height: 1.8; border: 1px solid #1e293b; margin: 1rem 0;">
+                <div style="background: #0A0A0A; padding: 1rem 1.25rem; border-radius: 8px; font-family: var(--font-mono); color: #38bdf8; font-size: 0.85rem; line-height: 1.8; border: 1px solid #262626; margin: 1rem 0;">
                     <div><strong>PDU Wire Format:</strong> <code>CMD:&lt;TYPE&gt;|&lt;SEQUENCE&gt;|&lt;EXPIRY&gt;|&lt;HMAC12&gt;</code></div>
                     <div style="margin-top: 0.5rem; color: #9ca3af;">• <strong>CMD:LOC</strong> &bull; Requests an instant SMS beacon containing GPS coordinates and Google Maps link</div>
                     <div style="color: #9ca3af;">• <strong>CMD:SIREN</strong> &bull; Engages 100% volume alarm and looping voice alert (bypasses silent mode)</div>
@@ -1228,10 +1484,10 @@ def render_landing_page():
                 </p>
                 <ul style="margin-left: 1.5rem; margin-bottom: 1.25rem; color: #d1d5db;">
                     <li style="margin-bottom: 0.6rem;">
-                        <strong>Native Android Intent:</strong> In the Admin Companion App, tapping <code>🗺️ Search on Map</code> executes <code>Intent.ACTION_VIEW</code> with standard <code>geo:lat,lng?q=lat,lng</code> URI, dropping an immediate red pin on Google Maps or OpenStreetMap.
+                        <strong>Native Android Intent:</strong> In the Admin Companion App, tapping <code>Search on Map</code> executes <code>Intent.ACTION_VIEW</code> with standard <code>geo:lat,lng?q=lat,lng</code> URI, dropping an immediate red pin on Google Maps or OpenStreetMap.
                     </li>
                     <li style="margin-bottom: 0.6rem;">
-                        <strong>Web Portal Search:</strong> On the web dashboard, clicking <code>🗺️ Search on Google Maps</code> opens a direct satellite/street view navigation pin in a secure new tab.
+                        <strong>Web Portal Search:</strong> On the web dashboard, clicking <code>Search on Google Maps</code> opens a direct satellite/street view navigation pin in a secure new tab.
                     </li>
                 </ul>
 
@@ -1251,7 +1507,7 @@ def render_landing_page():
     <!-- Community & Open-Source Section -->
     <div class="container" id="support" style="margin-top: 1rem;">
         <div class="card" style="text-align: center; max-width: 720px; margin: 0 auto; border-color: rgba(16, 185, 129, 0.35);">
-            <div style="font-size: 2rem; margin-bottom: 0.5rem;">❤️</div>
+            <div style="font-size: 2rem; margin-bottom: 0.5rem; display: flex; justify-content: center;">{SVG_SHIELD}</div>
             <h3 style="font-size: 1.5rem; margin-bottom: 0.75rem;">SHE Open-Source Community</h3>
             <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin-bottom: 1.25rem;">
                 Free & open-source software built for community handset defense. All administration and device recovery is performed exclusively through verified native Android Companion clients.
@@ -1265,10 +1521,10 @@ def render_landing_page():
     </div>
 
     <!-- Location How It Works Modal -->
-    <div id="locationInfoModal" style="display: none; position: fixed; inset: 0; background: rgba(10, 14, 23, 0.85); backdrop-filter: blur(10px); z-index: 9999; justify-content: center; align-items: center; padding: 1.5rem;">
-        <div class="card" style="max-width: 650px; width: 100%; border-color: var(--primary); background: #111827; position: relative; max-height: 90vh; overflow-y: auto;">
+    <div id="locationInfoModal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.88); backdrop-filter: blur(10px); z-index: 9999; justify-content: center; align-items: center; padding: 1.5rem;">
+        <div class="card" style="max-width: 650px; width: 100%; border-color: var(--primary); background: var(--bg-card); position: relative; max-height: 90vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h3 style="font-size: 1.35rem; color: #f3f4f6;">🛰️ How Handset Location Tracking Works</h3>
+                <h3 style="font-size: 1.35rem; color: #f3f4f6;">How Handset Location Tracking Works</h3>
                 <button onclick="document.getElementById('locationInfoModal').style.display='none'" style="background: none; border: none; color: #9ca3af; font-size: 1.5rem; cursor: pointer;">&times;</button>
             </div>
             <div style="color: #d1d5db; font-size: 0.92rem; line-height: 1.7;">

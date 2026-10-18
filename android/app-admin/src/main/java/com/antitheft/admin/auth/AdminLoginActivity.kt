@@ -2,20 +2,24 @@ package com.antitheft.admin.auth
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
-import com.antitheft.admin.R
 import com.antitheft.admin.dashboard.AdminDashboardActivity
 import com.antitheft.admin.network.ApiClient
 import com.antitheft.admin.network.LoginRequest
+import com.antitheft.admin.ui.theme.SheTheme
 import kotlinx.coroutines.launch
 
 class AdminLoginActivity : AppCompatActivity() {
 
     private lateinit var sessionManager: AdminSessionManager
+    private var isLoading by mutableStateOf(false)
+    private var errorMessage by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,59 +30,50 @@ class AdminLoginActivity : AppCompatActivity() {
             return
         }
 
-        setContentView(R.layout.activity_login)
-
-        val etServerUrl = findViewById<EditText>(R.id.etServerUrl)
-        val etUsername = findViewById<EditText>(R.id.etUsername)
-        val etPassword = findViewById<EditText>(R.id.etPassword)
-        val btnLogin = findViewById<Button>(R.id.btnLogin)
-
-        etServerUrl.setText(sessionManager.getServerUrl())
-
-        val btnRegister = findViewById<Button>(R.id.btnRegister)
-        val tvErrorMessage = findViewById<android.widget.TextView>(R.id.tvErrorMessage)
-
-        findViewById<Button>(R.id.btnPresetTunnel)?.setOnClickListener {
-            etServerUrl.setText("https://grove-aerial-border-appreciation.trycloudflare.com")
-            Toast.makeText(this, "Selected Cloudflare Tunnel", Toast.LENGTH_SHORT).show()
-        }
-        findViewById<Button>(R.id.btnPresetLocal)?.setOnClickListener {
-            etServerUrl.setText("http://127.0.0.1:8000")
-            Toast.makeText(this, "Selected USB/Localhost (127.0.0.1)", Toast.LENGTH_SHORT).show()
-        }
-        findViewById<Button>(R.id.btnPresetEmulator)?.setOnClickListener {
-            etServerUrl.setText("http://10.0.2.2:8000")
-            Toast.makeText(this, "Selected Android Emulator (10.0.2.2)", Toast.LENGTH_SHORT).show()
-        }
-
-        btnLogin.setOnClickListener {
-            val serverUrl = etServerUrl.text.toString().trim()
-            val username = etUsername.text.toString().trim()
-            val password = etPassword.text.toString().trim()
-            tvErrorMessage.visibility = android.view.View.GONE
-
-            performLogin(username, password, serverUrl, tvErrorMessage)
-        }
-
-        btnRegister.setOnClickListener {
-            val serverUrl = etServerUrl.text.toString().trim()
-            val username = etUsername.text.toString().trim()
-            val password = etPassword.text.toString().trim()
-            tvErrorMessage.visibility = android.view.View.GONE
-            if (username.isBlank() || password.isBlank()) {
-                val msg = "Enter username and password to register"
-                tvErrorMessage.text = msg
-                tvErrorMessage.visibility = android.view.View.VISIBLE
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+        setContent {
+            SheTheme {
+                AdminLoginScreen(
+                    initialServerUrl = sessionManager.getServerUrl(),
+                    onLoginClick = { u, p, url ->
+                        errorMessage = null
+                        if (u.isBlank() || p.isBlank()) {
+                            errorMessage = "Please enter username and password"
+                        } else {
+                            performLogin(u, p, url)
+                        }
+                    },
+                    onRegisterClick = { u, p, url ->
+                        errorMessage = null
+                        if (u.isBlank() || p.isBlank()) {
+                            errorMessage = "Please enter username and password to register"
+                        } else {
+                            performRegister(u, p, url)
+                        }
+                    },
+                    isLoading = isLoading,
+                    errorMessage = errorMessage
+                )
             }
-            performRegister(username, password, serverUrl, tvErrorMessage)
         }
 
-        handleIncomingLoginIntent(intent, tvErrorMessage)
+        handleIncomingLoginIntent(intent)
     }
 
     private fun formatErrorMessage(e: Throwable, serverUrl: String): String {
+        val serverDetail = if (e is retrofit2.HttpException) {
+            try {
+                val body = e.response()?.errorBody()?.string() ?: ""
+                if (body.contains("{")) {
+                    val json = org.json.JSONObject(body)
+                    json.optString("detail", "")
+                } else body
+            } catch (_: Exception) { "" }
+        } else ""
+
+        if (serverDetail.isNotBlank()) {
+            return serverDetail
+        }
+
         val msg = e.message ?: ""
         val causeMsg = e.cause?.message ?: ""
         val full = "$msg $causeMsg"
@@ -108,8 +103,9 @@ class AdminLoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun performRegister(username: String, password: String, serverUrl: String, tvError: android.widget.TextView) {
+    private fun performRegister(username: String, password: String, serverUrl: String) {
         sessionManager.setServerUrl(serverUrl)
+        isLoading = true
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
@@ -117,12 +113,12 @@ class AdminLoginActivity : AppCompatActivity() {
                 api.register(com.antitheft.admin.network.RegisterRequest(username, email, password))
                 android.util.Log.i("AdminLogin", "REGISTER_SUCCESSFUL user:$username")
                 Toast.makeText(this@AdminLoginActivity, "Owner registered successfully! Signing in...", Toast.LENGTH_SHORT).show()
-                performLogin(username, password, serverUrl, tvError)
+                performLogin(username, password, serverUrl)
             } catch (e: Exception) {
+                isLoading = false
                 android.util.Log.e("AdminLogin", "REGISTER_FAILED", e)
                 val formatted = formatErrorMessage(e, serverUrl)
-                tvError.text = formatted
-                tvError.visibility = android.view.View.VISIBLE
+                errorMessage = formatted
                 Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
             }
         }
@@ -130,35 +126,36 @@ class AdminLoginActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val tvErrorMessage = findViewById<android.widget.TextView>(R.id.tvErrorMessage)
-        handleIncomingLoginIntent(intent, tvErrorMessage)
+        handleIncomingLoginIntent(intent)
     }
 
-    private fun handleIncomingLoginIntent(intent: Intent?, tvError: android.widget.TextView) {
+    private fun handleIncomingLoginIntent(intent: Intent?) {
         if (!com.antitheft.admin.BuildConfig.DEBUG) return
         val u = intent?.getStringExtra("username")
         val p = intent?.getStringExtra("password")
         val url = intent?.getStringExtra("server_url") ?: sessionManager.getServerUrl()
         if (!u.isNullOrBlank() && !p.isNullOrBlank()) {
-            performLogin(u, p, url, tvError)
+            performLogin(u, p, url)
         }
     }
 
-    private fun performLogin(username: String, password: String, serverUrl: String, tvError: android.widget.TextView) {
+    private fun performLogin(username: String, password: String, serverUrl: String) {
         sessionManager.setServerUrl(serverUrl)
+        isLoading = true
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
                 val tokenResp = api.login(LoginRequest(username, password))
                 sessionManager.saveToken(tokenResp.access_token)
+                isLoading = false
                 android.util.Log.i("AdminLogin", "LOGIN_SUCCESSFUL user:$username")
                 Toast.makeText(this@AdminLoginActivity, "Authenticated successfully", Toast.LENGTH_SHORT).show()
                 openDashboard()
             } catch (e: Exception) {
+                isLoading = false
                 android.util.Log.e("AdminLogin", "LOGIN_FAILED", e)
                 val formatted = formatErrorMessage(e, serverUrl)
-                tvError.text = formatted
-                tvError.visibility = android.view.View.VISIBLE
+                errorMessage = formatted
                 Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
             }
         }
