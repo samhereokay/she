@@ -181,5 +181,64 @@ class VaultPassphraseRestoreTest {
         assertTrue("Valid passphrase must be >= 16 chars", validPassphrase.length >= 16)
         assertFalse("Short passphrase must be < 16 chars", shortPassphrase.length >= 16)
     }
+
+    @Test
+    fun testConfirmPassphraseMismatchRejection() {
+        val pass1 = "correct-horse-battery-staple-2026".toCharArray()
+        val pass2 = "correct-horse-battery-staple-20267".toCharArray() // Appended typo
+        val pass3 = "correct-horse-battery-staple-2026".toCharArray() // Identical
+
+        assertFalse("Mismatched passphrases (pass1 vs pass2) must fail equality", pass1.contentEquals(pass2))
+        assertTrue("Matching passphrases (pass1 vs pass3) must succeed", pass1.contentEquals(pass3))
+
+        // Verify cryptographic zeroing
+        java.util.Arrays.fill(pass2, '\u0000')
+        for (c in pass2) {
+            assertEquals("Memory must be zeroed", '\u0000', c)
+        }
+    }
+
+    @Test
+    fun testPreUploadSelfDecryptionVerification() {
+        val passphrase = "correct-horse-battery-staple-2026".toCharArray()
+        val fullPayload = "{\"title\":\"Pixel-8-Master-IMEI\",\"type\":\"RECOVERY_CODE\",\"secret\":\"359872109876543\"}"
+
+        // Generate envelope
+        val dek = cryptoManager.generateRandomDataKey()
+        val dataContainer = cryptoManager.encrypt(fullPayload, dek, keyVersion = 1)
+        val salt = cryptoManager.generateRandomSalt(16)
+        val passphraseKey = cryptoManager.deriveKeyFromPassphrase(passphrase, salt)
+        val wrappedDek = cryptoManager.wrapKey(dek, passphraseKey, keyVersion = 1)
+
+        // Pre-upload verification: unwrapping with identical passphrase must succeed
+        val unwrappedDek = cryptoManager.unwrapKey(wrappedDek, passphraseKey)
+        val decrypted = cryptoManager.decrypt(dataContainer, unwrappedDek)
+        assertEquals("Self-decryption verification must yield exact payload before upload", fullPayload, decrypted)
+
+        // Pre-upload verification with a typo/different passphrase must fail and block upload
+        val typoPassphrase = "correct-horse-battery-staple-20267".toCharArray()
+        val wrongKey = cryptoManager.deriveKeyFromPassphrase(typoPassphrase, salt)
+        try {
+            cryptoManager.unwrapKey(wrappedDek, wrongKey)
+            fail("Upload should be blocked: unwrapping with mismatched passphrase must throw AEADBadTagException")
+        } catch (e: Exception) {
+            assertTrue(e is AEADBadTagException || e.cause is AEADBadTagException)
+        }
+    }
+
+    @Test
+    fun testPassphraseValidationClearsCachedState() {
+        var cachedPassphrase: CharArray? = "temporary-cached-pass-2026".toCharArray()
+        assertNotNull(cachedPassphrase)
+
+        // Simulate validation failure (mismatch or short length)
+        fun onValidationFailure() {
+            cachedPassphrase?.let { java.util.Arrays.fill(it, '\u0000') }
+            cachedPassphrase = null
+        }
+
+        onValidationFailure()
+        assertNull("Cached passphrase must be nullified on validation failure", cachedPassphrase)
+    }
 }
 

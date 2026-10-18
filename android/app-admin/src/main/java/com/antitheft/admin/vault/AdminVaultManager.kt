@@ -262,6 +262,24 @@ class AdminVaultManager(
     }
 
     /**
+     * Pre-Upload Verification: Confirms that an encrypted envelope can be unwrapped and decrypted
+     * locally using the entered passphrase before submitting it to the remote backend.
+     */
+    fun verifyEnvelopeRoundTrip(
+        container: VaultEncryptedContainer,
+        passphrase: CharArray,
+        expectedPayload: String
+    ): Boolean {
+        return try {
+            val decrypted = decryptSecretEnvelope(container, passphrase)
+            decrypted == expectedPayload
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+
+    /**
      * Export all vault items as an encrypted paper backup / QR string protected by user passphrase.
      */
     fun exportPaperBackup(vaultJson: String, passphrase: CharArray): String {

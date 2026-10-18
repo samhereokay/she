@@ -437,11 +437,14 @@ class AdminVaultActivity : AppCompatActivity() {
         val etPassphrase = EditText(this).apply {
             hint = "Master Recovery Passphrase (min 16 chars)"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            if (activePassphrase != null && activePassphrase?.isNotEmpty() == true) {
-                setText(String(activePassphrase!!))
-            }
         }
         layout.addView(etPassphrase)
+
+        val etConfirmPassphrase = EditText(this).apply {
+            hint = "Confirm Master Passphrase (min 16 chars)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(etConfirmPassphrase)
 
         AlertDialog.Builder(this)
             .setTitle("Add Recovery Secret")
@@ -451,18 +454,47 @@ class AdminVaultActivity : AppCompatActivity() {
                 val type = spinnerType.selectedItem.toString()
                 val secret = etSecret.text.toString().trim()
                 val len = etPassphrase.text?.length ?: 0
+                val confirmLen = etConfirmPassphrase.text?.length ?: 0
+
                 if (len < 16) {
+                    wipeActivePassphrase()
                     Toast.makeText(this@AdminVaultActivity, "Master passphrase must be at least 16 characters for zero-knowledge vault protection", Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
-                val chars = CharArray(len)
-                etPassphrase.text?.getChars(0, len, chars, 0)
-                setActivePassphrase(chars)
-                if (title.isNotBlank() && secret.isNotBlank()) {
-                    encryptAndUploadSecret(title, type, secret, chars)
+
+                if (len != confirmLen) {
+                    wipeActivePassphrase()
+                    Toast.makeText(this@AdminVaultActivity, "Passphrases do not match. Please re-enter.", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
                 }
+
+                val chars = CharArray(len)
+                val confirmChars = CharArray(confirmLen)
+                etPassphrase.text?.getChars(0, len, chars, 0)
+                etConfirmPassphrase.text?.getChars(0, confirmLen, confirmChars, 0)
+
+                if (!chars.contentEquals(confirmChars)) {
+                    java.util.Arrays.fill(chars, '\u0000')
+                    java.util.Arrays.fill(confirmChars, '\u0000')
+                    wipeActivePassphrase()
+                    Toast.makeText(this@AdminVaultActivity, "Passphrases do not match. Please re-enter.", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                java.util.Arrays.fill(confirmChars, '\u0000')
+
+                if (title.isBlank() || secret.isBlank()) {
+                    java.util.Arrays.fill(chars, '\u0000')
+                    wipeActivePassphrase()
+                    Toast.makeText(this@AdminVaultActivity, "Title and Secret content cannot be empty", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                setActivePassphrase(chars)
+                encryptAndUploadSecret(title, type, secret, chars)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Cancel") { _, _ ->
+                wipeActivePassphrase()
+            }
             .show()
     }
 
@@ -479,6 +511,18 @@ class AdminVaultActivity : AppCompatActivity() {
 
                 val container = vaultManager.encryptSecretEnvelope(fullPayload, passphrase, keyVersion = 1)
 
+                // CRITICAL SAFETY CHECK: Pre-upload self-decryption test
+                // Verify that the generated envelope can be unwrapped and decrypted locally using the entered passphrase.
+                // If it fails, REFUSE to upload to the server and clear cached passphrase.
+                val verified = vaultManager.verifyEnvelopeRoundTrip(container, passphrase, fullPayload)
+                if (!verified) {
+                    wipeActivePassphrase()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@AdminVaultActivity, "CRITICAL: Envelope self-verification failed. Passphrase cannot restore data. Upload blocked.", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+
                 val req = VaultItemCreateDto(
                     item_type = "ENCRYPTED",
                     title = "ENCRYPTED_VAULT_ITEM",
@@ -491,11 +535,12 @@ class AdminVaultActivity : AppCompatActivity() {
                 api.createVaultItem(req)
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@AdminVaultActivity, "Secret encrypted and saved!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@AdminVaultActivity, "Secret encrypted, verified, and saved!", Toast.LENGTH_SHORT).show()
                     loadVaultItems()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed creating vault item", e)
+                wipeActivePassphrase()
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@AdminVaultActivity, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -640,6 +685,7 @@ class AdminVaultActivity : AppCompatActivity() {
                 val len = etPassphrase.text?.length ?: 0
                 val backup = etBackupString.text.toString().trim()
                 if (len < 16) {
+                    wipeActivePassphrase()
                     Toast.makeText(this, "Passphrase must be at least 16 characters", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
@@ -647,7 +693,9 @@ class AdminVaultActivity : AppCompatActivity() {
                 etPassphrase.text?.getChars(0, len, chars, 0)
                 executeVaultRestore(chars, backup)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Cancel") { _, _ ->
+                wipeActivePassphrase()
+            }
             .show()
     }
 

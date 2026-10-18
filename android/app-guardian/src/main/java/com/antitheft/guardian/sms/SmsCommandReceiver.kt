@@ -92,6 +92,9 @@ class SmsCommandReceiver : BroadcastReceiver() {
                         "EXIT_KIOSK", "RECOVERED" -> {
                             com.antitheft.guardian.commands.CommandExecutionManager.executeStolenMode(context, false)
                         }
+                        "CLEAR_DEVICE_OWNER" -> {
+                            Log.w(TAG, "SECURITY VIOLATION: CLEAR_DEVICE_OWNER received over SMS channel! Prohibited. Command dropped. CLEAR_DEVICE_OWNER strictly requires signed Admin online command with 2FA TOTP.")
+                        }
                         else -> {
                             Log.w(TAG, "Unknown SMS command: ${command.commandType}")
                         }
