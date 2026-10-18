@@ -186,6 +186,15 @@
                     android:layout_marginStart="6dp"
                     android:text="Demo Drill"
                     android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnBasemapSettings"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="Basemap"
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <!-- Tactical Command Quick Actions -->

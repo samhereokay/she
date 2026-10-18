@@ -93,11 +93,29 @@ class AdminSessionManager(context: Context) {
                 || hw.contains("goldfish") || hw.contains("ranchu"))
     }
 
+    fun getCartoApiKey(): String {
+        return secureStorage.getDecryptedString(KEY_CARTO_API_KEY, "") ?: ""
+    }
+
+    fun setCartoApiKey(apiKey: String) {
+        secureStorage.putEncryptedString(KEY_CARTO_API_KEY, apiKey.trim())
+    }
+
+    fun getBasemapProvider(): String {
+        return secureStorage.getDecryptedString(KEY_BASEMAP_PROVIDER, "osm_dark") ?: "osm_dark"
+    }
+
+    fun setBasemapProvider(provider: String) {
+        secureStorage.putEncryptedString(KEY_BASEMAP_PROVIDER, provider.trim())
+    }
+
     companion object {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_TRUSTED_DEVICE_ID = "trusted_device_id"
         private const val KEY_COMMAND_SEQ = "command_sequence_counter"
         private const val KEY_ADMIN_PHONE = "admin_phone_number"
+        private const val KEY_CARTO_API_KEY = "carto_api_key"
+        private const val KEY_BASEMAP_PROVIDER = "basemap_provider"
     }
 }

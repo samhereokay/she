@@ -68,6 +68,7 @@ class LiveTrackingActivity : AppCompatActivity() {
     private lateinit var switchFollowTarget: SwitchMaterial
     private lateinit var btnCenterTarget: Button
     private lateinit var btnSimulateDrill: Button
+    private lateinit var btnBasemapSettings: Button
     private lateinit var btnPingLocate: Button
     private lateinit var btnRingSiren: Button
     private lateinit var btnSearchOnMap: Button
@@ -119,6 +120,7 @@ class LiveTrackingActivity : AppCompatActivity() {
         switchFollowTarget = findViewById(R.id.switchFollowTarget)
         btnCenterTarget = findViewById(R.id.btnCenterTarget)
         btnSimulateDrill = findViewById(R.id.btnSimulateDrill)
+        btnBasemapSettings = findViewById(R.id.btnBasemapSettings)
         btnPingLocate = findViewById(R.id.btnPingLocate)
         btnRingSiren = findViewById(R.id.btnRingSiren)
         btnSearchOnMap = findViewById(R.id.btnSearchOnMap)
@@ -143,6 +145,10 @@ class LiveTrackingActivity : AppCompatActivity() {
 
         btnSimulateDrill.setOnClickListener {
             toggleDemoSimulation()
+        }
+
+        btnBasemapSettings.setOnClickListener {
+            showBasemapSettingsDialog()
         }
 
         btnPingLocate.setOnClickListener {
@@ -221,7 +227,123 @@ class LiveTrackingActivity : AppCompatActivity() {
         webViewMap.loadDataWithBaseURL("https://leafletjs.com", leafletHtml, "text/html", "UTF-8", null)
     }
 
+    private fun showBasemapSettingsDialog() {
+        val providers = arrayOf(
+            "OpenStreetMap Tactical Dark (Zero-Key, No Watermark)",
+            "ESRI Dark Gray Canvas (Zero-Key, No Watermark)",
+            "CARTO Dark Matter (Requires API Key)",
+            "CARTO Voyager (Requires API Key)"
+        )
+        val providerKeys = arrayOf("osm_dark", "esri_dark", "carto_dark", "carto_voyager")
+        val currentProvider = sessionManager.getBasemapProvider()
+        val selectedIndex = providerKeys.indexOf(currentProvider).coerceAtLeast(0)
+
+        val dialogView = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 16)
+        }
+
+        val infoTv = android.widget.TextView(this).apply {
+            text = "Select your basemap provider. For CARTO, paste your API key below to remove watermarks (per carto.com/basemaps/apikey)."
+            textSize = 12f
+            setTextColor(android.graphics.Color.parseColor("#9CA3AF"))
+            setPadding(0, 0, 0, 16)
+        }
+        dialogView.addView(infoTv)
+
+        val radioGroup = android.widget.RadioGroup(this)
+        for (i in providers.indices) {
+            val rb = android.widget.RadioButton(this).apply {
+                id = android.view.View.generateViewId()
+                text = providers[i]
+                textSize = 13f
+                setTextColor(android.graphics.Color.WHITE)
+                isChecked = (i == selectedIndex)
+            }
+            radioGroup.addView(rb)
+        }
+        dialogView.addView(radioGroup)
+
+        val keyLabel = android.widget.TextView(this).apply {
+            text = "CARTO API Key (Optional):"
+            textSize = 12f
+            setTextColor(android.graphics.Color.parseColor("#D1D5DB"))
+            setPadding(0, 24, 0, 8)
+        }
+        dialogView.addView(keyLabel)
+
+        val keyInput = android.widget.EditText(this).apply {
+            hint = "e.g. your_carto_api_key"
+            setText(sessionManager.getCartoApiKey())
+            textSize = 13f
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(android.graphics.Color.parseColor("#6B7280"))
+            backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#38BDF8"))
+        }
+        dialogView.addView(keyInput)
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Basemap & Map Layer Settings")
+            .setView(dialogView)
+            .setPositiveButton("Save & Apply") { _, _ ->
+                val checkedId = radioGroup.checkedRadioButtonId
+                val selectedChild = radioGroup.findViewById<android.widget.RadioButton>(checkedId)
+                val newIndex = radioGroup.indexOfChild(selectedChild).coerceAtLeast(0)
+                val chosenProvider = providerKeys[newIndex]
+                val key = keyInput.text.toString().trim()
+
+                sessionManager.setBasemapProvider(chosenProvider)
+                sessionManager.setCartoApiKey(key)
+
+                reloadMapTiles()
+                Toast.makeText(this, "Basemap updated: ${providers[newIndex]} active", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun reloadMapTiles() {
+        val leafletHtml = buildLeafletHtml()
+        webViewMap.loadDataWithBaseURL("https://leafletjs.com", leafletHtml, "text/html", "UTF-8", null)
+    }
+
     private fun buildLeafletHtml(): String {
+        val provider = sessionManager.getBasemapProvider()
+        val cartoKey = sessionManager.getCartoApiKey()
+
+        val tileUrl: String
+        val tileFilterCss: String
+        val maxZoom: Int
+
+        when {
+            provider == "carto_voyager" && cartoKey.isNotBlank() -> {
+                tileUrl = "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=$cartoKey"
+                tileFilterCss = ""
+                maxZoom = 19
+            }
+            provider == "carto_dark" && cartoKey.isNotBlank() -> {
+                tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=$cartoKey"
+                tileFilterCss = ""
+                maxZoom = 19
+            }
+            cartoKey.isNotBlank() -> {
+                tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=$cartoKey"
+                tileFilterCss = ""
+                maxZoom = 19
+            }
+            provider == "esri_dark" -> {
+                tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                tileFilterCss = ""
+                maxZoom = 16
+            }
+            else -> {
+                // Default: 100% Free OpenStreetMap with tactical dark inversion filter (Zero Key, Zero Watermark!)
+                tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                tileFilterCss = ".leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(90%); }"
+                maxZoom = 19
+            }
+        }
+
         return """
         <!DOCTYPE html>
         <html>
@@ -233,6 +355,7 @@ class LiveTrackingActivity : AppCompatActivity() {
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body, html, #map { width: 100%; height: 100%; background: #000000; }
+                $tileFilterCss
                 .radar-pin-wrap {
                     position: relative;
                     width: 36px;
@@ -272,8 +395,8 @@ class LiveTrackingActivity : AppCompatActivity() {
             <div id="map"></div>
             <script>
                 var map = L.map('map', { zoomControl: false }).setView([28.61393, 77.22950], 15);
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                    maxZoom: 19,
+                L.tileLayer('$tileUrl', {
+                    maxZoom: $maxZoom,
                     attribution: ''
                 }).addTo(map);
 
