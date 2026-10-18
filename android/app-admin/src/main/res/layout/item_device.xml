@@ -73,20 +73,30 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/btnViewOnMap"
-                style="@style/Widget.Material3.Button.TonalButton"
+                android:id="@+id/btnLiveTracking"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="6dp"
-                android:text="🗺️ Search on Map" />
+                android:backgroundTint="#00D2FF"
+                android:textColor="#000000"
+                android:textStyle="bold"
+                android:text="🛰️ Live Radar (WS)" />
+
+            <Button
+                android:id="@+id/btnViewOnMap"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:text="🗺️ Maps" />
 
             <Button
                 android:id="@+id/btnLocationInfo"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ℹ️ Info" />
+                android:text="ℹ️" />
         </LinearLayout>
 
         <Button

@@ -1,19 +1,23 @@
 import base64
+import logging
 from datetime import datetime, timezone
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent
 from app.schemas.location import (
     LocationBatchIngestRequest,
     LocationBatchIngestResponse,
     LocationResponse
 )
-from app.core.security import verify_ecdsa_p256_signature
+from app.core.security import verify_ecdsa_p256_signature, verify_access_token
 from app.api.deps import get_current_user
+from app.core.ws_manager import ws_manager
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/api/v1", tags=["Locations"])
 
@@ -35,10 +39,11 @@ def format_canonical_location_string(
 
 
 @router.post("/locations/batch", response_model=LocationBatchIngestResponse)
-def ingest_location_batch(
+async def ingest_location_batch(
     batch_in: LocationBatchIngestRequest,
     db: Session = Depends(get_db)
 ) -> Any:
+
     """
     Guardian sync endpoint: ingests batched location fixes.
     - Authenticates via device ECDSA P-256 signature against registered public key.
@@ -150,6 +155,20 @@ def ingest_location_batch(
             db.add(loc_record)
             db.commit()
             acknowledged_seqs.append(event.sequence_number)
+            
+            # Broadcast over WebSocket in real time
+            await ws_manager.broadcast_location(device.id, {
+                "type": "LOCATION_UPDATE",
+                "device_id": device.id,
+                "latitude": loc_record.latitude,
+                "longitude": loc_record.longitude,
+                "accuracy": loc_record.accuracy,
+                "altitude": loc_record.altitude,
+                "velocity": loc_record.velocity,
+                "capture_time": loc_record.capture_time.isoformat() if loc_record.capture_time else None,
+                "server_receipt_time": loc_record.server_receipt_time.isoformat() if loc_record.server_receipt_time else None,
+                "sequence_number": loc_record.sequence_number
+            })
         except IntegrityError:
             db.rollback()
             rejected_seqs.append(event.sequence_number)
@@ -187,3 +206,94 @@ def get_device_location_history(
         .all()
     )
     return locations
+
+
+@router.websocket("/ws/devices/{device_id}")
+async def websocket_device_location_stream(
+    websocket: WebSocket,
+    device_id: str,
+    token: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Real-time authenticated WebSocket stream for device location tracking.
+    - Validates JWT bearer token from query param (?token=<jwt>).
+    - Verifies device exists and belongs to current authenticated owner.
+    - On connect: sends INITIAL_STATE with last known location + recent historical trail.
+    - Streams live LOCATION_UPDATE events as they are ingested from physical handsets.
+    """
+    if not token:
+        token = websocket.query_params.get("token")
+
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication token required")
+        return
+
+    payload = verify_access_token(token)
+    if not payload or "sub" not in payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid authentication token")
+        return
+
+    user = db.query(User).filter(User.id == payload["sub"]).first()
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
+        return
+
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == user.id
+    ).first()
+
+    if not device:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Device not found or unauthorized")
+        return
+
+    # Register and accept WebSocket connection
+    await ws_manager.connect(device_id, websocket)
+
+    # Retrieve up to 50 recent points for breadcrumb trail
+    recent_locs = (
+        db.query(LocationEvent)
+        .filter(LocationEvent.protected_device_id == device.id)
+        .order_by(LocationEvent.sequence_number.desc())
+        .limit(50)
+        .all()
+    )
+    recent_locs.reverse()
+
+    trail_data = [
+        {
+            "latitude": loc.latitude,
+            "longitude": loc.longitude,
+            "accuracy": loc.accuracy,
+            "altitude": loc.altitude,
+            "velocity": loc.velocity,
+            "capture_time": loc.capture_time.isoformat() if loc.capture_time else None,
+            "sequence_number": loc.sequence_number
+        }
+        for loc in recent_locs
+    ]
+
+    latest = trail_data[-1] if trail_data else None
+
+    # Send initial state payload
+    await websocket.send_json({
+        "type": "INITIAL_STATE",
+        "device_id": device.id,
+        "device_alias": device.device_alias,
+        "status": device.status,
+        "latest_location": latest,
+        "trail": trail_data
+    })
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(device_id, websocket)
+    except Exception as e:
+        logger.warning(f"WebSocket session closed for device {device_id}: {e}")
+        ws_manager.disconnect(device_id, websocket)
+

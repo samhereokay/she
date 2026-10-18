@@ -35,6 +35,11 @@
             android:launchMode="singleTop"
             android:exported="false" />
 
+        <activity
+            android:name=".tracking.LiveTrackingActivity"
+            android:label="Live Tracking Radar"
+            android:exported="false" />
+
     </application>
 
 </manifest>

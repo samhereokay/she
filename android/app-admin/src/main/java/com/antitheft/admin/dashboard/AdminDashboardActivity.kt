@@ -299,6 +299,7 @@ class DeviceAdapter(
         private val tvCoordinates: TextView = itemView.findViewById(R.id.tvCoordinates)
         private val tvCaptureTime: TextView = itemView.findViewById(R.id.tvCaptureTime)
         private val tvReceiptTime: TextView = itemView.findViewById(R.id.tvReceiptTime)
+        private val btnLiveTracking: Button = itemView.findViewById(R.id.btnLiveTracking)
         private val btnViewOnMap: Button = itemView.findViewById(R.id.btnViewOnMap)
         private val btnLocationInfo: Button = itemView.findViewById(R.id.btnLocationInfo)
         private val btnSendCommand: Button = itemView.findViewById(R.id.btnSendCommand)
@@ -306,6 +307,20 @@ class DeviceAdapter(
         fun bind(device: DeviceDto) {
             tvDeviceAlias.text = device.device_alias
             tvStatusBadge.text = device.calculated_status
+
+            btnLiveTracking.setOnClickListener {
+                val context = itemView.context
+                val intent = Intent(context, com.antitheft.admin.tracking.LiveTrackingActivity::class.java).apply {
+                    putExtra(com.antitheft.admin.tracking.LiveTrackingActivity.EXTRA_DEVICE_ID, device.id)
+                    putExtra(com.antitheft.admin.tracking.LiveTrackingActivity.EXTRA_DEVICE_ALIAS, device.device_alias)
+                    if (device.last_location != null) {
+                        putExtra(com.antitheft.admin.tracking.LiveTrackingActivity.EXTRA_INITIAL_LAT, device.last_location.latitude)
+                        putExtra(com.antitheft.admin.tracking.LiveTrackingActivity.EXTRA_INITIAL_LNG, device.last_location.longitude)
+                        putExtra(com.antitheft.admin.tracking.LiveTrackingActivity.EXTRA_INITIAL_ACC, device.last_location.accuracy)
+                    }
+                }
+                context.startActivity(intent)
+            }
 
             when (device.calculated_status) {
                 "LIVE" -> {
