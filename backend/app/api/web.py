@@ -850,11 +850,14 @@ def render_landing_page():
                         <div class="card-title">SHE Guardian</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Protected Handset Agent</div>
                     </div>
-                    <span class="card-badge badge-warning" style="margin-left: auto;">Pre-Release</span>
+                    <span class="card-badge badge-warning" style="margin-left: auto;">v0.3.0 Direct</span>
                 </div>
                 <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1rem;">
                     Runs Direct Boot tracking in Device Encrypted Storage, offline AT1 SMS beacons, remote sirens, and device owner kiosk restrictions.
                 </p>
+                <a href="/releases/download/she-guardian.apk" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem; text-decoration: none;">
+                    ⬇️ Download SHE Guardian APK (33.7 MB)
+                </a>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Compile via Gradle:</div>
                 <div class="code-block">./gradlew :app-guardian:assembleDirectDebug</div>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 0.75rem;">Local Debug Checksum:</div>
@@ -872,11 +875,14 @@ def render_landing_page():
                         <div class="card-title">SHE Admin Companion</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Controller & Vault Manager</div>
                     </div>
-                    <span class="card-badge badge-warning" style="margin-left: auto;">Pre-Release</span>
+                    <span class="card-badge badge-warning" style="margin-left: auto;">v0.3.0 Release</span>
                 </div>
                 <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1rem;">
                     Monitors live GPS fixes, dispatches signed HMAC commands, and manages zero-knowledge client-side encrypted vault secrets.
                 </p>
+                <a href="/releases/download/she-admin.apk" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem; text-decoration: none;">
+                    ⬇️ Download SHE Admin APK (32.0 MB)
+                </a>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Compile via Gradle:</div>
                 <div class="code-block">./gradlew :app-admin:assembleDebug</div>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 0.75rem;">Local Debug Checksum:</div>
