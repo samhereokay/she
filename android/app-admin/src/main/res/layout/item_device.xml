@@ -4,8 +4,11 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="12dp"
-    app:cardCornerRadius="8dp"
-    app:cardElevation="2dp">
+    app:cardCornerRadius="14dp"
+    app:cardElevation="0dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="#334155"
+    app:cardBackgroundColor="#1E293B">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -25,19 +28,20 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Pixel 8 (Guardian)"
-                android:textSize="18sp"
+                android:textColor="#F8FAFC"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvStatusBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="#E8F5E9"
-                android:paddingHorizontal="8dp"
+                android:background="#164E63"
+                android:paddingHorizontal="10dp"
                 android:paddingVertical="4dp"
                 android:text="LIVE"
-                android:textColor="#2E7D32"
-                android:textSize="12sp"
+                android:textColor="#38BDF8"
+                android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -47,7 +51,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="37.77492, -122.41941 (±12m)"
-            android:textSize="14sp" />
+            android:textColor="#38BDF8"
+            android:textSize="14sp"
+            android:fontFamily="monospace" />
 
         <TextView
             android:id="@+id/tvCaptureTime"
@@ -55,57 +61,67 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:text="Capture: 2026-10-16 02:00:00 UTC"
-            android:textColor="#666666"
-            android:textSize="12sp" />
+            android:textColor="#94A3B8"
+            android:textSize="11sp" />
 
         <TextView
             android:id="@+id/tvReceiptTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Server Receipt: 2026-10-16 02:00:02 UTC"
-            android:textColor="#666666"
-            android:textSize="12sp" />
+            android:textColor="#64748B"
+            android:textSize="11sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="12dp"
             android:orientation="horizontal">
 
             <Button
                 android:id="@+id/btnLiveTracking"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="42dp"
                 android:layout_weight="1"
                 android:layout_marginEnd="6dp"
-                android:backgroundTint="#00D2FF"
-                android:textColor="#000000"
+                android:backgroundTint="#06B6D4"
+                android:textColor="#04151F"
                 android:textStyle="bold"
-                android:text="🛰️ Live Radar (WS)" />
+                android:textSize="12sp"
+                android:text="🛰️ Live Radar (WS)"
+                app:cornerRadius="10dp" />
 
             <Button
                 android:id="@+id/btnViewOnMap"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="42dp"
                 android:layout_marginEnd="6dp"
-                android:text="🗺️ Maps" />
+                android:text="🗺️ Maps"
+                android:textSize="12sp"
+                app:cornerRadius="10dp" />
 
             <Button
                 android:id="@+id/btnLocationInfo"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ℹ️" />
+                android:layout_height="42dp"
+                android:text="ℹ️"
+                android:textSize="12sp"
+                app:strokeColor="#334155"
+                app:cornerRadius="10dp" />
         </LinearLayout>
 
         <Button
             android:id="@+id/btnSendCommand"
+            style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Send Recovery Command" />
+            android:layout_height="42dp"
+            android:layout_marginTop="8dp"
+            android:text="⚡ Dispatch Remote Command"
+            android:textStyle="bold"
+            android:textSize="12sp"
+            app:cornerRadius="10dp" />
 
     </LinearLayout>
-
 </com.google.android.material.card.MaterialCardView>

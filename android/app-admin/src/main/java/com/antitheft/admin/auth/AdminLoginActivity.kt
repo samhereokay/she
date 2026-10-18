@@ -36,8 +36,20 @@ class AdminLoginActivity : AppCompatActivity() {
         etServerUrl.setText(sessionManager.getServerUrl())
 
         val btnRegister = findViewById<Button>(R.id.btnRegister)
-
         val tvErrorMessage = findViewById<android.widget.TextView>(R.id.tvErrorMessage)
+
+        findViewById<Button>(R.id.btnPresetTunnel)?.setOnClickListener {
+            etServerUrl.setText("https://grove-aerial-border-appreciation.trycloudflare.com")
+            Toast.makeText(this, "Selected Cloudflare Tunnel", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnPresetLocal)?.setOnClickListener {
+            etServerUrl.setText("http://127.0.0.1:8000")
+            Toast.makeText(this, "Selected USB/Localhost (127.0.0.1)", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnPresetEmulator)?.setOnClickListener {
+            etServerUrl.setText("http://10.0.2.2:8000")
+            Toast.makeText(this, "Selected Android Emulator (10.0.2.2)", Toast.LENGTH_SHORT).show()
+        }
 
         btnLogin.setOnClickListener {
             val serverUrl = etServerUrl.text.toString().trim()

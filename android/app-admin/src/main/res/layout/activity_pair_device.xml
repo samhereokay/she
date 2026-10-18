@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:background="#0B1120">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,190 +13,279 @@
         android:orientation="vertical"
         android:padding="20dp">
 
+        <!-- Header -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Pair Protected Device"
+            android:layout_marginTop="8dp"
+            android:text="Pair Protected Handset"
+            android:textColor="#F8FAFC"
             android:textSize="22sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:layout_marginBottom="16dp"
             android:gravity="center"
-            android:text="Complete the steps below to establish mutual cryptographic pairing."
-            android:textSize="13sp" />
+            android:text="Cryptographic ECDSA &amp; HMAC Handshake (Zero API Keys)"
+            android:textColor="#38BDF8"
+            android:textSize="12sp" />
 
-        <!-- STEP 1: ADMIN PHONE NUMBER -->
-        <LinearLayout
+        <!-- STEP 1: ADMIN PHONE & SERVER -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#111827"
-            android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#334155"
+            app:cardBackgroundColor="#1E293B">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Step 1: Your Phone Number (SMS Alerts)"
-                android:textColor="#38BDF8"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Guardian will send offline SMS GPS beacons and battery alerts to this phone."
-                android:textColor="#9CA3AF"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/etAdminPhone"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:hint="Enter phone number (e.g. +91 9876543210)"
-                android:inputType="phone"
-                android:textAlignment="center"
-                android:textSize="16sp" />
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="Backend URL (Embedded in QR code):"
-                android:textColor="#38BDF8"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STEP 1: RECOVERY SMS &amp; SERVER"
+                    android:textColor="#38BDF8"
+                    android:textSize="13sp"
+                    android:letterSpacing="0.05"
+                    android:textStyle="bold" />
 
-            <EditText
-                android:id="@+id/etServerUrl"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:hint="e.g. http://192.168.0.105:8000 or http://127.0.0.1:8000"
-                android:inputType="textUri"
-                android:textSize="13sp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Guardian sends offline encrypted SMS beacons to your phone if the internet is severed."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
 
-            <Button
-                android:id="@+id/btnGenerateQr"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="Generate Pairing QR Code" />
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Your Phone Number (e.g. +91 9876543210)"
+                    app:boxStrokeColor="#06B6D4"
+                    app:hintTextColor="#06B6D4"
+                    app:boxCornerRadiusTopStart="10dp"
+                    app:boxCornerRadiusTopEnd="10dp"
+                    app:boxCornerRadiusBottomStart="10dp"
+                    app:boxCornerRadiusBottomEnd="10dp">
 
-        </LinearLayout>
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etAdminPhone"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="phone"
+                        android:textColor="#F8FAFC"
+                        android:textSize="15sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Backend URL (Embedded in QR)"
+                    app:boxStrokeColor="#06B6D4"
+                    app:hintTextColor="#06B6D4"
+                    app:boxCornerRadiusTopStart="10dp"
+                    app:boxCornerRadiusTopEnd="10dp"
+                    app:boxCornerRadiusBottomStart="10dp"
+                    app:boxCornerRadiusBottomEnd="10dp"
+                    app:helperText="Self-hosted URL (Cloudflare Tunnel or Local IP)"
+                    app:helperTextTextColor="#64748B">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etServerUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textUri"
+                        android:textColor="#F8FAFC"
+                        android:textSize="13sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <Button
+                    android:id="@+id/btnGenerateQr"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="12dp"
+                    android:text="Generate Pairing QR Code"
+                    android:textStyle="bold"
+                    android:backgroundTint="#06B6D4"
+                    android:textColor="#04151F"
+                    app:cornerRadius="10dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- STEP 2: QR CODE SCAN -->
-        <LinearLayout
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_horizontal"
-            android:orientation="vertical"
-            android:background="#111827"
-            android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#334155"
+            app:cardBackgroundColor="#1E293B">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Step 2: Scan with Guardian Phone"
-                android:textColor="#38BDF8"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvQrInstructions"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:gravity="center"
-                android:text="Enter your number above and tap Generate to create the QR code."
-                android:textColor="#9CA3AF"
-                android:textSize="12sp" />
-
-            <ImageView
-                android:id="@+id/ivQrCode"
-                android:layout_width="220dp"
-                android:layout_height="220dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
-                android:contentDescription="Pairing QR Code" />
-
-            <TextView
-                android:id="@+id/tvPairingSecret"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:text="Pairing Secret: Not yet generated"
-                android:textColor="#9CA3AF"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnPairSameDevice"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="📱 Pair on This Handset (Single Device)"
-                android:backgroundTint="#10B981"
-                android:textColor="#FFFFFF"
-                android:visibility="gone" />
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STEP 2: SCAN WITH GUARDIAN"
+                    android:textColor="#38BDF8"
+                    android:textSize="13sp"
+                    android:letterSpacing="0.05"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvQrInstructions"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:text="Enter phone number above and tap Generate to create pairing QR code."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <!-- White Card Container for QR visibility -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginBottom="14dp"
+                    app:cardCornerRadius="12dp"
+                    app:cardBackgroundColor="#FFFFFF"
+                    app:contentPadding="12dp">
+
+                    <ImageView
+                        android:id="@+id/ivQrCode"
+                        android:layout_width="200dp"
+                        android:layout_height="200dp"
+                        android:contentDescription="Pairing QR Code" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <TextView
+                    android:id="@+id/tvPairingSecret"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="Pairing Secret: Not yet generated"
+                    android:textColor="#64748B"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnPairSameDevice"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="12dp"
+                    android:text="📱 Pair on This Handset (Single Device)"
+                    android:backgroundTint="#10B981"
+                    android:textColor="#FFFFFF"
+                    android:visibility="gone"
+                    app:cornerRadius="10dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- STEP 3: CONFIRMATION CODE -->
-        <LinearLayout
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#111827"
-            android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#334155"
+            app:cardBackgroundColor="#1E293B">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Step 3: Enter Visual Confirmation Code"
-                android:textColor="#38BDF8"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Enter the 3-digit code shown on the Guardian screen after scanning:"
-                android:textColor="#9CA3AF"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/etConfirmCode"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:hint="Confirmation Code (e.g. 521)"
-                android:inputType="text"
-                android:textAlignment="center"
-                android:textSize="18sp" />
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <Button
-                android:id="@+id/btnApprovePairing"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="Confirm &amp; Activate Guardian" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STEP 3: MUTUAL VERIFICATION"
+                    android:textColor="#38BDF8"
+                    android:textSize="13sp"
+                    android:letterSpacing="0.05"
+                    android:textStyle="bold" />
 
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Enter the confirmation code displayed on the Guardian screen:"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
 
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Confirmation Code (e.g. 521-893)"
+                    app:boxStrokeColor="#10B981"
+                    app:hintTextColor="#10B981"
+                    app:boxCornerRadiusTopStart="10dp"
+                    app:boxCornerRadiusTopEnd="10dp"
+                    app:boxCornerRadiusBottomStart="10dp"
+                    app:boxCornerRadiusBottomEnd="10dp">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etConfirmCode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:textAlignment="center"
+                        android:textColor="#F8FAFC"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <Button
+                    android:id="@+id/btnApprovePairing"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="12dp"
+                    android:text="Confirm &amp; Activate Guardian"
+                    android:textStyle="bold"
+                    android:backgroundTint="#10B981"
+                    android:textColor="#FFFFFF"
+                    app:cornerRadius="10dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Back Button -->
         <Button
             android:id="@+id/btnDone"
+            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Back to Devices" />
+            android:layout_height="48dp"
+            android:text="Back to Devices"
+            android:textColor="#94A3B8"
+            app:strokeColor="#334155"
+            app:cornerRadius="10dp" />
 
     </LinearLayout>
 </ScrollView>

@@ -1,7 +1,18 @@
 <resources>
-    <style name="Theme.Admin" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <item name="colorPrimary">#0D47A1</item>
-        <item name="colorPrimaryVariant">#002171</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
+    <style name="Theme.Admin" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#06B6D4</item>
+        <item name="colorOnPrimary">#04151F</item>
+        <item name="colorPrimaryContainer">#164E63</item>
+        <item name="colorOnPrimaryContainer">#CFFAFE</item>
+        <item name="colorSecondary">#38BDF8</item>
+        <item name="colorOnSecondary">#082F49</item>
+        <item name="android:windowBackground">#0B1120</item>
+        <item name="colorSurface">#0F172A</item>
+        <item name="colorOnSurface">#F8FAFC</item>
+        <item name="colorSurfaceVariant">#1E293B</item>
+        <item name="colorOnSurfaceVariant">#94A3B8</item>
+        <item name="colorOutline">#334155</item>
+        <item name="android:statusBarColor">#0B1120</item>
+        <item name="android:navigationBarColor">#0B1120</item>
     </style>
 </resources>
