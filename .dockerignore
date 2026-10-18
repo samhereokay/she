@@ -1,0 +1,15 @@
+.git
+.github
+.tools
+android
+she-release
+*.db
+*.sqlite3
+*.log
+__pycache__
+*.pyc
+.pytest_cache
+backend/venv
+backend/.pytest_cache
+backend/antitheft_dev.db
+backend/antitheft.db

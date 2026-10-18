@@ -1,0 +1,23 @@
+# Koyeb Deployment Manifest for SHE Anti-Theft Backend
+app: she-anti-theft
+services:
+  - name: she-backend
+    type: web
+    git:
+      repository: github.com/samhereokay/she
+      branch: main
+    dockerfile: Dockerfile
+    routes:
+      - path: /
+    ports:
+      - port: 8000
+        protocol: http
+    health_checks:
+      - http:
+          path: /health
+          port: 8000
+    env:
+      - key: ALLOW_PUBLIC_REGISTRATION
+        value: "true"
+      - key: ENFORCE_HTTPS
+        value: "true"
