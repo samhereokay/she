@@ -71,6 +71,7 @@ class AdminDashboardActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingCommandIntent(intent: Intent?) {
+        if (!com.antitheft.admin.BuildConfig.DEBUG) return
         val cmd = intent?.getStringExtra("dispatch_cmd")
         val targetId = intent?.getStringExtra("target_device_id")
         val totp = intent?.getStringExtra("totp_code") ?: ""

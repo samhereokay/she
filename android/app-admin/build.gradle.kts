@@ -31,27 +31,26 @@ android {
         buildConfig = true
     }
 
+    val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
+    val keystoreFile = file(keystorePath)
+    val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
-            var releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
-            if (releasePassword.isNullOrBlank()) {
-                val console = System.console()
-                if (console != null) {
-                    val chars = console.readPassword("Enter Release Keystore Password: ")
-                    if (chars != null) releasePassword = String(chars)
-                }
+            if (keystoreFile.exists() && !releasePassword.isNullOrBlank()) {
+                storeFile = keystoreFile
+                storePassword = releasePassword
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "antitheft_release"
+                keyPassword = releasePassword
             }
-            storeFile = file(keystorePath)
-            storePassword = releasePassword ?: ""
-            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "antitheft_release"
-            keyPassword = releasePassword ?: ""
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            if (keystoreFile.exists() && !releasePassword.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
         }
     }

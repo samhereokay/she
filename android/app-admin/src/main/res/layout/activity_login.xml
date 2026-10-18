@@ -62,5 +62,18 @@
         android:text="Register Owner Account"
         android:backgroundTint="#37474F" />
 
+    <TextView
+        android:id="@+id/tvErrorMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="#FFCDD2"
+        android:padding="12dp"
+        android:textColor="#B71C1C"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:visibility="gone" />
+
 </LinearLayout>
 

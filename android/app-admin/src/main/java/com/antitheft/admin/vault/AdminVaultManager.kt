@@ -136,10 +136,10 @@ class AdminVaultManager(
      */
     fun encryptSecretEnvelope(
         plaintext: String,
-        passphrase: String,
+        passphrase: CharArray,
         keyVersion: Long = 1
     ): VaultEncryptedContainer {
-        require(passphrase.length >= 16) {
+        require(passphrase.size >= 16) {
             "Vault master passphrase must be at least 16 characters for zero-knowledge envelope protection."
         }
         val dek = cryptoManager.generateRandomDataKey()
@@ -179,13 +179,26 @@ class AdminVaultManager(
         )
     }
 
+    fun encryptSecretEnvelope(
+        plaintext: String,
+        passphrase: String,
+        keyVersion: Long = 1
+    ): VaultEncryptedContainer {
+        val chars = passphrase.toCharArray()
+        try {
+            return encryptSecretEnvelope(plaintext, chars, keyVersion)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
+    }
+
     /**
      * Envelope Decryption:
      * Unwraps DEK via Keystore Key (if device lock active), or via passphrase-derived Key (if restored with passphrase).
      */
     fun decryptSecretEnvelope(
         container: VaultEncryptedContainer,
-        passphrase: String? = null
+        passphrase: CharArray? = null
     ): String {
         if (!container.ciphertextBase64.trim().startsWith("{")) {
             val k = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
@@ -203,7 +216,7 @@ class AdminVaultManager(
         val dataTag = envelope.getString("data_tag")
         val dataContainer = VaultEncryptedContainer(dataCipher, dataIv, dataTag, container.keyVersion)
 
-        val dek: SecretKey = if (!passphrase.isNullOrBlank()) {
+        val dek: SecretKey = if (passphrase != null && passphrase.isNotEmpty()) {
             val pObj = envelope.getJSONObject("passphrase_wrapped_dek")
             val pContainer = VaultEncryptedContainer(
                 pObj.getString("cipher"),
@@ -233,26 +246,68 @@ class AdminVaultManager(
         return cryptoManager.decrypt(dataContainer, dek)
     }
 
+    fun decryptSecretEnvelope(
+        container: VaultEncryptedContainer,
+        passphrase: String?
+    ): String {
+        if (passphrase == null) {
+            return decryptSecretEnvelope(container, null as CharArray?)
+        }
+        val chars = passphrase.toCharArray()
+        try {
+            return decryptSecretEnvelope(container, chars)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
+    }
+
     /**
      * Export all vault items as an encrypted paper backup / QR string protected by user passphrase.
      */
-    fun exportPaperBackup(vaultJson: String, passphrase: String): String {
+    fun exportPaperBackup(vaultJson: String, passphrase: CharArray): String {
         return cryptoManager.exportVaultEncrypted(vaultJson, passphrase)
+    }
+
+    fun exportPaperBackup(vaultJson: String, passphrase: String): String {
+        val chars = passphrase.toCharArray()
+        try {
+            return exportPaperBackup(vaultJson, chars)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
     }
 
     /**
      * Import an encrypted paper backup using the user passphrase.
      */
-    fun importPaperBackup(exportBase64: String, passphrase: String): String {
+    fun importPaperBackup(exportBase64: String, passphrase: CharArray): String {
         return cryptoManager.importVaultEncrypted(exportBase64, passphrase)
+    }
+
+    fun importPaperBackup(exportBase64: String, passphrase: String): String {
+        val chars = passphrase.toCharArray()
+        try {
+            return importPaperBackup(exportBase64, chars)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
     }
 
     /**
      * Derives a deterministic Vault Master Key from the user's master recovery passphrase and salt.
      * Guarantees that the encrypted server copy CAN be restored on any new phone using the passphrase.
      */
-    fun deriveVaultMasterKeyFromPassphrase(passphrase: String, salt: ByteArray): SecretKey {
+    fun deriveVaultMasterKeyFromPassphrase(passphrase: CharArray, salt: ByteArray): SecretKey {
         return cryptoManager.deriveKeyFromPassphrase(passphrase, salt, VaultCryptoManager.PBKDF2_ITERATIONS)
+    }
+
+    fun deriveVaultMasterKeyFromPassphrase(passphrase: String, salt: ByteArray): SecretKey {
+        val chars = passphrase.toCharArray()
+        try {
+            return deriveVaultMasterKeyFromPassphrase(chars, salt)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
     }
 
     /**

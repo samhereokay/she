@@ -33,7 +33,15 @@ def handle_create_owner(args):
 
         username = args.username.strip()
         email = args.email.strip()
-        password = args.password
+        password = getattr(args, "password", None)
+
+        if not password:
+            import getpass
+            password = getpass.getpass("Enter owner password (min 8 chars): ")
+            confirm = getpass.getpass("Confirm owner password: ")
+            if password != confirm:
+                print("[ERROR] Passwords do not match.", file=sys.stderr)
+                sys.exit(1)
 
         if len(password) < 8:
             print("[ERROR] Password must be at least 8 characters long.", file=sys.stderr)
@@ -66,10 +74,22 @@ def handle_reset_owner(args):
             print("[INFO] No owner accounts exist in the database. Nothing to reset.")
             return
 
+        vault_count = db.query(VaultItem).count()
+        device_count = db.query(ProtectedDevice).count()
+
+        print("=" * 68)
+        print("!!! CRITICAL DATA LOSS WARNING: OWNER RESET REQUESTED !!!")
+        print("Resetting the platform owner will permanently DESTROY:")
+        print(f"  - {user_count} owner user account(s)")
+        print(f"  - {device_count} paired protected handset(s)")
+        print(f"  - {vault_count} encrypted recovery vault secret(s) [IRREVERSIBLE]")
+        print("All server-side encrypted vault envelopes and pairing keys will be ERASED.")
+        print("=" * 68)
+
         if not args.force:
-            confirm = input(f"WARNING: This will permanently delete {user_count} user(s) and ALL paired devices. Proceed? [y/N]: ")
-            if confirm.lower() != 'y':
-                print("[ABORTED] Reset cancelled by user.")
+            confirm = input("Type 'RESET' to confirm permanent destruction of all vault and owner data: ")
+            if confirm.strip() != "RESET":
+                print("[ABORTED] Reset cancelled by user. No data was deleted.")
                 sys.exit(0)
 
         # Purge dependent records first
@@ -82,7 +102,7 @@ def handle_reset_owner(args):
         db.query(User).delete()
         db.commit()
 
-        print("[SUCCESS] All owner accounts, paired devices, and sessions have been permanently cleared.")
+        print(f"[SUCCESS] Cleared {user_count} user(s), {device_count} device(s), and {vault_count} vault secret(s).")
         print("Initial owner bootstrap is now re-opened.")
     finally:
         if should_close:
@@ -121,7 +141,7 @@ def main():
     create_parser = subparsers.add_parser("create-owner", help="Create initial owner account")
     create_parser.add_argument("--username", "-u", required=True, help="Owner username")
     create_parser.add_argument("--email", "-e", required=True, help="Owner email address")
-    create_parser.add_argument("--password", "-p", required=True, help="Owner password (min 8 chars)")
+    create_parser.add_argument("--password", "-p", required=False, default=None, help="Owner password (if omitted, will be prompted securely)")
     create_parser.set_defaults(func=handle_create_owner)
 
     # reset-owner

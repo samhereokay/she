@@ -62,7 +62,24 @@ class AdminVaultActivity : AppCompatActivity() {
         authenticateBiometricGate()
     }
 
-    private var activePassphrase: String? = null
+    private var activePassphrase: CharArray? = null
+
+    private fun setActivePassphrase(chars: CharArray) {
+        wipeActivePassphrase()
+        activePassphrase = chars.clone()
+    }
+
+    private fun wipeActivePassphrase() {
+        activePassphrase?.let {
+            java.util.Arrays.fill(it, '\u0000')
+        }
+        activePassphrase = null
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        wipeActivePassphrase()
+    }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -81,14 +98,17 @@ class AdminVaultActivity : AppCompatActivity() {
                 val title = intent.getStringExtra("title") ?: "Recovery Secret"
                 val type = intent.getStringExtra("type") ?: "RECOVERY_CODE"
                 val secret = intent.getStringExtra("secret") ?: ""
-                val passphrase = intent.getStringExtra("passphrase") ?: activePassphrase ?: "Alpha-Bravo-2026-Secure-Key"
+                val passphraseStr = intent.getStringExtra("passphrase") ?: (if (activePassphrase != null) String(activePassphrase!!) else "Alpha-Bravo-2026-Secure-Key")
+                val chars = passphraseStr.toCharArray()
+                setActivePassphrase(chars)
                 if (secret.isNotBlank()) {
-                    encryptAndUploadSecret(title, type, secret, passphrase)
+                    encryptAndUploadSecret(title, type, secret, chars)
                 }
             }
             "export_backup" -> {
-                val passphrase = intent.getStringExtra("passphrase") ?: activePassphrase ?: "Alpha-Bravo-2026-Secure-Key"
-                exportVaultWithPassphrase(passphrase)
+                val passphraseStr = intent.getStringExtra("passphrase") ?: (if (activePassphrase != null) String(activePassphrase!!) else "Alpha-Bravo-2026-Secure-Key")
+                val chars = passphraseStr.toCharArray()
+                exportVaultWithPassphrase(chars)
             }
             "emergency_shred" -> {
                 confirmEmergencyShred()
@@ -330,7 +350,7 @@ class AdminVaultActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Decryption error for item ${item.id}: ${e.message}", e)
-            val isKeyInvalidated = (!vaultManager.isDeviceSecure() && activePassphrase == null) ||
+            val isKeyInvalidated = (!vaultManager.isDeviceSecure() && (activePassphrase == null || activePassphrase?.isEmpty() == true)) ||
                 e is android.security.keystore.KeyPermanentlyInvalidatedException ||
                 e is java.security.UnrecoverableKeyException ||
                 e.message?.contains("Key permanently invalidated") == true ||
@@ -417,8 +437,8 @@ class AdminVaultActivity : AppCompatActivity() {
         val etPassphrase = EditText(this).apply {
             hint = "Master Recovery Passphrase (min 16 chars)"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            if (!activePassphrase.isNullOrBlank()) {
-                setText(activePassphrase)
+            if (activePassphrase != null && activePassphrase?.isNotEmpty() == true) {
+                setText(String(activePassphrase!!))
             }
         }
         layout.addView(etPassphrase)
@@ -430,21 +450,23 @@ class AdminVaultActivity : AppCompatActivity() {
                 val title = etTitle.text.toString().trim()
                 val type = spinnerType.selectedItem.toString()
                 val secret = etSecret.text.toString().trim()
-                val passphrase = etPassphrase.text.toString().trim()
-                if (passphrase.length < 16) {
+                val len = etPassphrase.text?.length ?: 0
+                if (len < 16) {
                     Toast.makeText(this@AdminVaultActivity, "Master passphrase must be at least 16 characters for zero-knowledge vault protection", Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
-                activePassphrase = passphrase
+                val chars = CharArray(len)
+                etPassphrase.text?.getChars(0, len, chars, 0)
+                setActivePassphrase(chars)
                 if (title.isNotBlank() && secret.isNotBlank()) {
-                    encryptAndUploadSecret(title, type, secret, passphrase)
+                    encryptAndUploadSecret(title, type, secret, chars)
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun encryptAndUploadSecret(title: String, type: String, plaintextSecret: String, passphrase: String) {
+    private fun encryptAndUploadSecret(title: String, type: String, plaintextSecret: String, passphrase: CharArray) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 // Client-side AES-256-GCM encryption of full JSON object (title + type + secret)
@@ -516,18 +538,20 @@ class AdminVaultActivity : AppCompatActivity() {
             .setMessage("Provide a strong passphrase to encrypt your paper backup. You will need this passphrase to restore your vault on another phone.")
             .setView(input)
             .setPositiveButton("Generate Backup") { _, _ ->
-                val passphrase = input.text.toString().trim()
-                if (passphrase.length < 16) {
+                val len = input.text?.length ?: 0
+                if (len < 16) {
                     Toast.makeText(this, "Passphrase must be at least 16 characters", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                exportVaultWithPassphrase(passphrase)
+                val chars = CharArray(len)
+                input.text?.getChars(0, len, chars, 0)
+                exportVaultWithPassphrase(chars)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun exportVaultWithPassphrase(passphrase: String) {
+    private fun exportVaultWithPassphrase(passphrase: CharArray) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val api = ApiClient.create(sessionManager)
@@ -613,21 +637,23 @@ class AdminVaultActivity : AppCompatActivity() {
             .setMessage("Enter your master recovery passphrase (min 16 characters, 600,000 PBKDF2 iterations) to decrypt and restore vault items:")
             .setView(layout)
             .setPositiveButton("Restore") { _, _ ->
-                val passphrase = etPassphrase.text.toString().trim()
+                val len = etPassphrase.text?.length ?: 0
                 val backup = etBackupString.text.toString().trim()
-                if (passphrase.length < 16) {
+                if (len < 16) {
                     Toast.makeText(this, "Passphrase must be at least 16 characters", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                executeVaultRestore(passphrase, backup)
+                val chars = CharArray(len)
+                etPassphrase.text?.getChars(0, len, chars, 0)
+                executeVaultRestore(chars, backup)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun executeVaultRestore(passphrase: String, backupString: String) {
-        activePassphrase = passphrase
-        Log.i(TAG, "executeVaultRestore: starting restore with passphrase len=${passphrase.length}")
+    private fun executeVaultRestore(passphrase: CharArray, backupString: String) {
+        setActivePassphrase(passphrase)
+        Log.i(TAG, "executeVaultRestore: starting restore with passphrase len=${passphrase.size}")
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 if (backupString.isNotBlank()) {

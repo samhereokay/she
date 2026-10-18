@@ -89,7 +89,7 @@ class VaultCryptoManager {
      * Export all vault items as an encrypted paper backup / QR string protected by user passphrase.
      * Uses PBKDF2WithHmacSHA256 with 100,000 iterations and 16-byte random salt.
      */
-    fun exportVaultEncrypted(vaultJson: String, passphrase: String): String {
+    fun exportVaultEncrypted(vaultJson: String, passphrase: CharArray): String {
         val salt = ByteArray(16)
         secureRandom.nextBytes(salt)
 
@@ -109,10 +109,19 @@ class VaultCryptoManager {
         return b64.encodeToString(exportObj.toString().toByteArray(StandardCharsets.UTF_8))
     }
 
+    fun exportVaultEncrypted(vaultJson: String, passphrase: String): String {
+        val chars = passphrase.toCharArray()
+        try {
+            return exportVaultEncrypted(vaultJson, chars)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
+    }
+
     /**
      * Import and restore an encrypted paper backup string using the user's recovery passphrase.
      */
-    fun importVaultEncrypted(exportBase64: String, passphrase: String): String {
+    fun importVaultEncrypted(exportBase64: String, passphrase: CharArray): String {
         val jsonStr = String(Base64.getDecoder().decode(exportBase64.trim()), StandardCharsets.UTF_8)
         val obj = JSONObject(jsonStr)
 
@@ -132,14 +141,37 @@ class VaultCryptoManager {
         return decrypt(container, derivedKey)
     }
 
+    fun importVaultEncrypted(exportBase64: String, passphrase: String): String {
+        val chars = passphrase.toCharArray()
+        try {
+            return importVaultEncrypted(exportBase64, chars)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
+    }
+
     /**
      * Derives a 256-bit AES secret key from a passphrase and salt.
+     * Clears PBEKeySpec memory immediately after key derivation.
      */
-    fun deriveKeyFromPassphrase(passphrase: String, salt: ByteArray, iterations: Int = PBKDF2_ITERATIONS): SecretKey {
+    fun deriveKeyFromPassphrase(passphrase: CharArray, salt: ByteArray, iterations: Int = PBKDF2_ITERATIONS): SecretKey {
         val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val spec = PBEKeySpec(passphrase.toCharArray(), salt, iterations, 256)
-        val tmp = factory.generateSecret(spec)
-        return SecretKeySpec(tmp.encoded, "AES")
+        val spec = PBEKeySpec(passphrase, salt, iterations, 256)
+        try {
+            val tmp = factory.generateSecret(spec)
+            return SecretKeySpec(tmp.encoded, "AES")
+        } finally {
+            spec.clearPassword()
+        }
+    }
+
+    fun deriveKeyFromPassphrase(passphrase: String, salt: ByteArray, iterations: Int = PBKDF2_ITERATIONS): SecretKey {
+        val chars = passphrase.toCharArray()
+        try {
+            return deriveKeyFromPassphrase(chars, salt, iterations)
+        } finally {
+            java.util.Arrays.fill(chars, '\u0000')
+        }
     }
 
     /**
