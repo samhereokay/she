@@ -13,6 +13,9 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.exceptions import InvalidSignature
 
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger("uvicorn.error")
 
 # Memory-hard password hashing using Argon2id (OWASP recommended)
 pwd_hasher = PasswordHasher(
@@ -156,8 +159,9 @@ def create_access_token(
 
 def verify_access_token(token: str) -> Optional[dict]:
     """Verify JWT token and extract payload dictionary."""
+    clean_token = token.strip().strip('"').strip("'")
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(clean_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], leeway=60)
         if "sub" not in payload:
             return None
         return payload
@@ -172,7 +176,7 @@ _used_pairing_token_jtis: set[str] = set()
 def create_pairing_token(
     user_id: str,
     trusted_device_id: Optional[str] = None,
-    expires_minutes: int = 5
+    expires_minutes: int = 15
 ) -> str:
     """
     Generate short-lived, single-use token strictly restricted to device pairing.
@@ -193,15 +197,31 @@ def create_pairing_token(
 
 def verify_pairing_token(token: str) -> Optional[dict]:
     """Verify pairing token and return payload if valid and unconsumed."""
+    clean_token = token.strip().strip('"').strip("'")
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(clean_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], leeway=60)
         if payload.get("scope") != "device_pairing" or "sub" not in payload:
+            logger.warning(f"verify_pairing_token: Invalid scope ({payload.get('scope')}) or missing sub in token")
             return None
         jti = payload.get("jti")
-        if not jti or jti in _used_pairing_token_jtis:
+        if not jti:
+            logger.warning("verify_pairing_token: Missing jti claim in token payload")
+            return None
+        if jti in _used_pairing_token_jtis:
+            logger.warning(f"verify_pairing_token: JTI {jti} has already been consumed")
             return None
         return payload
-    except (jwt.PyJWTError, Exception):
+    except jwt.ExpiredSignatureError as e:
+        logger.warning(f"verify_pairing_token: Pairing token signature has expired: {e}")
+        return None
+    except jwt.ImmatureSignatureError as e:
+        logger.warning(f"verify_pairing_token: Pairing token signature is immature (clock skew): {e}")
+        return None
+    except jwt.PyJWTError as e:
+        logger.warning(f"verify_pairing_token: PyJWT error during decoding: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"verify_pairing_token: Unexpected exception during decoding: {e}")
         return None
 
 

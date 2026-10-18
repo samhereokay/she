@@ -11,8 +11,8 @@ class Settings(BaseSettings):
         extra="allow"
     )
 
-    PROJECT_NAME: str = "Android Anti-Theft & Recovery Backend"
-    VERSION: str = "0.2.0-phase2"
+    PROJECT_NAME: str = "SHE - Sentinel for Handheld Equipment"
+    VERSION: str = "0.3.0"
     API_V1_STR: str = "/api/v1"
     
     # Environment & Security
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").lower() == "true"
     REGISTRATION_TOKEN: str = os.getenv("REGISTRATION_TOKEN", "")
     ADMIN_SETUP_TOKEN: str = os.getenv("ADMIN_SETUP_TOKEN", "")
+    CORS_ORIGINS: list[str] = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,https://samhereokay.github.io").split(",") if o.strip()]
     
     # Environment-Mandated Secrets (NO committed fallback defaults)
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")

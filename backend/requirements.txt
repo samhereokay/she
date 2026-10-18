@@ -14,10 +14,10 @@ alembic==1.14.1           # Database migration tool for SQLAlchemy
 
 # Cryptography & Security
 argon2-cffi==23.1.0       # Memory-hard password hashing algorithm (OWASP recommended)
-PyJWT==2.10.1             # JSON Web Token implementation for temporary Phase 2 session tokens
-cryptography==44.0.0      # Production cryptographic primitives: ECDSA P-256 signature verification
-python-multipart==0.0.20  # Required for OAuth2 password form parsing in FastAPI
+PyJWT==2.15.1             # JSON Web Token implementation (patched against CVE / PYSEC-2026-4147)
+cryptography==50.0.2      # Production cryptographic primitives (patched against GHSA-537c-gmf6-5ccf / PYSEC-2026-35)
+python-multipart==0.0.32  # Required for OAuth2 password form parsing (patched against PYSEC-2026-1852)
 
 # Testing & Quality
-pytest==8.3.4             # Test runner for automated unit and integration tests
+pytest==9.1.1             # Test runner for automated unit and integration tests (patched against PYSEC-2026-1845)
 httpx==0.28.1             # Async HTTP client used by FastAPI TestClient

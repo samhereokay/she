@@ -76,12 +76,47 @@ object CommandExecutionManager {
         storage.setStolenMode(enabled)
 
         if (enabled) {
-            // Parse custom message if present in parameters
-            val customMsg = try {
+            // Parse custom message and test mode flag
+            var isTestMode = false
+            var customMsg = "THIS DEVICE IS REPORTED STOLEN. Call owner to return."
+            try {
                 val obj = org.json.JSONObject(parametersJson)
-                obj.optString("lock_message", "THIS DEVICE IS REPORTED STOLEN. Call owner to return.")
+                isTestMode = obj.optBoolean("test_mode", false)
+                customMsg = obj.optString("lock_message", customMsg)
             } catch (e: Exception) {
-                "THIS DEVICE IS REPORTED STOLEN. Call owner to return."
+                // Default to production OG mode
+            }
+
+            if (!isTestMode) {
+                // Real OG Mode: Full Siren + TTS Voice Alert
+                AlarmSoundManager.startAlarm(context, "Warning. This phone is reported stolen. Location is being broadcast. Return to owner immediately.")
+                
+                // Dispatch emergency SMS with live GPS link to trusted contact
+                scope.launch {
+                    try {
+                        val trustedPhone = storage.getTrustedPhoneNumber()
+                        val replyPhone = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeForSmsDispatch(trustedPhone)
+                        if (replyPhone.isNotBlank()) {
+                            val captureManager = LocationCaptureManager(context)
+                            val loc = captureManager.captureCurrentLocation(timeoutMs = 5000)
+                                ?: captureManager.getLastKnownLocation()
+                            val coordsStr = if (loc != null) "https://maps.google.com/?q=${loc.latitude},${loc.longitude} (±${loc.accuracy.toInt()}m)" else "Location acquiring..."
+                            val smsText = "[AntiTheft ALERT] Handset '${storage.getDeviceAlias()}' marked STOLEN. GPS: $coordsStr. Return to owner immediately."
+                            val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
+                                ?: android.telephony.SmsManager.getDefault()
+                            smsManager.sendTextMessage(replyPhone, null, smsText, null, null)
+                            Log.i(TAG, "OG Stolen Mode: Dispatched emergency SMS to $replyPhone")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed dispatching emergency SMS", e)
+                    }
+                }
+            } else {
+                // Test Mode: Safe drill for friends (10-second alert, no external SMS spam)
+                AlarmSoundManager.startAlarm(context, "Anti-Theft Test Mode activated. This is a non-destructive drill. No emergency SMS dispatched.")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    AlarmSoundManager.stopAlarm()
+                }, 10000L)
             }
 
             // Apply theft restrictions and kiosk if Device Owner
@@ -104,6 +139,9 @@ object CommandExecutionManager {
             // Trigger an immediate fix
             executeLocate(context)
         } else {
+            // Silences alarm and TTS immediately
+            AlarmSoundManager.stopAlarm()
+
             // Clear theft restrictions upon de-escalation/recovery
             if (deviceOwnerManager.isDeviceOwner(context)) {
                 deviceOwnerManager.clearTheftRestrictions(context)

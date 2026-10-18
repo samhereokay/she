@@ -34,6 +34,13 @@ class SmsCommandReceiver : BroadcastReceiver() {
 
                 for (sms in messages) {
                     val body = sms.messageBody ?: continue
+
+                    // Zero-retention privacy filter: Immediately discard non-SHE messages.
+                    // Guarantees banking OTPs, personal texts, and carrier alerts are never processed or held.
+                    if (!body.trim().startsWith("AT1:CMD:")) {
+                        continue
+                    }
+
                     val result = SmsCommandProcessor.processInboundPdu(body, storageHelper)
                     if (result.status != SmsProcessStatus.ACCEPTED || result.command == null) {
                         Log.w(TAG, "Inbound SMS rejected: ${result.status} (${result.reason}). Dropping.")

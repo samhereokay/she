@@ -2,6 +2,7 @@ package com.antitheft.admin.dashboard
 
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -62,6 +63,15 @@ class AdminDashboardActivity : AppCompatActivity() {
             startActivity(Intent(this, AdminVaultActivity::class.java))
         }
 
+        findViewById<Button>(R.id.btnLogout).setOnClickListener {
+            sessionManager.clearSession()
+            Toast.makeText(this, "Logged out successfully", Toast.LENGTH_SHORT).show()
+            val intent = Intent(this, com.antitheft.admin.auth.AdminLoginActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
+        }
+
         handleIncomingCommandIntent(intent)
     }
 
@@ -97,21 +107,43 @@ class AdminDashboardActivity : AppCompatActivity() {
                 }
                 deviceAdapter.setDevices(response.devices)
             } catch (e: Exception) {
-                Toast.makeText(this@AdminDashboardActivity, "Error loading devices: ${e.message}", Toast.LENGTH_SHORT).show()
+                val msg = e.message ?: ""
+                val is401 = msg.contains("401", ignoreCase = true) ||
+                        (e is retrofit2.HttpException && e.code() == 401)
+                if (is401) {
+                    sessionManager.clearSession()
+                    Toast.makeText(this@AdminDashboardActivity, "Session expired or owner account reset. Please sign in or register.", Toast.LENGTH_LONG).show()
+                    val loginIntent = Intent(this@AdminDashboardActivity, com.antitheft.admin.auth.AdminLoginActivity::class.java)
+                    loginIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(loginIntent)
+                    finish()
+                } else {
+                    Toast.makeText(this@AdminDashboardActivity, "Error loading devices: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
     private fun showCommandSelectionDialog(device: DeviceDto) {
-        val commands = arrayOf("LOCK", "RING", "STOP_RING", "LOCATE", "STOLEN_MODE", "EXIT_KIOSK", "UNPAIR", "CLEAR_DEVICE_OWNER")
+        val commands = arrayOf(
+            "LOCATE",
+            "RING",
+            "STOP_RING",
+            "LOCK",
+            "TEST_MODE (Drill)",
+            "STOLEN_MODE (Real OG)",
+            "EXIT_KIOSK",
+            "UNPAIR",
+            "CLEAR_DEVICE_OWNER"
+        )
         AlertDialog.Builder(this)
             .setTitle("Send Command to ${device.device_alias}")
             .setItems(commands) { _, which ->
-                val selectedCmd = commands[which]
-                if (selectedCmd == "CLEAR_DEVICE_OWNER") {
-                    showDestructiveClearOwnerDialog(device.id)
-                } else {
-                    promptForTotpAndDispatch(device.id, selectedCmd)
+                when (val selectedCmd = commands[which]) {
+                    "CLEAR_DEVICE_OWNER" -> showDestructiveClearOwnerDialog(device.id)
+                    "TEST_MODE (Drill)" -> promptForTotpAndDispatch(device.id, "STOLEN_MODE", "{\"test_mode\": true}")
+                    "STOLEN_MODE (Real OG)" -> promptForTotpAndDispatch(device.id, "STOLEN_MODE", "{\"test_mode\": false}")
+                    else -> promptForTotpAndDispatch(device.id, selectedCmd, "{}")
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -135,13 +167,13 @@ class AdminDashboardActivity : AppCompatActivity() {
                     Toast.makeText(this, "Valid 6-digit TOTP or emergency recovery code (XXXX-XXXX) required", Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
-                dispatchCommandOnline(targetDeviceId, "CLEAR_DEVICE_OWNER", totpCode)
+                dispatchCommandOnline(targetDeviceId, "CLEAR_DEVICE_OWNER", totpCode, "{}")
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun promptForTotpAndDispatch(targetDeviceId: String, commandType: String) {
+    private fun promptForTotpAndDispatch(targetDeviceId: String, commandType: String, paramsJson: String = "{}") {
         val input = EditText(this).apply {
             hint = "6-digit TOTP or recovery code (XXXX-XXXX)"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
@@ -154,13 +186,13 @@ class AdminDashboardActivity : AppCompatActivity() {
             .setView(input)
             .setPositiveButton("Sign & Dispatch") { _, _ ->
                 val totpCode = input.text.toString().trim()
-                dispatchCommandOnline(targetDeviceId, commandType, totpCode)
+                dispatchCommandOnline(targetDeviceId, commandType, totpCode, paramsJson)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    fun dispatchCommandOnline(targetDeviceId: String, commandType: String, totpCode: String) {
+    fun dispatchCommandOnline(targetDeviceId: String, commandType: String, totpCode: String, customParamsJson: String = "{}") {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val api = ApiClient.create(sessionManager)
@@ -189,7 +221,7 @@ class AdminDashboardActivity : AppCompatActivity() {
                 val cmdId = UUID.randomUUID().toString()
                 val seq = sessionManager.getNextCommandSequence()
                 val expiryEpoch = (System.currentTimeMillis() / 1000) + 300
-                val paramsJson = "{}"
+                val paramsJson = customParamsJson
                 val pairingId = sessionManager.getDevicePairingId(targetDeviceId) ?: ""
 
                 val canonicalBytes = EcdsaSigner.createCanonicalCommandBytes(
@@ -267,6 +299,8 @@ class DeviceAdapter(
         private val tvCoordinates: TextView = itemView.findViewById(R.id.tvCoordinates)
         private val tvCaptureTime: TextView = itemView.findViewById(R.id.tvCaptureTime)
         private val tvReceiptTime: TextView = itemView.findViewById(R.id.tvReceiptTime)
+        private val btnViewOnMap: Button = itemView.findViewById(R.id.btnViewOnMap)
+        private val btnLocationInfo: Button = itemView.findViewById(R.id.btnLocationInfo)
         private val btnSendCommand: Button = itemView.findViewById(R.id.btnSendCommand)
 
         fun bind(device: DeviceDto) {
@@ -299,10 +333,55 @@ class DeviceAdapter(
                 )
                 tvCaptureTime.text = "Capture: ${loc.capture_time}"
                 tvReceiptTime.text = "Server Receipt: ${loc.server_receipt_time}"
+
+                btnViewOnMap.isEnabled = true
+                btnViewOnMap.setOnClickListener {
+                    val context = itemView.context
+                    try {
+                        val label = Uri.encode(device.device_alias)
+                        val geoUri = Uri.parse("geo:${loc.latitude},${loc.longitude}?q=${loc.latitude},${loc.longitude}($label)")
+                        val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
+                        if (mapIntent.resolveActivity(context.packageManager) != null) {
+                            context.startActivity(mapIntent)
+                        } else {
+                            val webUri = Uri.parse("https://maps.google.com/?q=${loc.latitude},${loc.longitude}")
+                            context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                        }
+                    } catch (e: Exception) {
+                        val webUri = Uri.parse("https://maps.google.com/?q=${loc.latitude},${loc.longitude}")
+                        context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                    }
+                }
             } else {
                 tvCoordinates.text = "No location fix recorded"
                 tvCaptureTime.text = "Capture: N/A"
                 tvReceiptTime.text = "Server Receipt: N/A"
+
+                btnViewOnMap.isEnabled = false
+                btnViewOnMap.setOnClickListener {
+                    Toast.makeText(itemView.context, "No location fix recorded yet for ${device.device_alias}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            btnLocationInfo.setOnClickListener {
+                val context = itemView.context
+                AlertDialog.Builder(context)
+                    .setTitle("🛰️ Handset Telemetry & Location Guide")
+                    .setMessage(
+                        "• Real-Time GPS Fixes:\n" +
+                        "  Guardian captures hardware GPS and cellular fixes, signing every coordinate packet with its hardware ECDSA key before sending it to your private server.\n\n" +
+                        "• Direct Boot Resumption:\n" +
+                        "  Even if a thief restarts the phone and leaves it locked at the PIN screen, tracking starts automatically in Device Encrypted Storage.\n\n" +
+                        "• Margin of Accuracy (±meters):\n" +
+                        "  Shows the GPS radius uncertainty. Values under ±20m indicate pinpoint satellite lock; larger values reflect cell tower approximation.\n\n" +
+                        "• Timestamps:\n" +
+                        "  - Capture Time: Moment satellites locked on the handset.\n" +
+                        "  - Server Receipt: Moment your private server verified and stored the telemetry.\n\n" +
+                        "• Zero-Telemetry Privacy:\n" +
+                        "  Location data is stored strictly in your own database. It is never sold, shared, or accessible by third parties."
+                    )
+                    .setPositiveButton("Got It", null)
+                    .show()
             }
 
             btnSendCommand.setOnClickListener {

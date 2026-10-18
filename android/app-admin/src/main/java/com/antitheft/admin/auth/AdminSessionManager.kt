@@ -32,7 +32,8 @@ class AdminSessionManager(context: Context) {
     }
 
     fun getServerUrl(): String {
-        return secureStorage.getDecryptedString(KEY_SERVER_URL, "http://10.0.2.2:8000") ?: "http://10.0.2.2:8000"
+        val defaultUrl = if (isEmulator()) "http://10.0.2.2:8000" else "http://127.0.0.1:8000"
+        return secureStorage.getDecryptedString(KEY_SERVER_URL, defaultUrl) ?: defaultUrl
     }
 
     fun setServerUrl(url: String) {
@@ -74,12 +75,22 @@ class AdminSessionManager(context: Context) {
     }
 
     fun getAdminPhoneNumber(): String {
-        return secureStorage.getDecryptedString(KEY_ADMIN_PHONE, "+15555215556") ?: "+15555215556"
+        return secureStorage.getDecryptedString(KEY_ADMIN_PHONE, "") ?: ""
     }
 
     fun setAdminPhoneNumber(phone: String) {
         val normalized = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(phone)
         secureStorage.putEncryptedString(KEY_ADMIN_PHONE, normalized)
+    }
+
+    fun isEmulator(): Boolean {
+        val fp = android.os.Build.FINGERPRINT
+        val model = android.os.Build.MODEL
+        val hw = android.os.Build.HARDWARE
+        return (fp.startsWith("generic") || fp.startsWith("unknown")
+                || model.contains("google_sdk") || model.contains("Emulator")
+                || model.contains("Android SDK built for x86")
+                || hw.contains("goldfish") || hw.contains("ranchu"))
     }
 
     companion object {

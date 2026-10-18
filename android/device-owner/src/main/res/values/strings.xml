@@ -1,4 +1,4 @@
 <resources>
-    <string name="device_admin_label">Anti-Theft Device Protection</string>
-    <string name="device_admin_description">Enforces theft recovery restrictions (disallows factory reset, safe mode boot, and user modification) and activates kiosk lockdown in stolen mode.</string>
+    <string name="device_admin_label">SHE Device Protection</string>
+    <string name="device_admin_description">Enforces SHE (Sentinel for Handheld Equipment) theft recovery restrictions and stolen mode lockdown.</string>
 </resources>

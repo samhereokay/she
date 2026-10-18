@@ -23,7 +23,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import android.graphics.Color
+import android.net.Uri
 import android.widget.CheckBox
+import androidx.appcompat.app.AlertDialog
 import com.antitheft.deviceowner.DeviceOwnerManager
 import com.antitheft.deviceowner.SystemGuidanceManager
 import java.util.Locale
@@ -96,11 +98,19 @@ class GuardianMainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnCallEmergencyContact)?.setOnClickListener {
             val phone = storageHelper.getTrustedPhoneNumber().ifBlank { "+15550199" }
             try {
-                val callIntent = Intent(Intent.ACTION_CALL, android.net.Uri.parse("tel:$phone"))
-                startActivity(callIntent)
-            } catch (e: Exception) {
                 val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$phone"))
                 startActivity(dialIntent)
+            } catch (e: Exception) {
+                Toast.makeText(this@GuardianMainActivity, "Unable to launch emergency dialer", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<Button>(R.id.btnCallPolice112)?.setOnClickListener {
+            try {
+                val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:112"))
+                startActivity(dialIntent)
+            } catch (e: Exception) {
+                Toast.makeText(this@GuardianMainActivity, "Unable to launch emergency dialer", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -348,6 +358,7 @@ class GuardianMainActivity : AppCompatActivity() {
     private fun showPairingInputDialog() {
         val options = mutableListOf<String>()
         options.add("📷 Scan Admin QR Code (Camera)")
+        options.add("📋 Pair from Clipboard (Same Device)")
         if (com.antitheft.guardian.BuildConfig.DEBUG) {
             options.add("🛠️ Enter Payload Manually / Debug")
         }
@@ -355,15 +366,26 @@ class GuardianMainActivity : AppCompatActivity() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Pair with Admin Phone")
             .setItems(options.toTypedArray()) { _, which ->
-                if (which == 0) {
-                    val scanOptions = com.journeyapps.barcodescanner.ScanOptions().apply {
-                        setPrompt("Point camera at Admin pairing QR code")
-                        setBeepEnabled(true)
-                        setOrientationLocked(false)
+                when (which) {
+                    0 -> {
+                        val scanOptions = com.journeyapps.barcodescanner.ScanOptions().apply {
+                            setPrompt("Point camera at Admin pairing QR code")
+                            setBeepEnabled(true)
+                            setOrientationLocked(false)
+                        }
+                        qrScanLauncher.launch(scanOptions)
                     }
-                    qrScanLauncher.launch(scanOptions)
-                } else {
-                    showManualPairingDialog()
+                    1 -> {
+                        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                        if (clipText.startsWith("{") && clipText.contains("pairing_secret_hex")) {
+                            Toast.makeText(this, "Pairing from clipboard...", Toast.LENGTH_SHORT).show()
+                            applyPairingPayload(clipText)
+                        } else {
+                            Toast.makeText(this, "No valid pairing payload in clipboard. In Admin app, tap 'Pair on This Handset' first.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    else -> showManualPairingDialog()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -465,9 +487,10 @@ class GuardianMainActivity : AppCompatActivity() {
                     val reqJson = com.google.gson.Gson().toJson(reqBodyMap)
                     val mediaType = "application/json; charset=utf-8".toMediaType()
                     val body = reqJson.toRequestBody(mediaType)
+                    val cleanToken = pairingToken.trim().trim('"').trim('\'')
                     val request = okhttp3.Request.Builder()
                         .url(pairEndpoint)
-                        .header("Authorization", "Bearer $pairingToken")
+                        .header("Authorization", "Bearer $cleanToken")
                         .post(body)
                         .build()
 
@@ -479,8 +502,8 @@ class GuardianMainActivity : AppCompatActivity() {
 
                     if (response.isSuccessful) {
                         // Atomic commit: Only persist credentials when backend pairing is successful
-                        if (!serverUrl.isNullOrBlank()) {
-                            storageHelper.setServerUrl(serverUrl)
+                        if (!effectiveServerUrl.isNullOrBlank()) {
+                            storageHelper.setServerUrl(effectiveServerUrl)
                         }
                         if (!adminPubPem.isNullOrBlank()) {
                             storageHelper.setAdminPublicKeyPem(adminPubPem)
@@ -508,8 +531,14 @@ class GuardianMainActivity : AppCompatActivity() {
                         successMsg = "Device enrollment requested! Confirm code: $confirmationCode on Admin phone."
                         android.util.Log.i("GuardianPairing", "PAIRED_SUCCESSFULLY DeviceID: $returnedId PairingID: $pairingId")
                     } else {
-                        android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}")
-                        successMsg = "Pairing rejected by backend (HTTP ${response.code})"
+                        val errorDetail = try {
+                            val errObj = com.google.gson.JsonParser.parseString(respBody).asJsonObject
+                            errObj.get("detail")?.asString ?: respBody
+                        } catch (_: Exception) {
+                            respBody
+                        }
+                        android.util.Log.w("GuardianPairing", "Backend pairing returned HTTP ${response.code}: $errorDetail")
+                        successMsg = "Pairing rejected by backend (HTTP ${response.code}): $errorDetail"
                     }
                 }
 
@@ -527,7 +556,13 @@ class GuardianMainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 android.util.Log.e("GuardianPairing", "Error applying pairing payload", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@GuardianMainActivity, "Pairing error: ${e.message}", Toast.LENGTH_LONG).show()
+                    val msg = e.message ?: "Unknown error"
+                    val userTip = if (msg.contains("127.0.0.1")) {
+                        "Connection failed to 127.0.0.1:8000. For Wi-Fi pairing across two phones, generate QR with PC's IP (e.g. http://192.168.0.105:8000). For USB, run: adb reverse tcp:8000 tcp:8000"
+                    } else {
+                        "Pairing error: $msg"
+                    }
+                    Toast.makeText(this@GuardianMainActivity, userTip, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -555,6 +590,8 @@ class GuardianMainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 val tvLastLocation = findViewById<TextView>(R.id.tvLastLocation)
                 val tvQueueCount = findViewById<TextView>(R.id.tvQueueCount)
+                val btnViewLocationMap = findViewById<Button>(R.id.btnViewLocationMap)
+                val btnLocationInfo = findViewById<Button>(R.id.btnLocationInfo)
 
                 if (latest != null) {
                     tvLastLocation.text = String.format(
@@ -564,8 +601,45 @@ class GuardianMainActivity : AppCompatActivity() {
                         latest.longitude,
                         latest.accuracy
                     )
+                    btnViewLocationMap.isEnabled = true
+                    btnViewLocationMap.setOnClickListener {
+                        try {
+                            val geoUri = Uri.parse("geo:${latest.latitude},${latest.longitude}?q=${latest.latitude},${latest.longitude}(Guardian Handset)")
+                            val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
+                            if (mapIntent.resolveActivity(packageManager) != null) {
+                                startActivity(mapIntent)
+                            } else {
+                                val webUri = Uri.parse("https://maps.google.com/?q=${latest.latitude},${latest.longitude}")
+                                startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                            }
+                        } catch (e: Exception) {
+                            val webUri = Uri.parse("https://maps.google.com/?q=${latest.latitude},${latest.longitude}")
+                            startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                        }
+                    }
                 } else {
                     tvLastLocation.text = "Last Fix: None"
+                    btnViewLocationMap.isEnabled = false
+                    btnViewLocationMap.setOnClickListener {
+                        Toast.makeText(this@GuardianMainActivity, "No GPS fix captured yet", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                btnLocationInfo.setOnClickListener {
+                    AlertDialog.Builder(this@GuardianMainActivity)
+                        .setTitle("🛰️ Handset Telemetry & Location Guide")
+                        .setMessage(
+                            "• Real-Time GPS Tracking:\n" +
+                            "  Guardian captures hardware GPS and network provider fixes, signing each coordinate packet with this phone's hardware-bound ECDSA P-256 key before transmitting it to your private server.\n\n" +
+                            "• Direct Boot Resumption:\n" +
+                            "  Runs in Device Encrypted Storage (DES) so tracking starts automatically when the phone turns on, even before you unlock your screen PIN.\n\n" +
+                            "• Accuracy (acc: ±m):\n" +
+                            "  Indicates GPS satellite accuracy in meters. Lower numbers mean tighter pinpoint precision.\n\n" +
+                            "• 100% Zero-Telemetry Guarantee:\n" +
+                            "  Coordinates are sent directly to your own self-hosted or private server. No analytics, no third-party tracking."
+                        )
+                        .setPositiveButton("Got It", null)
+                        .show()
                 }
 
                 tvQueueCount.text = "Offline Queue: $pendingCount pending"

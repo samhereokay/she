@@ -1,0 +1,109 @@
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 73 files tracked by git with 1145 Code rules:
+                                                                                                                        
+  Language      Rules   Files          Origin      Rules                                                                
+ ─────────────────────────────        ───────────────────                                                               
+  <multilang>      53      73          Community    1145                                                                
+  kotlin           18      50                                                                                           
+                                                                                                                        
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+✅ Scan completed successfully.
+ • Findings: 6 (6 blocking)
+ • Rules run: 71
+ • Targets scanned: 73
+ • Parsed lines: ~100.0%
+ • Scan skipped: 
+   ◦ Files matching .semgrepignore patterns: 13
+ • Scan was limited to files tracked by git
+ • For a detailed list of skipped files and lines, run semgrep with the --verbose flag
+Ran 71 rules on 73 files: 6 findings.
+                   
+                   
+┌─────────────────┐
+│ 6 Code Findings │
+└─────────────────┘
+                                                  
+    android/app-admin/src/main/AndroidManifest.xml
+    ❯❱ java.android.security.exported_activity.exported_activity
+          ❰❰ Blocking ❱❱
+          The application exports an activity. Any application on the device can launch the exported activity
+          which may compromise the integrity of your application or its data.  Ensure that any exported      
+          activities do not have privileged access to your application's control plane.                      
+          Details: https://sg.run/eNGZ                                                                       
+                                                                                                             
+           15┆ <activity
+           16┆     android:name=".auth.AdminLoginActivity"
+           17┆     android:exported="true">
+           18┆     <intent-filter>
+           19┆         <action android:name="android.intent.action.MAIN" />
+                                                                                  
+    android/app-admin/src/main/java/com/antitheft/admin/vault/AdminVaultManager.kt
+     ❱ kotlin.lang.security.gcm-detection.gcm-detection
+          ❰❰ Blocking ❱❱
+          GCM detected, please check that IV/nonce is not reused, an Initialization Vector (IV) is a nonce    
+          used to randomize the encryption, so that even if multiple messages with identical plaintext are    
+          encrypted, the generated corresponding ciphertexts are different.Unlike the Key, the IV usually does
+          not need to be secret, rather it is important that it is random and unique. Certain encryption      
+          schemes the IV is exchanged in public as part of the ciphertext. Reusing same Initialization Vector 
+          with the same Key to encrypt multiple plaintext blocks allows an attacker to compare the ciphertexts
+          and then, with some assumptions on the content of the messages, to gain important information about 
+          the data being encrypted.                                                                           
+          Details: https://sg.run/WpPA                                                                        
+                                                                                                              
+           80┆ val testCipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            ⋮┆----------------------------------------
+          104┆ val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+                                                     
+    android/app-guardian/src/main/AndroidManifest.xml
+    ❯❱ java.android.security.exported_activity.exported_activity
+          ❰❰ Blocking ❱❱
+          The application exports an activity. Any application on the device can launch the exported activity
+          which may compromise the integrity of your application or its data.  Ensure that any exported      
+          activities do not have privileged access to your application's control plane.                      
+          Details: https://sg.run/eNGZ                                                                       
+                                                                                                             
+           41┆ <activity
+           42┆     android:name=".ui.GuardianMainActivity"
+           43┆     android:exported="true"
+           44┆     android:directBootAware="false">
+           45┆     <intent-filter>
+           46┆         <action android:name="android.intent.action.MAIN" />
+                                                                                          
+    android/common-core/src/main/java/com/antitheft/common/crypto/KeystoreAesGcmStorage.kt
+     ❱ kotlin.lang.security.gcm-detection.gcm-detection
+          ❰❰ Blocking ❱❱
+          GCM detected, please check that IV/nonce is not reused, an Initialization Vector (IV) is a nonce    
+          used to randomize the encryption, so that even if multiple messages with identical plaintext are    
+          encrypted, the generated corresponding ciphertexts are different.Unlike the Key, the IV usually does
+          not need to be secret, rather it is important that it is random and unique. Certain encryption      
+          schemes the IV is exchanged in public as part of the ciphertext. Reusing same Initialization Vector 
+          with the same Key to encrypt multiple plaintext blocks allows an attacker to compare the ciphertexts
+          and then, with some assumptions on the content of the messages, to gain important information about 
+          the data being encrypted.                                                                           
+          Details: https://sg.run/WpPA                                                                        
+                                                                                                              
+           91┆ val spec = GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv)
+                                                                                      
+    android/common-core/src/main/java/com/antitheft/common/vault/VaultCryptoManager.kt
+     ❱ kotlin.lang.security.gcm-detection.gcm-detection
+          ❰❰ Blocking ❱❱
+          GCM detected, please check that IV/nonce is not reused, an Initialization Vector (IV) is a nonce    
+          used to randomize the encryption, so that even if multiple messages with identical plaintext are    
+          encrypted, the generated corresponding ciphertexts are different.Unlike the Key, the IV usually does
+          not need to be secret, rather it is important that it is random and unique. Certain encryption      
+          schemes the IV is exchanged in public as part of the ciphertext. Reusing same Initialization Vector 
+          with the same Key to encrypt multiple plaintext blocks allows an attacker to compare the ciphertexts
+          and then, with some assumptions on the content of the messages, to gain important information about 
+          the data being encrypted.                                                                           
+          Details: https://sg.run/WpPA                                                                        
+                                                                                                              
+           81┆ val spec = GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv)
+

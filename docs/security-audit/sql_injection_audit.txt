@@ -1,0 +1,17 @@
+# SQL Query Parameterization & Injection Sanity Check
+Date: 2026-10-18
+Scope: backend/app/
+
+## Audit Methodology
+Inspected all database query execution points across `backend/app/` for raw SQL string concatenation, unescaped f-strings, or raw `text()` expressions executed against SQLAlchemy sessions or connections.
+
+## Raw grep commands executed:
+1. `grep -rn "execute(" backend/app/` -> 0 occurrences
+2. `grep -rn "text(" backend/app/` -> 0 occurrences
+3. `grep -rn "session.execute" backend/app/` -> 0 occurrences
+
+## Findings
+All database interactions use SQLAlchemy ORM high-level query abstraction (`db.query(User).filter(...)`, `db.add()`, `db.commit()`).
+Variables are strictly bound as parameterized SQL variables by SQLAlchemy's dialect compiler.
+
+Status: Clean. No raw string-interpolated SQL statements found.

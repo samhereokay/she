@@ -6,6 +6,9 @@ __pycache__/
 .Python
 backend/venv/
 backend/.packages/
+.venv/
+.venv_audit/
+SHE app icon variants/
 .pytest_cache/
 *.db
 *.sqlite3

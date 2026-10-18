@@ -85,6 +85,10 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     return user
 
 
+# Constant-time dummy hash to normalize Argon2id execution time and eliminate timing-based user enumeration
+_DUMMY_ARGON2_HASH = hash_password("dummy-entropy-for-constant-time-auth")
+
+
 @router.post("/login", response_model=Token)
 def login(
     request: Request,
@@ -98,13 +102,35 @@ def login(
         (User.username == form_data.username) | (User.email == form_data.username)
     ).first()
     
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if user:
+        is_valid = verify_password(form_data.password, user.hashed_password)
+    else:
+        # Run dummy verification to equalize response timing with genuine accounts (~80ms Argon2id)
+        verify_password(form_data.password, _DUMMY_ARGON2_HASH)
+        is_valid = False
+
+    if not is_valid:
+        audit = AuditEvent(
+            user_id=user.id if user else None,
+            event_type="LOGIN_FAILED",
+            details=f"Failed login attempt for identifier '{form_data.username}'."
+        )
+        db.add(audit)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    audit = AuditEvent(
+        user_id=user.id,
+        event_type="LOGIN_SUCCESS",
+        details="User authenticated successfully via password (1FA)."
+    )
+    db.add(audit)
+    db.commit()
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     # Password authentication ALWAYS issues a 1FA token (is_2fa=False).
     # Two-factor authentication (TOTP) is mandatory for privileged commands/vault/pairing.
@@ -134,13 +160,35 @@ def login_json(
         (User.username == login_data.username) | (User.email == login_data.username)
     ).first()
     
-    if not user or not verify_password(login_data.password, user.hashed_password):
+    if user:
+        is_valid = verify_password(login_data.password, user.hashed_password)
+    else:
+        # Run dummy verification to equalize response timing with genuine accounts (~80ms Argon2id)
+        verify_password(login_data.password, _DUMMY_ARGON2_HASH)
+        is_valid = False
+
+    if not is_valid:
+        audit = AuditEvent(
+            user_id=user.id if user else None,
+            event_type="LOGIN_FAILED",
+            details=f"Failed login attempt for identifier '{login_data.username}'."
+        )
+        db.add(audit)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    audit = AuditEvent(
+        user_id=user.id,
+        event_type="LOGIN_SUCCESS",
+        details="User authenticated successfully via password (1FA)."
+    )
+    db.add(audit)
+    db.commit()
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     # Password authentication ALWAYS issues a 1FA token (is_2fa=False).
     token = create_access_token(
@@ -352,11 +400,11 @@ def create_device_pairing_token(
     token = create_pairing_token(
         user_id=current_user.id,
         trusted_device_id=req.trusted_device_id,
-        expires_minutes=5
+        expires_minutes=15
     )
     return PairingTokenResponse(
         pairing_token=token,
-        expires_in_seconds=300
+        expires_in_seconds=900
     )
 
 

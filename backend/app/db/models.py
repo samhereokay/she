@@ -157,3 +157,18 @@ class VaultItem(Base):
 
     user = relationship("User", back_populates="vault_items")
 
+
+class BugReport(Base):
+    """User feedback, issue logs, and vulnerability submissions."""
+    __tablename__ = "bug_reports"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(128), nullable=False)
+    email = Column(String(255), nullable=True)
+    device_model = Column(String(128), nullable=True)
+    android_version = Column(String(64), nullable=True)
+    severity = Column(String(32), default="LOW", nullable=False)  # LOW, MEDIUM, HIGH, CRITICAL
+    description = Column(Text, nullable=False)
+    status = Column(String(32), default="NEW", nullable=False)  # NEW, TRIAGED, RESOLVED, DISMISSED
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+

@@ -1,0 +1,82 @@
+Run started:2026-10-18 12:34:03.562321+00:00
+
+Test results:
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: backend/app/api/auth.py:118:8
+117	        "access_token": token,
+118	        "token_type": "bearer",
+119	        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+120	        "is_2fa": False
+121	    }
+122	
+123	
+124	@router.post("/login/json", response_model=Token)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: backend/app/api/auth.py:153:8
+152	        "access_token": token,
+153	        "token_type": "bearer",
+154	        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+155	        "is_2fa": False
+156	    }
+157	
+158	
+159	def generate_recovery_codes(count: int = 8) -> tuple[list[str], list[str]]:
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: backend/app/api/auth.py:228:8
+227	        "access_token": token,
+228	        "token_type": "bearer",
+229	        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+230	        "is_2fa": True,
+231	        "recovery_codes": plain_codes
+232	    }
+233	
+234	
+235	@router.post("/totp/validate", response_model=Token)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: backend/app/api/auth.py:292:8
+291	        "access_token": token,
+292	        "token_type": "bearer",
+293	        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+294	        "is_2fa": True
+295	    }
+296	
+297	
+298	@router.post("/totp/disable", response_model=TotpStatusResponse)
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 2116
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 4
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 4
+		High: 0
+Files skipped (0):

@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Guardian</string>
-    <string name="status_title">Guardian Protection Status</string>
+    <string name="app_name">SHE Guardian</string>
+    <string name="status_title">SHE Protection Status</string>
     <string name="status_active">Protection Active</string>
     <string name="tier1_title">Tier 1: OS Security Guidance Checklist</string>
     <string name="tier1_find_hub">1. Google Find Hub (Find My Device) enabled</string>

@@ -1,10 +1,12 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+import logging
 from app.db.session import get_db
 from app.db.models import User
 from app.core.security import verify_access_token, verify_pairing_token, claim_pairing_token_jti
 
+logger = logging.getLogger("uvicorn.error")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
@@ -83,8 +85,10 @@ def get_pairing_token_user(
     Strict dependency enforcing a valid, unconsumed, short-lived device pairing token.
     Atomically claims JTI upon verification.
     """
-    payload = verify_pairing_token(token)
+    clean_token = token.strip().strip('"').strip("'")
+    payload = verify_pairing_token(clean_token)
     if not payload or "sub" not in payload:
+        logger.warning(f"get_pairing_token_user: Invalid, expired, or already-consumed token (token_len={len(clean_token)})")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid, expired, or already-consumed pairing token",
@@ -94,6 +98,7 @@ def get_pairing_token_user(
     # Claim JTI
     jti = payload.get("jti")
     if not jti or not claim_pairing_token_jti(jti):
+        logger.warning(f"get_pairing_token_user: JTI {jti} already claimed or missing")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Pairing token has already been consumed",
@@ -102,5 +107,6 @@ def get_pairing_token_user(
 
     user = db.query(User).filter(User.id == payload["sub"]).first()
     if user is None:
+        logger.warning(f"get_pairing_token_user: User ID {payload.get('sub')} not found")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user, payload

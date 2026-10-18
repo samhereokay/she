@@ -41,7 +41,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="This device is protected by Anti-Theft Guardian. If found, please return to owner immediately:"
+                    android:text="This device is protected by SHE (Sentinel for Handheld Equipment). If found, please return to owner immediately:"
                     android:textColor="#7F1D1D"
                     android:textSize="13sp" />
 
@@ -62,6 +62,15 @@
                     android:layout_marginTop="10dp"
                     android:backgroundTint="#DC2626"
                     android:text="CALL OWNER EMERGENCY CONTACT"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnCallPolice112"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#1E3A8A"
+                    android:text="CALL EMERGENCY SERVICES (112)"
                     android:textColor="#FFFFFF" />
 
                 <TextView
@@ -134,6 +143,29 @@
                     android:layout_marginTop="4dp"
                     android:text="Offline Queue: 0 pending"
                     android:textSize="14sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnViewLocationMap"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="🗺️ View on Map" />
+
+                    <Button
+                        android:id="@+id/btnLocationInfo"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="ℹ️ Info" />
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"

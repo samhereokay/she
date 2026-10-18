@@ -2,7 +2,7 @@ import base64
 import json
 import time
 import hashlib
-import random
+import secrets
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -76,7 +76,7 @@ def pair_device(
     current_user, token_payload = pairing_data
     pairing_hash = hashlib.sha256(pair_in.pairing_secret.encode("utf-8")).hexdigest()
     pairing_id = generate_uuid()
-    confirmation_code = f"{random.randint(100, 999)}-{random.randint(100, 999)}"
+    confirmation_code = f"{secrets.randbelow(900) + 100}-{secrets.randbelow(900) + 100}"
     
     if pair_in.device_id:
         existing = db.query(ProtectedDevice).filter(ProtectedDevice.id == pair_in.device_id).first()
@@ -551,6 +551,14 @@ def dispatch_command(
         status="PENDING"
     )
     db.add(command)
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        protected_device_id=target.id,
+        event_type="COMMAND_DISPATCHED",
+        details=f"Command {req.command_type} (seq #{req.sequence_counter}) dispatched to device {target.device_alias} ({target.id}) by Admin device {trusted.device_name}."
+    )
+    db.add(audit)
     db.commit()
     db.refresh(command)
     return command

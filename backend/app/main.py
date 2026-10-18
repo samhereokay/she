@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.locations import router as locations_router
 from app.api.vault import router as vault_router
+from app.api.web import router as web_router
 
 # Auto-create tables for development / SQLite testing
 Base.metadata.create_all(bind=engine)
@@ -13,23 +14,61 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="Backend service for Android Anti-Theft & Recovery System"
+    description="Backend service for Android Anti-Theft & Recovery System",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
-# CORS Middleware for local development and admin UI
+import logging
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("uvicorn.error")
+
+# CORS Middleware with restricted origins (prevent wildcard credentials vulnerability)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Inject OWASP ASVS recommended security headers on all HTTP responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if settings.ENFORCE_HTTPS:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return response
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Fail-safe global exception handler:
+    Logs full traceback internally while ensuring zero stack traces or internal
+    exception details are ever leaked to the client in production responses.
+    """
+    logger.error(f"Unhandled server error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
 
 # Register API Routers
 app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(locations_router)
 app.include_router(vault_router)
+app.include_router(web_router)
 
 
 @app.get("/health", tags=["Health"])

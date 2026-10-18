@@ -55,7 +55,8 @@ class DeviceOwnerManager {
             UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
             UserManager.DISALLOW_UNINSTALL_APPS,
             UserManager.DISALLOW_MODIFY_ACCOUNTS,
-            UserManager.DISALLOW_AIRPLANE_MODE
+            UserManager.DISALLOW_AIRPLANE_MODE,
+            UserManager.DISALLOW_ADJUST_VOLUME
         )
 
         for (res in restrictions) {
@@ -92,7 +93,8 @@ class DeviceOwnerManager {
             UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
             UserManager.DISALLOW_UNINSTALL_APPS,
             UserManager.DISALLOW_MODIFY_ACCOUNTS,
-            UserManager.DISALLOW_AIRPLANE_MODE
+            UserManager.DISALLOW_AIRPLANE_MODE,
+            UserManager.DISALLOW_ADJUST_VOLUME
         )
 
         for (res in restrictions) {

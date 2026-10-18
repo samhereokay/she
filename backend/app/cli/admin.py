@@ -130,6 +130,57 @@ def handle_status(args):
             db.close()
 
 
+def handle_setup_2fa(args):
+    db, should_close = get_db(args)
+    try:
+        username = args.username.strip()
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            print(f"[ERROR] User '{username}' not found.", file=sys.stderr)
+            sys.exit(1)
+
+        from app.core.security import generate_totp_secret, encrypt_totp_secret, get_totp_uri, verify_totp_code
+        from app.api.auth import generate_recovery_codes
+        import json
+
+        secret = generate_totp_secret()
+        uri = get_totp_uri(secret, user.username)
+
+        print("=" * 64)
+        print("          TWO-FACTOR AUTHENTICATION (TOTP) ENROLLMENT")
+        print("=" * 64)
+        print(f"Account: {user.username} ({user.email})")
+        print("\n1. In your Authenticator App (Google Authenticator, Aegis, Bitwarden):")
+        print("   Tap '+' -> 'Enter a setup key' (or 'Scan QR')")
+        print(f"   Account Name: SHE ({user.username})")
+        print(f"   Secret Key  : {secret}")
+        print("   Key Type    : Time-based (TOTP)\n")
+        print(f"Authenticator URI: {uri}\n")
+
+        code = input("2. Enter the current 6-digit code shown in Google Authenticator to verify: ").strip()
+        if not verify_totp_code(secret, code):
+            print("[ERROR] Invalid TOTP code. 2FA enrollment cancelled.", file=sys.stderr)
+            sys.exit(1)
+
+        plain_codes, recovery_hashes = generate_recovery_codes()
+        user.totp_secret = encrypt_totp_secret(secret)
+        user.totp_enabled = True
+        user.totp_recovery_hashes = json.dumps(recovery_hashes)
+        db.commit()
+
+        print("\n[SUCCESS] Two-Factor Authentication (2FA) successfully ACTIVATED!")
+        print("=" * 64)
+        print("CRITICAL: SAVE THESE 8 SINGLE-USE EMERGENCY RECOVERY CODES:")
+        print("(Write these down on paper. If your phone is stolen, use one to bypass TOTP)")
+        print("-" * 64)
+        for i, rc in enumerate(plain_codes, 1):
+            print(f"  Code {i}: {rc}")
+        print("=" * 64)
+    finally:
+        if should_close:
+            db.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="python -m app.cli.admin",
@@ -149,6 +200,11 @@ def main():
     reset_parser.add_argument("--force", "-f", action="store_true", help="Bypass interactive confirmation")
     reset_parser.set_defaults(func=handle_reset_owner)
 
+    # setup-2fa
+    setup_2fa_parser = subparsers.add_parser("setup-2fa", help="Enroll Two-Factor Authentication (TOTP) and generate recovery codes")
+    setup_2fa_parser.add_argument("--username", "-u", required=True, help="Owner username to enroll")
+    setup_2fa_parser.set_defaults(func=handle_setup_2fa)
+
     # status
     status_parser = subparsers.add_parser("status", help="Show owner and registration lockdown status")
     status_parser.set_defaults(func=handle_status)
@@ -159,3 +215,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

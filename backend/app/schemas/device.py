@@ -19,7 +19,7 @@ class PairingTokenCreateRequest(BaseModel):
 
 class PairingTokenResponse(BaseModel):
     pairing_token: str
-    expires_in_seconds: int = 300
+    expires_in_seconds: int = 900
 
 
 class PairingConfirmRequest(BaseModel):
