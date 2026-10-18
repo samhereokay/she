@@ -103,7 +103,7 @@ def test_releases_page_and_binary_downloads():
     assert "she-guardian.apk" in resp_r.text
     assert "she-admin.apk" in resp_r.text
     assert "f43a804f84fa92d54a6d7a07eb625dac9c8627ee7670abd3c67b3fa17e03b037" in resp_r.text
-    assert "69d9bb325cdcf3b480be6b667b6d317ee203dae05011e7f21c659d08d25505d2" in resp_r.text
+    assert "3fafa29182a74b648109d2f225ab652e5c677042d9fa5f063ef3fc42a131b59a" in resp_r.text
 
     # Binary release downloads
     resp_g = client.get("/releases/download/she-guardian.apk")

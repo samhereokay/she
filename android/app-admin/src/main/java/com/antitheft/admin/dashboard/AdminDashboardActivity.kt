@@ -146,7 +146,37 @@ class AdminDashboardActivity : AppCompatActivity() {
                     else -> promptForTotpAndDispatch(device.id, selectedCmd, "{}")
                 }
             }
+            .setNeutralButton("ℹ️ Command Guide") { _, _ ->
+                showCommandGuideDialog()
+            }
             .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showCommandGuideDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("🛰️ SHE Recovery Command Guide")
+            .setMessage(
+                "• 🛰️ LOCATE:\n" +
+                "  Pings the handset's hardware GPS to capture and transmit fresh satellite coordinates over WebSocket immediately.\n\n" +
+                "• 🔊 RING:\n" +
+                "  Triggers loud acoustic emergency alarm at maximum hardware volume to pinpoint the handset nearby (overrides Silent/DND modes).\n\n" +
+                "• 🔕 STOP_RING:\n" +
+                "  Silences the active acoustic siren alert.\n\n" +
+                "• 🔒 LOCK:\n" +
+                "  Immediately turns off the screen and forces enterprise PIN/kiosk lockdown.\n\n" +
+                "• 🧪 TEST_MODE (Drill):\n" +
+                "  Executes a safe security drill simulation on the handset without triggering real emergency panic escalation.\n\n" +
+                "• 🚨 STOLEN_MODE (Real OG):\n" +
+                "  Arms comprehensive theft lockdown: hides status bar, suppresses notifications, locks into kiosk, and initiates high-frequency GPS tracking beacons.\n\n" +
+                "• 🚪 EXIT_KIOSK:\n" +
+                "  Releases kiosk lock and restores normal Android home screen launcher.\n\n" +
+                "• 🔗 UNPAIR:\n" +
+                "  Revokes mutual pairing handshake between this companion and the target handset.\n\n" +
+                "• ⚠️ CLEAR_DEVICE_OWNER:\n" +
+                "  Deprovisions Device Owner enterprise administration status (strictly requires 6-digit TOTP confirmation)."
+            )
+            .setPositiveButton("Got It", null)
             .show()
     }
 
@@ -180,9 +210,20 @@ class AdminDashboardActivity : AppCompatActivity() {
             setPadding(32, 32, 32, 32)
         }
 
+        val explanation = when (commandType) {
+            "LOCATE" -> "Pings hardware GPS to capture and stream fresh satellite coordinates."
+            "RING" -> "Sounds loud acoustic alarm at maximum volume (overrides silent mode)."
+            "STOP_RING" -> "Silences the active emergency siren alarm."
+            "LOCK" -> "Immediately turns off screen and locks the device into kiosk security."
+            "STOLEN_MODE" -> "Arms the handset: locks kiosk, suppresses notifications, and initiates high-frequency GPS beacons."
+            "EXIT_KIOSK" -> "Releases kiosk lock and restores default Android home screen."
+            "UNPAIR" -> "Revokes device pairing session from this controller."
+            else -> "Dispatches signed cryptographic recovery command."
+        }
+
         AlertDialog.Builder(this)
             .setTitle("Confirm $commandType Command")
-            .setMessage("Two-factor authentication is required to dispatch security recovery commands:")
+            .setMessage("$explanation\n\nEnter your 6-digit TOTP code or emergency recovery code (XXXX-XXXX) to sign and dispatch:")
             .setView(input)
             .setPositiveButton("Sign & Dispatch") { _, _ ->
                 val totpCode = input.text.toString().trim()

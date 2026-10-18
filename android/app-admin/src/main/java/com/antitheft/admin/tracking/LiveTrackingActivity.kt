@@ -70,10 +70,14 @@ class LiveTrackingActivity : AppCompatActivity() {
     private lateinit var btnSimulateDrill: Button
     private lateinit var btnPingLocate: Button
     private lateinit var btnRingSiren: Button
+    private lateinit var btnSearchOnMap: Button
+    private lateinit var btnCommandInfo: Button
 
     private var deviceId: String = ""
     private var deviceAlias: String = ""
     private var isMapLoaded = false
+    private var currentFixLat: Double? = null
+    private var currentFixLng: Double? = null
 
     private var webSocket: WebSocket? = null
     private val okHttpClient = OkHttpClient.Builder()
@@ -117,6 +121,8 @@ class LiveTrackingActivity : AppCompatActivity() {
         btnSimulateDrill = findViewById(R.id.btnSimulateDrill)
         btnPingLocate = findViewById(R.id.btnPingLocate)
         btnRingSiren = findViewById(R.id.btnRingSiren)
+        btnSearchOnMap = findViewById(R.id.btnSearchOnMap)
+        btnCommandInfo = findViewById(R.id.btnCommandInfo)
 
         tvDeviceTitle.text = deviceAlias
         findViewById<Button>(R.id.btnBack).setOnClickListener {
@@ -145,6 +151,33 @@ class LiveTrackingActivity : AppCompatActivity() {
 
         btnRingSiren.setOnClickListener {
             promptTotpAndDispatch("RING", "{}")
+        }
+
+        btnSearchOnMap.setOnClickListener {
+            val lat = currentFixLat
+            val lng = currentFixLng
+            if (lat != null && lng != null) {
+                try {
+                    val label = android.net.Uri.encode(deviceAlias)
+                    val geoUri = android.net.Uri.parse("geo:$lat,$lng?q=$lat,$lng($label)")
+                    val mapIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, geoUri)
+                    if (mapIntent.resolveActivity(packageManager) != null) {
+                        startActivity(mapIntent)
+                    } else {
+                        val webUri = android.net.Uri.parse("https://maps.google.com/?q=$lat,$lng")
+                        startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, webUri))
+                    }
+                } catch (e: Exception) {
+                    val webUri = android.net.Uri.parse("https://maps.google.com/?q=$lat,$lng")
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, webUri))
+                }
+            } else {
+                Toast.makeText(this, "Awaiting first satellite fix from handset...", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnCommandInfo.setOnClickListener {
+            showCommandInfoDialog()
         }
 
         // Show initial coordinates if passed
@@ -444,6 +477,8 @@ class LiveTrackingActivity : AppCompatActivity() {
         seq: Long,
         capTime: String
     ) {
+        currentFixLat = lat
+        currentFixLng = lng
         lastFixEpochMs = System.currentTimeMillis()
         tvHudCoordinates.text = String.format(Locale.US, "%.5f, %.5f", lat, lng)
         tvHudAccuracy.text = String.format(Locale.US, "±%.1fm", acc)
@@ -457,6 +492,33 @@ class LiveTrackingActivity : AppCompatActivity() {
 
         tvHudSequence.text = "Fix #$seq"
         tvHudSignalTime.text = if (capTime.isNotBlank()) "Sat: ${capTime.takeLast(12)}" else "Signal: Active"
+    }
+
+    private fun showCommandInfoDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("🛰️ SHE Recovery Command Guide")
+            .setMessage(
+                "• 🛰️ LOCATE:\n" +
+                "  Pings the handset's hardware GPS to capture and transmit fresh satellite coordinates over WebSocket immediately.\n\n" +
+                "• 🔊 RING:\n" +
+                "  Triggers loud acoustic emergency alarm at maximum hardware volume to pinpoint the handset nearby (overrides Silent/DND modes).\n\n" +
+                "• 🔕 STOP_RING:\n" +
+                "  Silences the active acoustic siren alert.\n\n" +
+                "• 🔒 LOCK:\n" +
+                "  Immediately turns off the screen and forces enterprise PIN/kiosk lockdown.\n\n" +
+                "• 🧪 TEST_MODE (Drill):\n" +
+                "  Executes a safe security drill simulation on the handset without triggering real emergency panic escalation.\n\n" +
+                "• 🚨 STOLEN_MODE (Real OG):\n" +
+                "  Arms comprehensive theft lockdown: hides status bar, suppresses notifications, locks into kiosk, and initiates high-frequency GPS tracking beacons.\n\n" +
+                "• 🚪 EXIT_KIOSK:\n" +
+                "  Releases kiosk lock and restores normal Android home screen launcher.\n\n" +
+                "• 🔗 UNPAIR:\n" +
+                "  Revokes mutual pairing handshake between this companion and the target handset.\n\n" +
+                "• ⚠️ CLEAR_DEVICE_OWNER:\n" +
+                "  Deprovisions Device Owner enterprise administration status (strictly requires 6-digit TOTP confirmation)."
+            )
+            .setPositiveButton("Got It", null)
+            .show()
     }
 
     private fun updateStatusBadge(text: String, textColorHex: String, bgHex: String) {
