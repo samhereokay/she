@@ -249,7 +249,10 @@ async def websocket_device_location_stream(
         return
 
     # Register and accept WebSocket connection
-    await ws_manager.connect(device_id, websocket)
+    connected = await ws_manager.connect(device_id, websocket)
+    if not connected:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Max concurrent connections reached for device")
+        return
 
     # Retrieve up to 50 recent points for breadcrumb trail
     recent_locs = (

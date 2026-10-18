@@ -193,8 +193,9 @@ class LiveTrackingActivity : AppCompatActivity() {
         webViewMap.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
-            allowFileAccess = true
+            databaseEnabled = false
+            allowFileAccess = false
+            allowContentAccess = false
             useWideViewPort = true
             loadWithOverviewMode = true
             cacheMode = WebSettings.LOAD_DEFAULT

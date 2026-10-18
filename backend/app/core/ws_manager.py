@@ -5,6 +5,9 @@ from fastapi import WebSocket
 logger = logging.getLogger("uvicorn.error")
 
 
+MAX_CONNECTIONS_PER_DEVICE = 10
+
+
 class LocationWebSocketManager:
     """
     Manages active WebSocket connections subscribed to real-time device location telemetry.
@@ -14,13 +17,18 @@ class LocationWebSocketManager:
     def __init__(self):
         self._active_connections: Dict[str, Set[WebSocket]] = {}
 
-    async def connect(self, device_id: str, websocket: WebSocket) -> None:
-        """Register and accept an authenticated WebSocket connection."""
+    async def connect(self, device_id: str, websocket: WebSocket) -> bool:
+        """Register and accept an authenticated WebSocket connection if under limits."""
+        if device_id in self._active_connections and len(self._active_connections[device_id]) >= MAX_CONNECTIONS_PER_DEVICE:
+            logger.warning(f"Rejecting WS connection for device {device_id}: Max connection limit ({MAX_CONNECTIONS_PER_DEVICE}) reached.")
+            return False
+
         await websocket.accept()
         if device_id not in self._active_connections:
             self._active_connections[device_id] = set()
         self._active_connections[device_id].add(websocket)
         logger.info(f"WebSocket client connected for device {device_id}. Total listeners: {len(self._active_connections[device_id])}")
+        return True
 
     def disconnect(self, device_id: str, websocket: WebSocket) -> None:
         """Unregister a disconnected WebSocket connection."""
