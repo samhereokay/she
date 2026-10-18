@@ -358,6 +358,8 @@ class AdminVaultActivity : AppCompatActivity() {
                 e.cause?.message?.contains("Key permanently invalidated") == true
             decryptedSecret = if (isKeyInvalidated) {
                 "[Key Invalidated (Screen Lock Changed): Tap 'Restore / Import' with passphrase]"
+            } else if (activePassphrase == null || activePassphrase?.isEmpty() == true) {
+                "[This phone has no local key. Passphrase restore required. Tap 'Restore / Import']"
             } else {
                 "[Decryption Failed: ${e.message ?: "Invalid passphrase or key mismatch"} - Tap 'Restore / Import']"
             }

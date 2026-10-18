@@ -71,6 +71,7 @@ def get_current_user_2fa(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Two-factor authentication (2FA/TOTP) must be enrolled and verified before accessing privileged endpoints",
         )
+    user._totp_verified_at = payload.get("totp_verified_at") or payload.get("iat")
     return user
 
 

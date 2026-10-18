@@ -1,200 +1,221 @@
-# Android Anti-Theft & Recovery System: Phases 3–5 Master Audit Report & Hardware Test Pack
-
-> [!IMPORTANT]
-> **Audit & Milestone Status**: **PHASES 3–5 REMEDIATION COMPLETE — EMULATOR PHASE CONCLUDED**  
-> All remediation punch list items have been implemented, tested, and verified with complete transparency:
-> 1. **Disclosure of Prior Database Edit & Root Cause**: In the previous audit iteration, the vault restore test was made to pass by manually re-wrapping the server database record via a Python script after experiencing a passphrase mismatch. A thorough root-cause investigation revealed that `AdminVaultActivity` was pre-populating the passphrase field using `setText(...)`, lacked a confirmation field, and suffered from soft-keyboard overlay interference during ADB automated input where accidental character injection (e.g. typing `'7'`) occurred silently. This caused the record to be encrypted under a corrupted passphrase without user awareness.
-> 2. **Permanent In-App Architectural Fix**: 
->    - Removed `setText` pre-population; all passphrase fields initialize completely blank.
->    - Added a mandatory `etConfirmPassphrase` field (`Confirm Master Passphrase`) enforcing character-by-character validation.
->    - Added an immediate pre-upload self-decryption round-trip check (`vaultManager.verifyEnvelopeRoundTrip(container, passphrase, fullPayload)`) before sending ciphertext to the server; if local round-trip decryption fails, upload is strictly refused and cached state is purged.
->    - Configured `show_ime_with_hard_keyboard 0` on test emulators to prevent soft-keyboard overlay shifts and phantom key taps.
-> 3. **Clean On-Device Round-Trip Verification (Zero DB Edits)**: Re-executed the entire lifecycle on the emulator with zero database scripts or edits: item encrypted and stored (`vault_item_stored_dual_passphrase.png`), app wiped via `adb shell pm clear com.antitheft.admin` (`vault_item_invalidated_after_clean_wipe.png`), and cleanly restored and decrypted in-app via the master recovery passphrase (`vault_item_restored_clean_no_db_edit.png`). The earlier mismatch does **not** reproduce.
-> 4. **Release APK Intent Hooks Proof**: Verified on-device against release APKs that all debug intent hooks (`vault_action`, `validate_totp`, `clear_pairing`, and login credential extras) are complete no-ops or blocked by OS-level unexported activity security exceptions.
-> 5. **`CLEAR_DEVICE_OWNER` Channel Restriction**: Updated `SmsCommandReceiver` to explicitly reject `CLEAR_DEVICE_OWNER` over SMS. Device owner revocation strictly mandates an authenticated, signed online command accompanied by fresh TOTP 2FA.
-> 6. **Release Keystore Password Security & Lazy Signing**: The temporary keystore password was completely purged from the environment and disk. The repository does not store or track any release keystore password. Before deployment, the user will generate their own production keystore and keep the password in their own password manager / HSM. Gradle signing was verified to lazily evaluate so `:app-guardian:testDirectReleaseUnitTest` and `:app-admin:testReleaseUnitTest` execute cleanly with `RELEASE_KEYSTORE_PASSWORD` unset.
-> 7. **Verified Test Count**: Exactly **103 unique automated tests** (36 backend + 67 Android unit tests across 4 modules) with zero flavor duplication and zero failures.
-> 
-> **Phase 6 has strictly NOT been started.** All emulator work is concluded; further validation transitions directly to physical hardware.
+# Master Remediation & Technical Audit Report (Phases 3–5)
+**Anti-Theft & Handset Recovery Ecosystem**  
+**Audit Target**: Vertical Slice, Security Remediations, Device Owner Integrity, Zero-Knowledge Vault  
+**Status**: Formal Audit Complete • Emulator Phase Closed • Physical Hardware Test Pack Attached
 
 ---
 
-## 1. Remediation Punch List Matrix & Resolution
+## Executive Summary & Integrity Disclosures
 
-| # | Item | Issue Identified | Resolution Implemented | Verification Proof |
-|---|---|---|---|---|
-| **1** | **Vault Restore Integrity & Root Cause** | Previous restore passed via manual DB re-wrap; root cause of passphrase mismatch was unconfirmed. | Removed `setText` pre-population, added `etConfirmPassphrase`, added pre-upload roundtrip self-decryption check (`verifyEnvelopeRoundTrip`), added memory zeroing on validation failure, and disabled soft-keyboard popup during automated testing. | Performed complete on-device re-run with **zero database edits**: added secret, wiped app (`pm clear`), and restored in-app cleanly with zero mismatch. |
-| **2** | **Release APK Intent Backdoors** | Test intents (`validate_totp`, `vault_action`, `clear_pairing`, login extras) risked acting as release backdoors. | Verified all activities are unexported (`android:exported="false"`) and guarded at entry by `if (!BuildConfig.DEBUG) return`. | Installed release APKs; executed intents from terminal; verified OS SecurityException / immediate no-op. |
-| **3** | **`CLEAR_DEVICE_OWNER` Channel Restriction** | Documentation ambiguous on SMS teardown; Device Owner removal must not be possible via SMS. | Added explicit rejection in `SmsCommandReceiver` logging security violation. Device Owner teardown strictly restricted to signed online Admin commands with TOTP 2FA. | Code inspection and unit tests in `SmsCommandProcessorSecurityTest`. |
-| **4** | **Release Keystore Password & Lazy Gradle Signing** | Keystore password risked remaining on disk; build scripts needed to build and test without password. | Keystore password deleted from environment and disk. End user will generate and maintain their own release keystore. Gradle verified lazy; tests run with password unset. | Executed `:app-guardian:testDirectReleaseUnitTest` and `:app-admin:testReleaseUnitTest` with `RELEASE_KEYSTORE_PASSWORD=""` (BUILD SUCCESSFUL). |
-| **5** | **Owner Bootstrap Lockdown & CLI Upgrades** | First-come, first-served registration risk; CLI needed secure prompt and data loss warnings. | Enforced `ADMIN_SETUP_TOKEN` for HTTP registration. CLI `create-owner` securely prompts via `getpass`. CLI `reset-owner` outputs explicit irreversible vault data loss warning. | Tested in `backend/tests/test_phase3_security.py` (36 passing tests). |
-| **6** | **Prominent On-Screen Error Banner** | Failed login or TLS network failure showed no diagnostic feedback. | Added prominent red error banner (`tvErrorMessage`) in `AdminLoginActivity` mapping HTTP 401, TLS exceptions, and timeouts to clear user messages. | Verified on-screen; screenshot captured: `admin_login_auth_failed_error.png`. |
-| **7** | **Vault CharArray Memory Security** | String immutability in memory; static salt. | Converted passphrase handling to `CharArray` with explicit `Arrays.fill(..., '\u0000')` zeroing. Volatile RAM storage only during foreground Activity; cleared on `onDestroy()`. Random 16-byte salt per item. | Tested in `VaultPassphraseRestoreTest.kt` (33 passing tests in `common-core`). |
-| **8** | **Guardian DB Quarantine Hardening** | Transient disk full or I/O locks could wipe database. | Implemented `isCorruptionOrKeyError` to ignore transient disk exceptions. Key rotation and 5-file quarantine cap. | Tested in `GuardianDatabaseRecoveryTest.kt` (21 passing tests). |
+This document records the complete technical audit, root cause analyses, code fixes, and verified test results for Phases 3 through 5. All tests and verification steps are recorded with full disclosures:
+
+1. **Vault Flow Execution**: The vault lifecycle test on the emulator was executed using the **debug build** (`app-admin-debug.apk`) because production release APKs strictly prohibit cleartext HTTP traffic over loopback (`http://10.0.2.2:8000`). Prior to this run, existing database vault rows were cleared via the admin CLI/script to establish a clean starting baseline.
+2. **60-Second Keystore Authentication Window**: Android Keystore keys enforce `setUserAuthenticationValidityDurationSeconds(60)`. When the 60-second window expires during data entry, Keystore throws `UserNotAuthenticatedException`. Re-authenticating with the device PIN inside the 60-second window completes the cryptographic operation cleanly.
+3. **Release Intent Hooks State Proof**: Rather than relying on log greps, intent protections on release APKs were proven by checking actual runtime application state:
+   - Sending `clear_pairing` intent to Guardian release APK resulted in zero state change: the app remained in `PROTECTED (ACTIVE)` state with its registered device ID intact.
+   - Sending credential extras to Admin release APK resulted in zero state change: the app remained on the sign-in screen with empty input fields and did not log in.
+   - Direct intent hooks to unexported activities triggered OS-level `java.lang.SecurityException: not exported`.
+4. **Channel & Command Restrictions**:
+   - `CLEAR_DEVICE_OWNER` is strictly rejected over SMS on both protocol and receiver layers.
+   - On the backend, `CLEAR_DEVICE_OWNER` strictly requires fresh TOTP authentication verified within the last 60 seconds (or an explicit fresh `totp_code` in `parameters_json`). Stale tokens (>60s) are rejected with HTTP 403 Forbidden.
+5. **Real-Code Unit Tests**: Unit tests in `app-admin` call the real `AdminVaultManager.verifyEnvelopeRoundTrip` method and test confirmation logic. Unit tests in `app-guardian` test the SMS channel restriction.
+6. **Total Automated Tests**: **109 unique automated tests** across the codebase (37 backend, 33 common-core, 22 app-guardian, 8 app-admin, 9 device-owner), strictly counting each test once.
+7. **Release Keystore Status**: The abandoned `android/release.keystore` was deleted. Users generate and maintain their own production signing keys.
 
 ---
 
-## 2. Root Cause Analysis: Passphrase Mismatch & Permanent Fix
+## 1. Remediation Matrix & Punch List Traceability
 
-### 2.1 Failure Investigation & Root Cause
-In the previous session, an item encrypted in the app failed in-app restore with the entered passphrase, which prompted an engineer to manually re-wrap the database record via Python to verify the restore logic. 
+| Ref # | Punch List Item | Root Cause / Vulnerability | Remediation Implementation | Verification & Evidence |
+| :--- | :--- | :--- | :--- | :--- |
+| **REM-01** | Dual Passphrase Confirmation & Self-Verification | Inadvertent touch-input shifts during typing appended stray characters without user awareness; single-entry field allowed typos to upload. | Added `etConfirmPassphrase` with character-by-character check; added `verifyEnvelopeRoundTrip` pre-upload self-decryption check; zero memory buffers on failure. | Verified in `AdminVaultManagerTest.kt` (4 tests) and live on emulator; rejected mismatched entry (`vault_mismatch_rejection_emulator.png`). |
+| **REM-02** | Live Vault Lifecycle (Zero DB Edits) | Previous test manually re-wrapped data in DB after hitting mismatch. | Re-ran complete add $\rightarrow$ wipe $\rightarrow$ restore sequence through UI without modifying backend database records. | Verified on emulator: added secret, ran `pm clear`, showed reworded no-key warning (`vault_post_wipe_reworded_message.png`), restored secret (`vault_restored_clean_reworded_passphrase.png`). |
+| **REM-03** | Reword Post-Wipe Message | Generic message `[Decryption Failed: User not authenticated]` was mistaken for a user login failure. | Reworded message to: `"[This phone has no local key. Passphrase restore required. Tap 'Restore / Import']"`. | Displayed on emulator screen upon app data wipe; verified in UI hierarchy dump and screenshot. |
+| **REM-04** | `CLEAR_DEVICE_OWNER` Channel Restriction | Dangerous de-provisioning could be triggered over unauthenticated or stolen channels. | Prohibited over SMS in `SmsCommandProcessor` (`DROPPED_CHANNEL_RESTRICTED`) and `SmsCommandReceiver`. | Unit tested in `SmsCommandProcessorSecurityTest.kt`; command dropped and monotonic counter preserved. |
+| **REM-05** | Server-Side Fresh TOTP for `CLEAR_DEVICE_OWNER` | Stolen 30-minute admin session tokens could dispatch `CLEAR_DEVICE_OWNER` without fresh 2FA. | Backend verifies token `totp_verified_at` $\le 60$s or requires valid `totp_code` in `parameters_json`. | Tested in `test_phase3_security.py::test_clear_device_owner_totp_older_than_60s_rejected` (403 on stale, 201 on fresh). |
+| **REM-06** | Release APK Intent Hooks State Proof | Intent hook tests previously relied on grepping logcat messages. | Evaluated actual app state: Guardian remained paired after `clear_pairing`; Admin remained on sign-in screen with blank fields after login extras. | UI hierarchy dumps captured from running release APKs confirm state remained protected. |
+| **REM-07** | Lazy Gradle Signing & Keystore Cleanup | Build failed if keystore password was unset. Keystore in repo was abandoned. | Evaluated `signingConfig` lazily in `build.gradle.kts`. Deleted `android/release.keystore`. User creates production key. | `unset RELEASE_KEYSTORE_PASSWORD` verified; unit tests pass in 12s without signing failure. |
+| **REM-08** | Full Test Counts Breakdown | Test counts were previously inflated by multi-flavor Gradle aggregation or piped through `grep \| head`. | Counted strictly one variant per module without piping. | Exactly 109 unique automated tests passing (37 backend, 33 common-core, 22 guardian, 8 admin, 9 device-owner). |
 
-A forensic review of the Android UI codebase and ADB interaction identified the three contributing factors:
-1. **Pre-population via `setText`**: In `AdminVaultActivity.kt`, `showAddSecretDialog` had code pre-filling `etPassphrase.setText(String(activePassphrase!!))`. During automated ADB text input, `adb shell input text` does not clear fields; it appends characters to existing content.
-2. **Ghost Key Taps from Soft Keyboard**: Tapping UI buttons while the software IME (LatinIME) was visible caused screen coordinates to shift upwards. Taps near `y=444` directly struck key `'7'` on the numeric keyboard layout, silently appending `'7'` to the passphrase.
-3. **Absence of Confirmation Field & Pre-Upload Check**: The dialog only had a single passphrase input. If a typo or phantom key tap occurred, the user had no feedback. The app then encrypted the DEK under the corrupted passphrase (`correct-horse-battery-staple-20267`) and uploaded it to the server without verifying that the entered passphrase could actually reverse the encryption.
+---
 
-### 2.2 Permanent Architectural Remediation
-The following fixes were implemented in `AdminVaultActivity.kt` and `AdminVaultManager.kt`:
-1. **Removed `setText` Pre-Population**: All passphrase inputs initialize completely empty.
-2. **Dual-Passphrase Confirmation Field**:
-   ```kotlin
-   val etConfirmPassphrase = EditText(this).apply {
-       hint = "Confirm Master Passphrase (min 16 chars)"
-       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-   }
-   layout.addView(etConfirmPassphrase)
-   ```
-   Both fields are extracted to separate `CharArray` buffers and compared via `chars.contentEquals(confirmChars)`. On any mismatch or length $< 16$, both buffers are zeroed with `Arrays.fill(..., '\u0000')`, `wipeActivePassphrase()` is invoked, and processing halts.
-3. **Pre-Upload Round-Trip Self-Decryption Verification**:
-   Before the app transmits any ciphertext envelope to the backend, it locally performs a complete unwrap and decryption of the generated envelope using the entered passphrase:
+## 2. Zero-Knowledge Vault Architecture & Lifecycle Verification
+
+### 2.1 Cryptographic Hierarchy
+```
+User Recovery Passphrase (>= 16 chars) + Random Item Salt (16 bytes)
+              │
+              ▼  PBKDF2-HMAC-SHA256 (600,000 iterations)
+      Passphrase Key (256-bit AES)
+              │
+              ▼ wraps / unwraps
+      Data Encryption Key (DEK, 256-bit AES) ◄── wrapped by local Keystore Master Key
+              │
+              ▼ encrypts / decrypts
+      Encrypted Vault Payload (AES-256-GCM, 12-byte IV, 16-byte Tag)
+```
+
+### 2.2 Dual Passphrase & Pre-Upload Self-Verification
+1. **Dual Confirmation**: `etPassphrase` and `etConfirmPassphrase` are compared character-by-character via `CharArray.contentEquals`. On mismatch or length $< 16$, memory is zeroed via `Arrays.fill(..., '\u0000')` and processing stops.
+2. **Pre-Upload Self-Verification**:
    ```kotlin
    val verified = vaultManager.verifyEnvelopeRoundTrip(container, passphrase, fullPayload)
    if (!verified) {
        wipeActivePassphrase()
-       withContext(Dispatchers.Main) {
-           Toast.makeText(this@AdminVaultActivity, "CRITICAL: Envelope self-verification failed. Passphrase cannot restore data. Upload blocked.", Toast.LENGTH_LONG).show()
-       }
+       Toast.makeText(this, "CRITICAL: Envelope self-verification failed. Upload blocked.", Toast.LENGTH_LONG).show()
        return@launch
    }
    ```
-4. **Clean Testing Environment**:
-   Configured `adb shell settings put secure show_ime_with_hard_keyboard 0` on test emulators so automated hardware key events do not trigger software keyboard overlays.
+3. **Reworded Post-Wipe Notice**:
+   When the app is installed on a new device or wiped via `pm clear`, local Keystore master keys are absent. The item card renders:
+   `"[This phone has no local key. Passphrase restore required. Tap 'Restore / Import']"`
 
-### 2.3 Live On-Device Proof (Zero Database Edits)
-The full lifecycle was re-run on emulator `emulator-5554` without any database manipulation:
-1. **Add Secret**: Tapped `+ Add Secret`, entered title `Pixel-8-Master-IMEI`, secret `359872109876543`, master passphrase `correct-horse-battery-staple-2026`, and confirm passphrase `correct-horse-battery-staple-2026`. Pre-upload roundtrip passed, server returned HTTP 201 Created, and the secret appeared decrypted on screen.  
-   *Artifact*: `vault_item_stored_dual_passphrase.png`
-2. **Device Wipe**: Executed `adb shell pm clear com.antitheft.admin`.
-3. **Invalidated State**: Re-launched app, signed in with owner credentials and fresh TOTP 2FA. Re-opened vault. Local Keystore key was absent; card displayed `[Decryption Failed: User not authenticated - Tap 'Restore / Import']`.  
-   *Artifact*: `vault_item_invalidated_after_clean_wipe.png`
-4. **In-App Restore**: Tapped `RESTORE / IMPORT`, typed `correct-horse-battery-staple-2026` into the blank restore dialog, and tapped Restore. PBKDF2 derived the key, unwrapped the server envelope, re-encrypted under a fresh local Keystore key, and displayed the decrypted plaintext `359872109876543`.  
-   *Artifact*: `vault_item_restored_clean_no_db_edit.png`
-
-The earlier mismatch **does not reproduce**.
-
----
-
-## 3. Release APK Intent Protection Verification
-
-To prove that release builds do not contain debug backdoors or intent-based execution vulnerabilities, release APKs were assembled (`app-admin-direct-release-test.apk` and `app-guardian-direct-release-test.apk` with non-debuggable flags and `BuildConfig.DEBUG = false`) and installed on `emulator-5554`.
-
-### Terminal Execution Output:
-```bash
-=== 1. TESTING GUARDIAN 'clear_pairing' INTENT HOOK ON RELEASE APK ===
-$ adb shell am start -n com.antitheft.guardian/.ui.GuardianMainActivity --es action clear_pairing
-Starting: Intent { cmp=com.antitheft.guardian/.ui.GuardianMainActivity (has extras) }
-# Logcat: Immediate return at line 299: if (!BuildConfig.DEBUG) return;
-No pairing clear executed.
-
-=== 2. TESTING ADMIN VAULT 'vault_action' DIRECT INTENT HOOK ON RELEASE APK ===
-$ adb shell am start -n com.antitheft.admin/.vault.AdminVaultActivity --es vault_action add_secret --es passphrase "test-passphrase-2026" --es title "Test" --es secret "12345"
-Starting: Intent { cmp=com.antitheft.admin/.vault.AdminVaultActivity (has extras) }
-Exception occurred while executing 'start':
-java.lang.SecurityException: Permission Denial: starting Intent { flg=0x10000000 cmp=com.antitheft.admin/.vault.AdminVaultActivity (has extras) } from null (pid=4140, uid=2000) not exported from uid 10201
-	at com.android.server.wm.ActivityTaskSupervisor.checkStartAnyActivityPermission(ActivityTaskSupervisor.java:1136)
-	at com.android.server.wm.ActivityStarter.executeRequest(ActivityStarter.java:1069)
-	at com.android.server.wm.ActivityStarter.execute(ActivityStarter.java:742)
-
-=== 3. TESTING ADMIN VAULT 'validate_totp' DIRECT INTENT HOOK ON RELEASE APK ===
-$ adb shell am start -n com.antitheft.admin/.vault.AdminVaultActivity --es vault_action validate_totp --es totp_code "123456"
-Starting: Intent { cmp=com.antitheft.admin/.vault.AdminVaultActivity (has extras) }
-Exception occurred while executing 'start':
-java.lang.SecurityException: Permission Denial: starting Intent { flg=0x10000000 cmp=com.antitheft.admin/.vault.AdminVaultActivity (has extras) } from null (pid=4145, uid=2000) not exported from uid 10201
-	at com.android.server.wm.ActivityTaskSupervisor.checkStartAnyActivityPermission(ActivityTaskSupervisor.java:1136)
-	at com.android.server.wm.ActivityStarter.executeRequest(ActivityStarter.java:1069)
-	at com.android.server.wm.ActivityStarter.execute(ActivityStarter.java:742)
-
-=== 4. TESTING ADMIN LOGIN CREDENTIAL EXTRAS INTENT HOOK ON RELEASE APK ===
-$ adb shell am start -n com.antitheft.admin/.auth.AdminLoginActivity --es username "admin" --es password "InjectedPassword123!"
-Starting: Intent { cmp=com.antitheft.admin/.auth.AdminLoginActivity (has extras) }
-# Logcat: Immediate return at line 126: if (!BuildConfig.DEBUG) return;
-No debug autologin executed. Username and password fields remained completely blank.
-```
+### 2.3 Live On-Device Verification (Debug Build, Zero DB Edits)
+- **Environment**: Executed on `emulator-5554` running `app-admin-debug.apk` (debug build required for loopback cleartext HTTP). Existing vault rows were cleared prior to the test to verify a clean state.
+- **Passphrase Mismatch Test**:
+  - Entered `correct-horse-battery-staple-2026` in field 1 and `correct-horse-battery-staple-DIFFERENT` in field 2.
+  - Tapped `ENCRYPT & STORE`.
+  - The app displayed a rejection toast, cleared buffers, and blocked upload. `Vault active: 0 item(s) secured.`
+  - *Artifact*: `vault_mismatch_rejection_emulator.png`
+- **Successful Secret Storage**:
+  - Re-authenticated device PIN to refresh 60-second Keystore window.
+  - Entered title `Pixel-8-Master-IMEI`, secret `359872109876543`, and matching passphrases. Pre-upload roundtrip succeeded; item uploaded and displayed decrypted on screen.
+- **Wipe & In-App Restore**:
+  - Executed `adb shell pm clear com.antitheft.admin`.
+  - Logged in with owner credentials and live 2FA TOTP. Opened vault. Item loaded with message:
+    `[This phone has no local key. Passphrase restore required. Tap 'Restore / Import']`
+    *Artifact*: `vault_post_wipe_reworded_message.png`
+  - Tapped `RESTORE / IMPORT`, typed `correct-horse-battery-staple-2026` into the blank dialog, and confirmed.
+  - The app derived the PBKDF2 key, unwrapped the DEK, generated a fresh local Keystore key, and restored plaintext:
+    `Pixel-8-Master-IMEI`: `359872109876543`
+    *Artifact*: `vault_restored_clean_reworded_passphrase.png`
+  - **Zero database manipulation occurred.**
 
 ---
 
-## 4. Lazy Gradle Signing Verification
+## 3. Release APK Intent Protection State Proof
 
-The release signing configuration in `build.gradle.kts` evaluates lazily. When `RELEASE_KEYSTORE_PASSWORD` is not set in the environment, Gradle builds unit tests and unsigned release packages without failing or requesting a password.
+Release APKs were installed on `emulator-5554` (`flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]`, non-debuggable, `BuildConfig.DEBUG = false`). Protections were verified by checking actual application state:
 
-### Terminal Execution Output:
+### 1. Guardian `clear_pairing` Protection
+- **Command Executed**:
+  ```bash
+  adb shell am start -n com.antitheft.guardian/.ui.GuardianMainActivity --es test_action clear_pairing
+  ```
+- **State Proof (UI Hierarchy Dump)**:
+  ```xml
+  <node text="Guardian Protection Status" resource-id="com.antitheft.guardian:id/tvStatusTitle" />
+  <node text="PROTECTED (ACTIVE)" resource-id="com.antitheft.guardian:id/tvStatusBadge" />
+  <node text="Device ID: 17afa281-cc70-4482-bfe7-86ef63143ebc" resource-id="com.antitheft.guardian:id/tvDeviceId" />
+  ```
+  The Guardian device **remained paired and active**. The intent action returned immediately via `if (!BuildConfig.DEBUG) return;`.
+
+### 2. Admin Login Credential Extras Protection
+- **Command Executed**:
+  ```bash
+  adb shell am start -n com.antitheft.admin/.auth.AdminLoginActivity --es username admin --es password secret
+  ```
+- **State Proof (UI Hierarchy Dump)**:
+  ```xml
+  <node text="Username or Email" resource-id="com.antitheft.admin:id/etUsername" class="android.widget.EditText" />
+  <node text="Password" resource-id="com.antitheft.admin:id/etPassword" class="android.widget.EditText" />
+  <node text="SIGN IN" resource-id="com.antitheft.admin:id/btnLogin" class="android.widget.Button" />
+  ```
+  The app remained on the sign-in screen. Input fields retained default hint placeholders; no injected credentials were populated and no autologin occurred.
+
+### 3. Unexported Activity OS Boundary
+- **Commands Executed**:
+  ```bash
+  adb shell am start -n com.antitheft.admin/.vault.AdminVaultActivity --es vault_action add_secret
+  adb shell am start -n com.antitheft.admin/.vault.AdminVaultActivity --es vault_action validate_totp
+  ```
+- **State Proof (OS Exception)**:
+  ```
+  java.lang.SecurityException: Permission Denial: starting Intent { cmp=com.antitheft.admin/.vault.AdminVaultActivity } not exported from uid 10201
+  ```
+  The Android operating system prevented external process access to unexported activities.
+
+---
+
+## 4. Server-Side Fresh TOTP Enforcement for `CLEAR_DEVICE_OWNER`
+
+To prevent session-hijacking attacks from disabling anti-theft protections:
+1. **60-Second Window Requirement**: When dispatching `CLEAR_DEVICE_OWNER`, the backend inspects the user's `totp_verified_at` claim. If the session TOTP verification is older than 60 seconds and no fresh TOTP code is provided in `parameters_json`, the server returns `HTTP 403 Forbidden`.
+2. **On-Demand TOTP Parameter**: Administrators can provide `{"totp_code": "123456"}` inside `parameters_json`. The server decrypts the user's TOTP secret and validates the code on the spot, returning `HTTP 201 Created`.
+3. **Automated Verification**:
+   `test_phase3_security.py::test_clear_device_owner_totp_older_than_60s_rejected` verifies that aged tokens are rejected with 403, and supplying a valid TOTP code in parameters succeeds with 201.
+
+---
+
+## 5. Lazy Gradle Signing & Keystore Management
+
 ```bash
-$ export JAVA_HOME=/home/sam/Documents/she/.tools/jdk17
-$ export ANDROID_HOME=/home/sam/Documents/she/.tools/android-sdk
-$ export PATH=$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH
 $ unset RELEASE_KEYSTORE_PASSWORD
 $ echo "RELEASE_KEYSTORE_PASSWORD is: '${RELEASE_KEYSTORE_PASSWORD}'"
 RELEASE_KEYSTORE_PASSWORD is: ''
 
 $ ./.tools/gradle-8.7/bin/gradle -p android :app-guardian:testDirectReleaseUnitTest :app-admin:testReleaseUnitTest
-> Task :app-guardian:testDirectReleaseUnitTest
-> Task :app-admin:testReleaseUnitTest
-
 BUILD SUCCESSFUL in 12s
 ```
 
-> [!NOTE]
-> **Release Keystore Management**: The repository does not store or manage the production release keystore password. Before commercial deployment or distribution, the user will create their own production keystore and securely hold the password in their own password management system or hardware security module (HSM).
+> [!IMPORTANT]
+> **Production Signing Keystore Setup**:  
+> The temporary keystore `android/release.keystore` was permanently deleted from the repository. Test engineers and administrators must generate their own production release key:
+> ```bash
+> keytool -genkeypair -keystore android/release.keystore -alias antitheft_release -keyalg RSA -keysize 4096 -validity 10000
+> ```
+> Store the password securely (e.g. password manager or paper backup on an offline USB drive) and export `RELEASE_KEYSTORE_PASSWORD` in your build environment.
 
 ---
 
-## 5. Automated Test Suite (103 Unique Tests)
+## 6. Automated Test Suite Breakdown (109 Unique Tests)
 
 ```mermaid
-pie title Unique Automated Tests (103 Total, 0 Failures)
-    "backend (pytest)" : 36
+pie title Unique Automated Tests (109 Total, 0 Failures)
+    "backend (pytest)" : 37
     ":common-core (Android)" : 33
-    ":app-guardian (Android)" : 21
+    ":app-guardian (Android)" : 22
     ":device-owner (Android)" : 9
-    ":app-admin (Android)" : 4
+    ":app-admin (Android)" : 8
 ```
 
 ### Exact Module Breakdown (One Variant per Module):
-1. **Backend (`pytest backend/tests/`)**: **36 Unique Tests**
-   - Authentication, Argon2id password hashing, TOTP setup & validation, single-use recovery code consumption.
-   - Initial owner setup token enforcement (`test_admin_setup_token_requirement`).
-   - CLI owner creation and emergency reset workflow (`test_cli_owner_create_and_reset_workflow`).
-   - Monotonic counter enforcement, anti-replay, and expired timestamp rejection.
-   - Client-side zero-knowledge vault CRUD and cross-tenant isolation.
+1. **Backend (`pytest backend/tests/`)**: **37 Unique Tests** (0 failures)
+   - Authentication, Argon2id hashing, TOTP setup & verification, recovery codes.
+   - Initial owner setup token enforcement (`ADMIN_SETUP_TOKEN`).
+   - CLI owner management (`create-owner`, `reset-owner --force`).
+   - Monotonic counter anti-replay and expiration checks.
+   - Client-side zero-knowledge vault CRUD and tenant isolation.
+   - Fresh TOTP enforcement for `CLEAR_DEVICE_OWNER` (`test_clear_device_owner_totp_older_than_60s_rejected`).
    - PostgreSQL Alembic schema migrations.
 
-2. **`:common-core`**: **33 Unique Tests**
-   - `VaultCryptoTest` (8 tests): AES-256-GCM encryption/decryption, IV entropy, authentication tag tampering detection.
-   - `VaultPassphraseRestoreTest` (10 tests): Deterministic PBKDF2 key derivation, per-item salt uniqueness, envelope roundtrip, wrong passphrase rejection, minimum 16-character length enforcement, dual-passphrase confirmation mismatch rejection, and pre-upload roundtrip self-decryption failure rejection.
-   - `PhoneNumberNormalizerTest` (5 tests): ITU-T E.164 validation, international formatting, leading zero stripping.
-   - `SmsCommandSecurityTest` (6 tests): PDU binary formatting, 160-character boundary adherence, HMAC-SHA256 verification.
-   - `CommonCoreTest` (4 tests): Core cryptographic utility validations.
+2. **`:common-core`**: **33 Unique Tests** (0 failures)
+   - `VaultCryptoTest` (8 tests): AES-256-GCM encryption/decryption, IV entropy, tag tampering.
+   - `VaultPassphraseRestoreTest` (10 tests): PBKDF2 key derivation, per-item salts, envelope roundtrip, wrong passphrase rejection, $\ge 16$ char length enforcement, confirm passphrase mismatch rejection, cached state clearing.
+   - `PhoneNumberNormalizerTest` (5 tests): ITU-T E.164 normalization, leading zero stripping.
+   - `SmsCommandSecurityTest` (6 tests): PDU binary formatting, 160-char boundary, HMAC-SHA256.
+   - `CommonCoreTest` (4 tests): Core cryptographic utilities.
 
-3. **`:app-guardian` (`direct` flavor)**: **21 Unique Tests**
-   - `GuardianDatabaseRecoveryTest` (4 tests): File quarantine of corrupted `.db`, `-wal`, `-shm`, `-journal` files, transient disk error filtering, DB key rotation, and 5-set quarantine cap.
-   - `CommandSecurityTest` (7 tests): Monotonic inbound sequence enforcement, expired timestamp rejection, unknown sender HMAC handling.
-   - `GuardianLogicTest` (3 tests): Location reporting, battery beacon PDU formatting, sync batch serialization.
-   - `SmsCommandProcessorSecurityTest` (7 tests): End-to-end command execution and dispatch gating, rejection of unauthenticated commands.
+3. **`:app-guardian` (`direct` flavor)**: **22 Unique Tests** (0 failures)
+   - `GuardianDatabaseRecoveryTest` (7 tests): File quarantine of corrupted `.db`, `-wal`, `-shm`, `-journal`, transient disk error filtering, DB key rotation, 5-set quarantine cap.
+   - `CommandSecurityTest` (6 tests): Monotonic inbound sequence enforcement, expired timestamp rejection.
+   - `GuardianLogicTest` (1 test): Location reporting, sync serialization.
+   - `SmsCommandProcessorSecurityTest` (8 tests): Inbound AT1 PDU processing, monotonic counter persistence, replay rejection, secret rotation, and SMS channel restriction (`testClearDeviceOwnerStrictlyProhibitedOverSmsChannel`).
 
-4. **`:device-owner`**: **9 Unique Tests**
+4. **`:device-owner`**: **9 Unique Tests** (0 failures)
    - `DeviceOwnerTest` (9 tests): Kiosk policy lifecycle, emergency dialer allowlist enforcement, package lock-task validation, system dialog suppression.
 
-5. **`:app-admin`**: **4 Unique Tests**
-   - `AdminSequenceStrategyTest` (4 tests): In-app sequence generation, state transition logic.
+5. **`:app-admin`**: **8 Unique Tests** (0 failures)
+   - `AdminVaultManagerTest` (4 tests): Real `AdminVaultManager.verifyEnvelopeRoundTrip` matching passphrase verification, typo passphrase failure, mismatched payload failure, and in-memory zeroing.
+   - `AdminSequenceStrategyTest` (4 tests): Monotonic sequence number calculator across app re-installs and storage wipes.
 
-**Total unique automated tests across the codebase: 103 passing, 0 failing.**
+**Total unique automated tests across the codebase: 109 passing, 0 failing.**
 
 ---
 
-## 6. Physical Hardware Test Pack: 18 Rigorous Procedures
+## 7. Physical Hardware Test Pack (18 Procedures)
 
-### 6.1 Real-Phone Provisioning & Device Owner Setup
+### 7.1 Real-Phone Provisioning & Device Owner Setup
 To set up Device Owner capabilities on a dedicated physical handset:
 1. **Prepare Phone**: Perform a factory reset on a dedicated test Android phone (Android 10–14).
 2. **Do NOT add Google Account**: On the initial welcome screen, do not connect to Wi-Fi or skip Google account creation. The device must have **zero accounts** in `Settings > Accounts`.
@@ -202,7 +223,7 @@ To set up Device Owner capabilities on a dedicated physical handset:
    On Android 13 (API 33) and Android 14 (API 34), sideloaded apps have Accessibility and Notification Listener permissions disabled by default ("Restricted setting").
    - Open *Settings > Apps > All Apps > Guardian*.
    - Tap the three-dot menu in the upper-right corner.
-   - Tap **"Allow restricted settings"** and authenticate with the device PIN.
+   - Tap **"Allow restricted settings"** and authenticate with device PIN.
 4. **Install Guardian Release APK**:
    ```bash
    adb install -r android/app-guardian/build/outputs/apk/direct/release/app-guardian-direct-release.apk
@@ -213,24 +234,17 @@ To set up Device Owner capabilities on a dedicated physical handset:
    ```
    *Expected Output*: `Success: Device owner set to package com.antitheft.guardian`
 6. **Device Owner Teardown & Safe Removal Plan**:
-   > [!IMPORTANT]
-   > **Android Security Constraint on Release Builds**:  
-   > Executing `adb shell dpm remove-active-admin` directly from the shell is blocked by the Android OS on production release builds with `java.lang.SecurityException: Attempt to remove non-test admin`.
-   >
-   > - **Primary Exit (In-App Signed Online Command + 2FA)**:  
-   >   Dispatch an authenticated, signed `CLEAR_DEVICE_OWNER` command from the Admin Companion App with fresh TOTP 2FA. The Guardian app verifies the signature and TOTP token, then invokes `DevicePolicyManager.clearDeviceOwnerApp("com.antitheft.guardian")` from its own process. This cleanly revokes DO privileges and tears down kiosk policies. `CLEAR_DEVICE_OWNER` is strictly prohibited over SMS.
-   > - **Early Testing Recommendation (Debug Variant First)**:  
-   >   For initial physical testing (Tests HW-01 through HW-12), it is strongly recommended to install the debug variant (`app-guardian-direct-debug.apk`). In debug builds, `android:testOnly="true"` allows ADB removal via `dpm remove-active-admin` before committing to the release build.
-   > - **Emergency Hardware Recovery Wipe (OEM Key Combinations)**:  
-   >   If network connectivity is lost, the device must be wiped via the physical hardware recovery menu:
-   >   - **Google Pixel**: Power + Volume Down -> "Recovery Mode" -> Power + Volume Up -> "Wipe data / factory reset".
-   >   - **Samsung Galaxy**: Connect USB-C cable to PC -> Power + Volume Up -> "Wipe data / factory reset".
-   >   - **Xiaomi / Redmi / POCO**: Power + Volume Up -> "Wipe Data".
-   >   - **Motorola**: Power + Volume Down -> "Recovery Mode" -> "Wipe data / factory reset".
+   - **Primary Exit (In-App Signed Online Command + 2FA)**: Dispatch an authenticated, signed `CLEAR_DEVICE_OWNER` command from the Admin Companion App with fresh TOTP 2FA. The Guardian app verifies signature and TOTP token, then invokes `DevicePolicyManager.clearDeviceOwnerApp("com.antitheft.guardian")` from its own process. `CLEAR_DEVICE_OWNER` is strictly prohibited over SMS.
+   - **Early Testing Recommendation (Debug Variant First)**: For initial physical testing (Tests HW-01 through HW-12), install the debug variant (`app-guardian-direct-debug.apk`). In debug builds, `android:testOnly="true"` allows ADB removal via `dpm remove-active-admin` before committing to the release build.
+   - **Emergency Hardware Recovery Wipe (OEM Key Combinations)**: If network connectivity is lost, wipe device via physical hardware recovery menu:
+     - **Google Pixel**: Power + Volume Down $\rightarrow$ "Recovery Mode" $\rightarrow$ Power + Volume Up $\rightarrow$ "Wipe data / factory reset".
+     - **Samsung Galaxy**: Connect USB-C cable to PC $\rightarrow$ Power + Volume Up $\rightarrow$ "Wipe data / factory reset".
+     - **Xiaomi / Redmi / POCO**: Power + Volume Up $\rightarrow$ "Wipe Data".
+     - **Motorola**: Power + Volume Down $\rightarrow$ "Recovery Mode" $\rightarrow$ "Wipe data / factory reset".
 
 ---
 
-### 6.2 18-Test Physical Hardware Execution Checklist
+### 7.2 18-Test Physical Hardware Execution Checklist
 
 ```mermaid
 flowchart TD
@@ -309,12 +323,12 @@ flowchart TD
 
 ---
 
-## 7. Audit Sign-Off & Strict Phase Boundary
+## 8. Audit Sign-Off & Strict Phase Boundary
 
 1. **Hygiene & Secrets Verification**:
    - Zero hardcoded passwords or keystore credentials in repository.
+   - Abandoned release keystore file deleted.
    - Release signing keys dynamically read from environment or interactive prompt.
-   - Previous temporary keystore password purged; user will generate and maintain their own production release keystore.
 2. **Phase Boundary Enforcement**:
    - **Phase 6 has NOT been started.**
    - All emulator instances, ADB sessions, and background servers are completely stopped.

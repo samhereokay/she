@@ -8,7 +8,8 @@ enum class SmsProcessStatus {
     DROPPED_HMAC_FAILURE,
     DROPPED_REPLAY,
     DROPPED_EXPIRED,
-    DROPPED_MALFORMED
+    DROPPED_MALFORMED,
+    DROPPED_CHANNEL_RESTRICTED
 }
 
 data class SmsProcessResult(
@@ -61,6 +62,15 @@ object SmsCommandProcessor {
                 status = SmsProcessStatus.DROPPED_EXPIRED,
                 command = command,
                 reason = "Inbound SMS expired at ${command.expiryEpochSec}, current epoch is $nowEpochSec"
+            )
+        }
+
+        // 4. Channel Restriction: CLEAR_DEVICE_OWNER is strictly prohibited over SMS
+        if (command.commandType == "CLEAR_DEVICE_OWNER") {
+            return SmsProcessResult(
+                status = SmsProcessStatus.DROPPED_CHANNEL_RESTRICTED,
+                command = command,
+                reason = "SECURITY VIOLATION: CLEAR_DEVICE_OWNER is strictly prohibited over SMS channel. Signed Admin online command with fresh TOTP required."
             )
         }
 

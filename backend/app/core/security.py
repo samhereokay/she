@@ -126,22 +126,30 @@ def verify_totp_code(secret_b32: str, code: str, valid_windows: int = 1) -> bool
     return False
 
 
-def create_access_token(subject: Union[str, Any], is_2fa: bool = False, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    subject: Union[str, Any],
+    is_2fa: bool = False,
+    expires_delta: Optional[timedelta] = None,
+    totp_verified_at: Optional[int] = None
+) -> str:
     """
     Generate JWT Bearer token with 2FA status claim.
     Phase 3 commands strictly require is_2fa=True.
     """
+    now = datetime.now(timezone.utc)
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode = {
         "exp": expire,
         "sub": str(subject),
         "is_2fa": is_2fa,
-        "iat": datetime.now(timezone.utc)
+        "iat": now
     }
+    if is_2fa:
+        to_encode["totp_verified_at"] = totp_verified_at if totp_verified_at is not None else int(time.time())
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 

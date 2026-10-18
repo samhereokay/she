@@ -255,4 +255,33 @@ class SmsCommandProcessorSecurityTest {
         assertEquals(SmsProcessStatus.ACCEPTED, validResult.status)
         assertEquals(2L, rotatedStorage.getLastInboundSmsSequence())
     }
+
+    @Test
+    fun testClearDeviceOwnerStrictlyProhibitedOverSmsChannel() {
+        val nowEpoch = 1770000000L
+        val expiryEpoch = nowEpoch + 300L
+        val seq = 1L
+
+        val pdu = SmsPduSerializer.formatInboundCommand(
+            commandType = "CLEAR_DEVICE_OWNER",
+            sequenceNumber = seq,
+            expiryEpochSec = expiryEpoch,
+            sharedSecretKeyBytes = testSharedSecret
+        )
+
+        val result = SmsCommandProcessor.processInboundPdu(
+            body = pdu,
+            storage = mockStorage,
+            nowEpochSec = nowEpoch
+        )
+
+        assertEquals(
+            "CLEAR_DEVICE_OWNER must be dropped as channel restricted over SMS",
+            SmsProcessStatus.DROPPED_CHANNEL_RESTRICTED,
+            result.status
+        )
+        assertTrue(result.reason.contains("strictly prohibited over SMS channel"))
+        // Storage monotonic sequence must NOT advance
+        assertEquals(0L, mockStorage.getLastInboundSmsSequence())
+    }
 }

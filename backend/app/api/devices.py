@@ -1,4 +1,5 @@
 import base64
+import json
 import time
 import hashlib
 import random
@@ -24,7 +25,12 @@ from app.schemas.device import (
 )
 from app.schemas.location import LocationResponse
 from app.api.deps import get_current_user, get_current_user_2fa, get_pairing_token_user
-from app.core.security import verify_ecdsa_p256_signature, create_canonical_command_bytes
+from app.core.security import (
+    verify_ecdsa_p256_signature,
+    create_canonical_command_bytes,
+    decrypt_totp_secret,
+    verify_totp_code
+)
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
 
@@ -438,6 +444,36 @@ def dispatch_command(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid command_type '{req.command_type}'. Allowed command types: {sorted(list(ALLOWED_COMMAND_TYPES))}"
         )
+
+    if req.command_type == "CLEAR_DEVICE_OWNER":
+        totp_fresh = False
+        try:
+            params = json.loads(req.parameters_json or "{}")
+        except Exception:
+            params = {}
+        
+        fresh_code = params.get("totp_code")
+        if fresh_code and current_user.totp_enabled and current_user.totp_secret:
+            plain_secret = decrypt_totp_secret(current_user.totp_secret)
+            if verify_totp_code(plain_secret, str(fresh_code).strip()):
+                totp_fresh = True
+
+        if not totp_fresh:
+            verified_epoch = getattr(current_user, "_totp_verified_at", None)
+            if isinstance(verified_epoch, (int, float)):
+                age_s = now_epoch - int(verified_epoch)
+                if 0 <= age_s <= 60:
+                    totp_fresh = True
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"CLEAR_DEVICE_OWNER requires fresh TOTP authentication verified within the last 60 seconds (verified {age_s}s ago). Re-authenticate with TOTP."
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="CLEAR_DEVICE_OWNER requires fresh TOTP authentication verified within the last 60 seconds. Re-authenticate with TOTP."
+                )
 
     # Reconstruct canonical command bytes with pairing_id
     cmd_id = req.command_id or generate_uuid()

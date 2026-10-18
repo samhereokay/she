@@ -18,7 +18,9 @@ class AdminVaultManager(
 ) {
 
     private val cryptoManager = VaultCryptoManager()
-    private val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private val keyStore: KeyStore by lazy {
+        KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    }
 
     fun isDeviceSecure(): Boolean {
         if (context == null) return false
@@ -137,7 +139,8 @@ class AdminVaultManager(
     fun encryptSecretEnvelope(
         plaintext: String,
         passphrase: CharArray,
-        keyVersion: Long = 1
+        keyVersion: Long = 1,
+        masterKeyOverride: SecretKey? = null
     ): VaultEncryptedContainer {
         require(passphrase.size >= 16) {
             "Vault master passphrase must be at least 16 characters for zero-knowledge envelope protection."
@@ -145,7 +148,7 @@ class AdminVaultManager(
         val dek = cryptoManager.generateRandomDataKey()
         val dataContainer = cryptoManager.encrypt(plaintext, dek, keyVersion)
 
-        val keystoreKey = getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
+        val keystoreKey = masterKeyOverride ?: getOrCreateVaultMasterKey(requireUserAuth = isDeviceSecure())
         val keystoreWrappedDek = cryptoManager.wrapKey(dek, keystoreKey, keyVersion)
 
         val salt = cryptoManager.generateRandomSalt(16)

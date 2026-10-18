@@ -1056,6 +1056,140 @@ def test_clear_device_owner_command_dispatch_and_execution(client, pair_device):
     assert dispatch_resp.json()["status"] == "PENDING"
 
 
+def test_clear_device_owner_totp_older_than_60s_rejected(client):
+    """
+    CRITICAL SECURITY INVARIANT:
+    CLEAR_DEVICE_OWNER strictly requires fresh TOTP verification within the last 60 seconds.
+    If an admin token was verified > 60 seconds ago and no fresh TOTP code is provided
+    in parameters_json, the command dispatch is rejected with 403 Forbidden.
+    """
+    auth_limiter.history.clear()
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+
+    # Setup owner
+    client.post("/auth/register", json={
+        "username": "do_stale_owner",
+        "email": "do_stale_owner@example.com",
+        "password": "SecurePassword123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "do_stale_owner",
+        "password": "SecurePassword123!"
+    }).json()["access_token"]
+
+    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token}"})
+    totp_secret = setup_resp.json()["secret"]
+
+    import struct, hmac, hashlib
+    key = base64.b32decode(totp_secret + "=" * ((8 - len(totp_secret) % 8) % 8), casefold=True)
+    counter = int(time.time() // 30)
+    msg = struct.pack(">Q", counter)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    idx = h[-1] & 0x0F
+    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+    valid_code = f"{code_int % 1000000:06d}"
+
+    verify_resp = client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {token}"})
+    fresh_token = verify_resp.json()["access_token"]
+
+    # Decode token payload to get user id
+    from app.core.security import verify_access_token, create_access_token
+    payload = verify_access_token(fresh_token)
+    user_id = payload["sub"]
+
+    # Create an artificially aged token where totp was verified 120s ago
+    stale_token = create_access_token(
+        subject=user_id,
+        is_2fa=True,
+        totp_verified_at=int(time.time()) - 120
+    )
+
+    admin_priv = ec.generate_private_key(ec.SECP256R1())
+    admin_pub = admin_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+    trusted_id = client.post("/api/v1/devices/trusted", json={
+        "device_name": "AdminDeprovisionStale",
+        "public_key_pem": admin_pub
+    }, headers={"Authorization": f"Bearer {fresh_token}"}).json()["id"]
+
+    guardian_priv = ec.generate_private_key(ec.SECP256R1())
+    guardian_pub = guardian_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+
+    enroll_resp = client.post("/auth/pairing-token", json={}, headers={"Authorization": f"Bearer {fresh_token}"})
+    p_token = enroll_resp.json()["pairing_token"]
+
+    pair_resp = client.post("/api/v1/devices/pair", json={
+        "device_alias": "GuardianDOStale",
+        "public_key_pem": guardian_pub,
+        "trusted_phone_number": "+15551239998",
+        "pairing_secret": "11223344556677889900112233445566"
+    }, headers={"Authorization": f"Bearer {p_token}"})
+    assert pair_resp.status_code == 201, pair_resp.text
+    target_id = pair_resp.json()["id"]
+    code = pair_resp.json()["confirmation_code"]
+
+    confirm_resp = client.post(f"/api/v1/devices/{target_id}/confirm-pairing", json={"confirmation_code": code}, headers={"Authorization": f"Bearer {fresh_token}"})
+    assert confirm_resp.status_code == 200
+
+    now_epoch = int(time.time())
+    canonical_bytes = create_canonical_command_bytes(
+        pairing_id=pair_resp.json()["pairing_id"],
+        command_id="",
+        target_device_id=target_id,
+        command_type="CLEAR_DEVICE_OWNER",
+        sequence_counter=1,
+        expiry_epoch=now_epoch + 300,
+        parameters_json="{}"
+    )
+    sig = base64.b64encode(admin_priv.sign(canonical_bytes, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+    # 1. Attempt dispatch with stale token (totp > 60s ago) without totp_code in parameters -> REJECTED (403)
+    reject_resp = client.post("/api/v1/devices/commands/dispatch", json={
+        "trusted_device_id": trusted_id,
+        "target_device_id": target_id,
+        "command_type": "CLEAR_DEVICE_OWNER",
+        "sequence_counter": 1,
+        "expiry_epoch": now_epoch + 300,
+        "parameters_json": "{}",
+        "admin_signature": sig
+    }, headers={"Authorization": f"Bearer {stale_token}"})
+
+    assert reject_resp.status_code == 403, reject_resp.text
+    assert "fresh TOTP" in reject_resp.json()["detail"]
+
+    # 2. Dispatch with fresh TOTP code in parameters_json -> ACCEPTED (201)
+    import json
+    params_with_totp = json.dumps({"totp_code": valid_code})
+    canonical_bytes_with_totp = create_canonical_command_bytes(
+        pairing_id=pair_resp.json()["pairing_id"],
+        command_id="",
+        target_device_id=target_id,
+        command_type="CLEAR_DEVICE_OWNER",
+        sequence_counter=2,
+        expiry_epoch=now_epoch + 300,
+        parameters_json=params_with_totp
+    )
+    sig2 = base64.b64encode(admin_priv.sign(canonical_bytes_with_totp, ec.ECDSA(hashes.SHA256()))).decode("utf-8")
+
+    accept_resp = client.post("/api/v1/devices/commands/dispatch", json={
+        "trusted_device_id": trusted_id,
+        "target_device_id": target_id,
+        "command_type": "CLEAR_DEVICE_OWNER",
+        "sequence_counter": 2,
+        "expiry_epoch": now_epoch + 300,
+        "parameters_json": params_with_totp,
+        "admin_signature": sig2
+    }, headers={"Authorization": f"Bearer {stale_token}"})
+
+    assert accept_resp.status_code == 201, accept_resp.text
+    assert accept_resp.json()["command_type"] == "CLEAR_DEVICE_OWNER"
+
+
 def test_unenrolled_user_cannot_access_privileged_endpoints(client):
     """
     CRITICAL SECURITY INVARIANT:
