@@ -1,7 +1,7 @@
 import os
 import hashlib
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse, Response
 from app.db.session import SessionLocal
 from app.db.models import ProtectedDevice, LocationEvent
 
@@ -27,6 +27,7 @@ def find_asset_path(relative_path: str) -> str:
 GUARDIAN_APK_PATH = find_asset_path("android/app-guardian/build/outputs/apk/direct/debug/app-guardian-direct-debug.apk")
 ADMIN_APK_PATH = find_asset_path("android/app-admin/build/outputs/apk/debug/app-admin-debug.apk")
 LOGO_PATH = find_asset_path("backend/static/logo.png")
+FAVICON_PATH = find_asset_path("backend/static/favicon.ico")
 STATIC_GUARDIAN_PATH = find_asset_path("backend/static/she-guardian.apk")
 STATIC_ADMIN_PATH = find_asset_path("backend/static/she-admin.apk")
 
@@ -718,7 +719,13 @@ footer {
 """
 
 
-def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
+def render_html_shell(
+    title: str,
+    content: str,
+    active_tab: str = "",
+    canonical_path: str = "/",
+    description: str = "SHE (Sentinel for Handheld Equipment) is an open-source Android anti-theft, direct-boot recovery, and zero-knowledge handset security ecosystem."
+) -> str:
     nav_links = [
         ("/", "Home", "home"),
         ("/releases", "Releases & Download", "releases"),
@@ -733,13 +740,82 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
         for url, label, tab_id in nav_links
     ])
 
+    google_verify = os.getenv("GOOGLE_SITE_VERIFICATION", "")
+    google_verify_meta = f'<meta name="google-site-verification" content="{google_verify}">' if google_verify else ''
+    bing_verify = os.getenv("BING_SITE_VERIFICATION", "")
+    bing_verify_meta = f'<meta name="msvalidate.01" content="{bing_verify}">' if bing_verify else ''
+
+    full_canonical = f"https://she.up.railway.app{canonical_path}"
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <link rel="icon" type="image/png" href="/logo.png">
+
+    <!-- SEO & Metadata -->
+    <meta name="description" content="{description}">
+    <meta name="keywords" content="SHE anti-theft, open-source android security, lost phone tracker, handset recovery, direct boot, zero knowledge vault, offline sms beacon, emergency wipe, erss 112, ceir">
+    <meta name="author" content="SHE Open-Source Security Project">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <meta name="theme-color" content="#000000">
+    <meta name="color-scheme" content="dark light">
+    <link rel="canonical" href="{full_canonical}">
+
+    <!-- Open Graph (Facebook / WhatsApp / LinkedIn / Telegram) -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="SHE - Sentinel for Handheld Equipment">
+    <meta property="og:url" content="{full_canonical}">
+    <meta property="og:title" content="{title}">
+    <meta property="og:description" content="{description}">
+    <meta property="og:image" content="https://she.up.railway.app/logo.png">
+    <meta property="og:image:width" content="512">
+    <meta property="og:image:height" content="512">
+    <meta property="og:image:alt" content="SHE Anti-Theft Shield Logo">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{title}">
+    <meta name="twitter:description" content="{description}">
+    <meta name="twitter:image" content="https://she.up.railway.app/logo.png">
+
+    <!-- Search Console Verification -->
+    {google_verify_meta}
+    {bing_verify_meta}
+
+    <!-- Favicon & Touch Icons -->
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/logo.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+
+    <!-- Schema.org JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "SHE - Sentinel for Handheld Equipment",
+        "operatingSystem": "Android 8.0+",
+        "applicationCategory": "SecurityApplication",
+        "offers": {{
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }},
+        "description": "Open-source Android anti-theft and remote handset recovery ecosystem with Direct Boot, offline SMS beacons, and zero-knowledge vault.",
+        "url": "https://she.up.railway.app",
+        "downloadUrl": "https://she.up.railway.app/releases",
+        "author": {{
+            "@type": "Organization",
+            "name": "SHE Open-Source Project",
+            "url": "https://github.com/samhereokay/she"
+        }}
+    }}
+    </script>
+
+    <!-- Typography & Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -826,6 +902,85 @@ def get_logo():
     if not os.path.exists(LOGO_PATH):
         raise HTTPException(status_code=404, detail="Logo asset not found on server.")
     return FileResponse(LOGO_PATH, media_type="image/png")
+
+
+@router.get("/favicon.ico")
+def get_favicon():
+    """Serve official multi-resolution favicon.ico."""
+    if os.path.exists(FAVICON_PATH):
+        return FileResponse(FAVICON_PATH, media_type="image/x-icon")
+    elif os.path.exists(LOGO_PATH):
+        return FileResponse(LOGO_PATH, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Favicon not found on server.")
+
+
+@router.get("/robots.txt", response_class=PlainTextResponse)
+def get_robots_txt():
+    """Serve search engine crawler directives for Google, Bing, and web spiders."""
+    return PlainTextResponse(
+        content="""User-agent: *
+Allow: /
+Allow: /releases
+Allow: /emergency
+Allow: /terms
+Allow: /privacy
+Allow: /docs/
+Disallow: /api/
+Disallow: /auth/
+
+Sitemap: https://she.up.railway.app/sitemap.xml
+""",
+        media_type="text/plain"
+    )
+
+
+@router.get("/sitemap.xml")
+def get_sitemap_xml():
+    """Serve dynamic XML sitemap for Google Search Console and Bing Webmaster Tools."""
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://she.up.railway.app/</loc>
+        <changefreq>daily</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/releases</loc>
+        <changefreq>daily</changefreq>
+        <priority>0.9</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/emergency</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/docs/2fa-and-recovery</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/terms</loc>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/privacy</loc>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/docs/user-guide</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://she.up.railway.app/docs/setup-order</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.7</priority>
+    </url>
+</urlset>"""
+    return Response(content=xml_content, media_type="application/xml")
 
 
 @router.get("/download/guardian")

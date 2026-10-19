@@ -150,3 +150,54 @@ def test_emergency_console_route():
     assert "Sound Siren" in resp.text
     assert "mapFrame" in resp.text
 
+
+def test_favicon_asset_serves_ico():
+    client = TestClient(app)
+    resp = client.get("/favicon.ico")
+    assert resp.status_code == 200
+    assert "image" in resp.headers["content-type"]
+
+
+def test_robots_txt_and_sitemap_xml():
+    client = TestClient(app)
+
+    # robots.txt
+    resp_r = client.get("/robots.txt")
+    assert resp_r.status_code == 200
+    assert "text/plain" in resp_r.headers["content-type"]
+    assert "User-agent: *" in resp_r.text
+    assert "Sitemap: https://she.up.railway.app/sitemap.xml" in resp_r.text
+
+    # sitemap.xml
+    resp_s = client.get("/sitemap.xml")
+    assert resp_s.status_code == 200
+    assert "application/xml" in resp_s.headers["content-type"]
+    assert "<loc>https://she.up.railway.app/</loc>" in resp_s.text
+    assert "<loc>https://she.up.railway.app/releases</loc>" in resp_s.text
+    assert "<loc>https://she.up.railway.app/emergency</loc>" in resp_s.text
+
+
+def test_seo_metadata_and_open_graph():
+    client = TestClient(app)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # SEO meta tags
+    assert '<meta name="description"' in html
+    assert '<meta name="keywords"' in html
+    assert '<meta name="robots" content="index, follow' in html
+    assert '<link rel="canonical" href="https://she.up.railway.app/"' in html
+
+    # Open Graph & Twitter tags
+    assert '<meta property="og:type" content="website">' in html
+    assert '<meta property="og:site_name" content="SHE - Sentinel for Handheld Equipment">' in html
+    assert '<meta property="og:image" content="https://she.up.railway.app/logo.png">' in html
+    assert '<meta name="twitter:card" content="summary">' in html
+
+    # Schema.org JSON-LD
+    assert '"@type": "SoftwareApplication"' in html
+    assert '"name": "SHE - Sentinel for Handheld Equipment"' in html
+    assert '"operatingSystem": "Android 8.0+"' in html
+
+
