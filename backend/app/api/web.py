@@ -740,7 +740,7 @@ def render_html_shell(
         for url, label, tab_id in nav_links
     ])
 
-    google_verify = os.getenv("GOOGLE_SITE_VERIFICATION", "")
+    google_verify = os.getenv("GOOGLE_SITE_VERIFICATION", "z5xV9Ou0LVNkjz-L7lYizJrpK4jZ_UKCeg6tc9YW3PU")
     google_verify_meta = f'<meta name="google-site-verification" content="{google_verify}">' if google_verify else ''
     bing_verify = os.getenv("BING_SITE_VERIFICATION", "")
     bing_verify_meta = f'<meta name="msvalidate.01" content="{bing_verify}">' if bing_verify else ''
