@@ -1,0 +1,88 @@
+name: SHE Anti-Theft CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-test:
+    name: Backend Quality & Automated Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Verify Python Syntax & Compilation
+        run: |
+          python3 -m compileall backend/app backend/tests
+
+      - name: Run Backend Test Suite
+        env:
+          SECRET_KEY: "test-environment-jwt-secret-key-32bytes-minimum-length-for-testing"
+          TOTP_ENCRYPTION_KEY: "test-environment-totp-encryption-key-32bytes-for-testing"
+          ALLOW_PUBLIC_REGISTRATION: "False"
+        run: |
+          PYTHONPATH=backend pytest backend/tests/ -v --durations=10
+
+  docker-build:
+    name: Container Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build Production Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: she:ci-test
+
+  production-smoke-test:
+    name: Production Deployment Smoke Tests
+    needs: [backend-test, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Await Deployment & Run Live Smoke Tests
+        run: |
+          # Wait 30 seconds for Railway container swap before starting verification
+          sleep 30
+          python3 scripts/smoke_test.py https://she.up.railway.app
