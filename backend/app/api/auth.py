@@ -20,6 +20,7 @@ from app.core.security import (
     verify_totp_code
 )
 from app.core.rate_limit import auth_limiter, totp_limiter
+from app.core.kyc_validator import validate_email_kyc, validate_phone_kyc, validate_hardware_kyc
 from app.db.session import get_db
 from app.db.models import User, TrustedDevice, AuditEvent, utc_now
 from app.schemas.auth import (
@@ -63,22 +64,27 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
             detail="Username must be 3-32 alphanumeric characters, dashes or underscores."
         )
 
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", user_in.email):
+    # 1. Email KYC: Disposable email blocking, typo protection & DNS MX checks
+    email_ok, email_err = validate_email_kyc(user_in.email)
+    if not email_ok:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="A valid email address is required to register."
+            detail=email_err
         )
 
+    # 2. Phone KYC: International E.164, ITU-T country prefixes, mobile ranges & anti-dummy entropy
     phone_clean = (user_in.phone_number or "").strip()
-    if phone_clean and not re.match(r"^\+?[1-9]\d{7,14}$", phone_clean):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mobile number must be in valid international format (e.g. +919876543210 or +15551234567)."
-        )
+    if phone_clean:
+        phone_ok, phone_err = validate_phone_kyc(phone_clean)
+        if not phone_ok:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=phone_err
+            )
 
+    # 3. Hardware KYC: Physical Android handset telemetry verification
     device_info_clean = (user_in.device_info or "").strip()
-    fake_terms = {"test", "dummy", "fake", "none", "null", "undefined", "string", "123"}
-    has_valid_device = len(device_info_clean) >= 6 and device_info_clean.lower() not in fake_terms
+    hw_ok, _ = validate_hardware_kyc(device_info_clean)
 
     # Check Client App Header
     is_client_app = (
@@ -91,7 +97,7 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     if settings.REGISTRATION_TOKEN:
         token_provided = user_in.registration_token or request.headers.get("X-Registration-Token", "")
         token_valid = bool(token_provided) and secrets.compare_digest(token_provided, settings.REGISTRATION_TOKEN)
-        kyc_verified = is_client_app and bool(phone_clean) and has_valid_device
+        kyc_verified = is_client_app and bool(phone_clean) and hw_ok
 
         if not token_valid and not kyc_verified:
             raise HTTPException(

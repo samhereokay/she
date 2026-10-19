@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SimCard
 import androidx.compose.material.icons.outlined.Usb
 import com.antitheft.common.util.ApkShareHelper
 import androidx.compose.material3.AlertDialog
@@ -110,6 +111,56 @@ fun AdminLoginScreen(
     var termsAccepted by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
     var termsError by remember { mutableStateOf<String?>(null) }
+
+    // Handset Telephony & Active SIM Detection
+    val telephonyManager = remember {
+        try {
+            context.getSystemService(android.content.Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    val simCountryIso = remember(telephonyManager) {
+        try {
+            val iso = telephonyManager?.simCountryIso?.uppercase()?.trim()
+            if (!iso.isNullOrBlank()) iso else telephonyManager?.networkCountryIso?.uppercase()?.trim() ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    val simOperatorName = remember(telephonyManager) {
+        try {
+            telephonyManager?.simOperatorName?.trim() ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    val detectedDialCode = remember(simCountryIso) {
+        when (simCountryIso) {
+            "IN" -> "+91"
+            "US", "CA" -> "+1"
+            "GB" -> "+44"
+            "DE" -> "+49"
+            "FR" -> "+33"
+            "AU" -> "+61"
+            "JP" -> "+81"
+            "CN" -> "+86"
+            "AE" -> "+971"
+            "SA" -> "+966"
+            "SG" -> "+65"
+            "MY" -> "+60"
+            "ID" -> "+62"
+            "BR" -> "+55"
+            "RU", "KZ" -> "+7"
+            "IT" -> "+39"
+            "ES" -> "+34"
+            "NL" -> "+31"
+            else -> "+91"
+        }
+    }
 
     // Dialog state
     var totpCodeInput by remember { mutableStateOf("") }
@@ -304,10 +355,34 @@ fun AdminLoginScreen(
                     value = phoneNumber,
                     onValueChange = { phoneNumber = it },
                     label = "Owner Mobile Number",
-                    placeholder = "+91 98765 43210",
+                    placeholder = "$detectedDialCode 98451 23489",
                     helperText = "Emergency SMS recovery contact for offline beacons",
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (simCountryIso.isNotBlank() || simOperatorName.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.SimCard,
+                            contentDescription = null,
+                            tint = SheTheme.colors.accent,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Detected SIM: ${simOperatorName.ifBlank { "Active Carrier" }} (${simCountryIso.ifBlank { "Verified" }}, $detectedDialCode) • Hardware Telephony",
+                            fontSize = 11.sp,
+                            color = SheTheme.colors.accent,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -474,6 +549,30 @@ fun AdminLoginScreen(
                     }
                     termsError = null
                     if (isRegisterMode) {
+                        val cleanPhone = phoneNumber.replace(" ", "").replace("-", "")
+                        val cleanEmail = email.trim().lowercase()
+                        when {
+                            cleanEmail.isBlank() || !cleanEmail.contains("@") || !cleanEmail.contains(".") -> {
+                                termsError = "Please enter a valid personal email address."
+                                return@SheButton
+                            }
+                            cleanEmail.endsWith("@gmial.com") || cleanEmail.endsWith("@gamil.com") || cleanEmail.endsWith("@yaho.com") -> {
+                                termsError = "Email address contains a typo. Please check domain spelling."
+                                return@SheButton
+                            }
+                            cleanEmail.contains("mailinator") || cleanEmail.contains("tempmail") || cleanEmail.contains("10minutemail") -> {
+                                termsError = "Temporary/disposable email addresses are prohibited."
+                                return@SheButton
+                            }
+                            cleanPhone.length < 8 -> {
+                                termsError = "Please enter a valid international mobile number."
+                                return@SheButton
+                            }
+                            cleanPhone.drop(1).all { it == cleanPhone[1] } || cleanPhone.contains("12345678") -> {
+                                termsError = "Please enter your authentic mobile number, not a dummy sequence."
+                                return@SheButton
+                            }
+                        }
                         onRegisterClick(username, email, phoneNumber, password, serverUrl)
                     } else {
                         onLoginClick(username, password, serverUrl)
@@ -490,6 +589,9 @@ fun AdminLoginScreen(
                 onClick = {
                     isRegisterMode = !isRegisterMode
                     termsError = null
+                    if (isRegisterMode && phoneNumber.isBlank()) {
+                        phoneNumber = "$detectedDialCode "
+                    }
                 },
                 variant = SheButtonVariant.OUTLINED,
                 modifier = Modifier.fillMaxWidth()

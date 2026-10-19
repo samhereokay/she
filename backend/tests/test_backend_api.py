@@ -601,7 +601,7 @@ def test_automated_kyc_approval_without_token(monkeypatch):
         json={
             "username": "kyc_approved_owner",
             "email": "kyc_owner@example.com",
-            "phone_number": "+919876543210",
+            "phone_number": "+919845123489",
             "device_info": "Motorola moto g32 (Android 13, API 33)",
             "password": "MasterSecurePassword123!"
         }
@@ -609,17 +609,17 @@ def test_automated_kyc_approval_without_token(monkeypatch):
     assert app_kyc_resp.status_code == 201
     data = app_kyc_resp.json()
     assert data["username"] == "kyc_approved_owner"
-    assert data["phone_number"] == "+919876543210"
+    assert data["phone_number"] == "+919845123489"
     assert "id" in data and len(data["id"]) > 10
 
-    # 2. SHE Android app with fake/dummy device info -> REJECTED 403 or 422
+    # 2. SHE Android app with fake/dummy device info -> REJECTED 403
     fake_dev_resp = client.post(
         "/auth/register",
         headers={"X-App-Client": "SHE-Admin-Android"},
         json={
             "username": "fake_dev_user",
             "email": "fake@example.com",
-            "phone_number": "+919876543210",
+            "phone_number": "+919845123489",
             "device_info": "fake",
             "password": "MasterSecurePassword123!"
         }
@@ -639,4 +639,64 @@ def test_automated_kyc_approval_without_token(monkeypatch):
         }
     )
     assert bad_phone_resp.status_code == 422
+
+    # 4. Disposable email domain (e.g. mailinator.com) -> REJECTED 422
+    disposable_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "disposable_user",
+            "email": "scammer@mailinator.com",
+            "phone_number": "+919845123489",
+            "device_info": "Samsung SM-S918B (Android 14)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert disposable_resp.status_code == 422
+    assert "Disposable or temporary" in disposable_resp.json()["detail"]
+
+    # 5. Email typo detection (e.g. gmial.com) -> REJECTED 422
+    typo_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "typo_user",
+            "email": "typo@gmial.com",
+            "phone_number": "+919845123489",
+            "device_info": "Samsung SM-S918B (Android 14)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert typo_resp.status_code == 422
+    assert "Did you mean @gmail.com" in typo_resp.json()["detail"]
+
+    # 6. Sequential dummy phone number -> REJECTED 422
+    dummy_phone_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "dummy_phone_user",
+            "email": "dummy@example.com",
+            "phone_number": "+919876543210",
+            "device_info": "Samsung SM-S918B (Android 14)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert dummy_phone_resp.status_code == 422
+    assert "dummy placeholder" in dummy_phone_resp.json()["detail"]
+
+    # 7. Indian landline prefix (not 6/7/8/9) -> REJECTED 422
+    landline_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "landline_user",
+            "email": "landline@example.com",
+            "phone_number": "+911123456789",
+            "device_info": "Samsung SM-S918B (Android 14)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert landline_resp.status_code == 422
+    assert "start with 6, 7, 8, or 9" in landline_resp.json()["detail"]
 
