@@ -437,7 +437,7 @@ def test_email_change_clears_verification_and_requires_new_otp(client):
     assert client.get("/api/v1/devices", headers=headers).status_code == 200
 
 
-def test_unverified_email_squatting_resolution(client):
+def test_unverified_email_squatting_resolution(client, db_session):
     """
     Enforces that unverified placeholder accounts cannot squat on an email and block the legitimate owner.
     Once an email is verified, it is permanently protected against duplicate registration.
@@ -452,8 +452,8 @@ def test_unverified_email_squatting_resolution(client):
     })
     assert att_resp.status_code == 201
 
-    # 2. Legitimate owner registers with the same email
-    # Unverified squatter account is automatically purged
+    # 2. Legitimate owner also registers with the same email
+    # Both unverified accounts co-exist without blocking registration
     real_resp = client.post("/auth/register", json={
         "username": "real_owner",
         "email": "victim@example.com",
@@ -461,20 +461,27 @@ def test_unverified_email_squatting_resolution(client):
     })
     assert real_resp.status_code == 201
 
-    # 3. Legitimate owner logs in and verifies the email
-    token = client.post("/auth/login/json", json={
+    # Both users exist in DB before either confirms
+    assert db_session.query(User).filter(User.email == "victim@example.com").count() == 2
+
+    # 3. Legitimate owner logs in and confirms the OTP challenge first
+    token_real = client.post("/auth/login/json", json={
         "username": "real_owner",
         "password": "PasswordReal123!"
     }).json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers_real = {"Authorization": f"Bearer {token_real}"}
 
     with patch("app.api.verify.send_verification_email") as mock_mail:
-        client.post("/verify/email/send", json={}, headers=headers)
+        client.post("/verify/email/send", json={}, headers=headers_real)
         code = mock_mail.call_args[0][1]
-        conf_resp = client.post("/verify/email/confirm", json={"code": code}, headers=headers)
+        conf_resp = client.post("/verify/email/confirm", json={"code": code}, headers=headers_real)
         assert conf_resp.status_code == 200
 
-    # 4. Now that victim@example.com is VERIFIED, duplicate registration is strictly rejected (400)
+    # 4. First to confirm wins: unverified competitor account was automatically purged
+    assert db_session.query(User).filter(User.username == "attacker_squatter").first() is None
+    assert db_session.query(User).filter(User.email == "victim@example.com").count() == 1
+
+    # 5. Now that victim@example.com is VERIFIED, new registration is strictly rejected (400)
     blocked_resp = client.post("/auth/register", json={
         "username": "another_user",
         "email": "victim@example.com",

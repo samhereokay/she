@@ -80,11 +80,30 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
     }
 
     override fun getTrustedPhoneNumber(): String {
+        // Critical security invariant: only return phone number if server marked it as verified
+        if (!isPhoneVerified()) {
+            return ""
+        }
         return prefs.getString(KEY_TRUSTED_PHONE, "") ?: ""
     }
 
+    fun isPhoneVerified(): Boolean {
+        return prefs.getBoolean(KEY_PHONE_VERIFIED, false)
+    }
+
+    fun setTrustedPhoneNumberVerified(phone: String, verified: Boolean) {
+        prefs.edit()
+            .putString(KEY_TRUSTED_PHONE, phone)
+            .putBoolean(KEY_PHONE_VERIFIED, verified)
+            .apply()
+    }
+
     fun setTrustedPhoneNumber(phone: String) {
-        prefs.edit().putString(KEY_TRUSTED_PHONE, phone).apply()
+        // Legacy/unverified setter — explicitly leaves phone_verified as false
+        prefs.edit()
+            .putString(KEY_TRUSTED_PHONE, phone)
+            .putBoolean(KEY_PHONE_VERIFIED, false)
+            .apply()
     }
 
     fun getServerUrl(): String {
@@ -288,6 +307,7 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DEVICE_ALIAS = "device_alias"
         private const val KEY_TRUSTED_PHONE = "trusted_phone"
+        private const val KEY_PHONE_VERIFIED = "phone_verified"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_SEQUENCE_COUNTER = "sequence_counter"
         private const val KEY_PAIRING_SECRET = "pairing_secret"

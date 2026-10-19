@@ -32,6 +32,8 @@ import com.antitheft.admin.security.BaseSecureActivity
 
 class AdminVaultActivity : BaseSecureActivity() {
 
+    override val isSensitiveRecoveryScreen: Boolean = true
+
     private val vaultManager by lazy { AdminVaultManager(context = this) }
     private var isVaultUnlocked = false
 

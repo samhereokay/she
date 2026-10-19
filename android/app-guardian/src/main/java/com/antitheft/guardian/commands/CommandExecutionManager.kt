@@ -32,10 +32,29 @@ object CommandExecutionManager {
             "UNPAIR" -> executeUnpair(context)
             "CLEAR_DEVICE_OWNER" -> executeClearDeviceOwner(context)
             "SEND_VERIFY_SMS" -> executeSendVerifySms(context, parametersJson)
+            "SYNC_VERIFIED_PHONE" -> executeSyncVerifiedPhone(context, parametersJson)
             else -> {
                 Log.w(TAG, "Unknown recovery command type: $commandType")
                 false
             }
+        }
+    }
+
+    fun executeSyncVerifiedPhone(context: Context, parametersJson: String): Boolean {
+        return try {
+            val json = com.google.gson.JsonParser.parseString(parametersJson).asJsonObject
+            val phone = json.get("phone")?.asString
+            if (!phone.isNullOrBlank()) {
+                val storageHelper = DirectBootStorageHelper(context)
+                storageHelper.setTrustedPhoneNumberVerified(phone, true)
+                Log.i(TAG, "SYNC_VERIFIED_PHONE: Updated and verified trusted phone on handset.")
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error executing SYNC_VERIFIED_PHONE", e)
+            false
         }
     }
 

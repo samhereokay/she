@@ -114,18 +114,17 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
             detail="Public registration is permanently closed. Owner account already initialized."
         )
 
-    # Check if email is already claimed by a verified owner, or purge unverified squatter placeholder
-    existing_email_user = db.query(User).filter(User.email == user_in.email).first()
-    if existing_email_user:
-        if existing_email_user.email_verified_at is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-        else:
-            # Squatting prevention: Unverified placeholder cannot lock out legitimate owner
-            db.delete(existing_email_user)
-            db.commit()
+    # Check if email is already claimed by a verified owner.
+    # Unverified accounts are allowed to co-exist; the first to confirm OTP wins the email.
+    verified_email_user = db.query(User).filter(
+        User.email == user_in.email,
+        User.email_verified_at != None
+    ).first()
+    if verified_email_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
 
     # Check if username exists
     if db.query(User).filter(User.username == user_in.username).first():

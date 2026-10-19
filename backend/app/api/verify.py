@@ -121,8 +121,30 @@ def confirm_email_verification(
         code=req.code
     )
 
+    # Enforce uniqueness at email verification time:
+    # Check if another account verified this email in the meantime
+    other_verified = db.query(User).filter(
+        User.email == target_email,
+        User.id != current_user.id,
+        User.email_verified_at != None
+    ).first()
+    if other_verified:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="email_already_verified_by_other: Another account has already verified ownership of this email address."
+        )
+
     now = utc_now()
     current_user.email_verified_at = now
+
+    # First to confirm wins: Purge any other unverified accounts that registered with this email
+    unverified_competitors = db.query(User).filter(
+        User.email == target_email,
+        User.id != current_user.id,
+        User.email_verified_at == None
+    ).all()
+    for comp in unverified_competitors:
+        db.delete(comp)
 
     audit = AuditEvent(
         user_id=current_user.id,
@@ -311,6 +333,43 @@ def confirm_phone_verification(
     devices = db.query(ProtectedDevice).filter(ProtectedDevice.user_id == current_user.id).all()
     for dev in devices:
         dev.trusted_phone_number = target_phone
+        # Enqueue authenticated SYNC_VERIFIED_PHONE command so Guardian updates its DE storage
+        if dev.pairing_secret:
+            try:
+                max_seq = db.query(func.max(DeviceCommand.sequence_counter)).filter(
+                    DeviceCommand.protected_device_id == dev.id
+                ).scalar() or 0
+                next_seq = max_seq + 1
+                cmd_id = generate_uuid()
+                expiry_epoch = int(time.time()) + 86400  # 24 hours
+                params_json = json.dumps({"phone": target_phone})
+                canonical_bytes = create_canonical_command_bytes(
+                    pairing_id=dev.pairing_id,
+                    command_id=cmd_id,
+                    target_device_id=dev.id,
+                    command_type="SYNC_VERIFIED_PHONE",
+                    sequence_counter=next_seq,
+                    expiry_epoch=expiry_epoch,
+                    parameters_json=params_json
+                )
+                raw_pairing_secret = decrypt_pairing_secret(dev.pairing_secret)
+                server_sig = compute_truncated_hmac(raw_pairing_secret.encode("utf-8"), canonical_bytes, hex_length=12)
+                sync_cmd = DeviceCommand(
+                    id=cmd_id,
+                    user_id=current_user.id,
+                    trusted_device_id=None,
+                    protected_device_id=dev.id,
+                    pairing_id=dev.pairing_id,
+                    command_type="SYNC_VERIFIED_PHONE",
+                    sequence_counter=next_seq,
+                    expiry_epoch=expiry_epoch,
+                    parameters_json=params_json,
+                    admin_signature=server_sig,
+                    status="PENDING"
+                )
+                db.add(sync_cmd)
+            except Exception as e:
+                logger.warning(f"Failed to enqueue SYNC_VERIFIED_PHONE for device {dev.id}: {e}")
 
     audit = AuditEvent(
         user_id=current_user.id,

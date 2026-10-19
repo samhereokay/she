@@ -47,6 +47,8 @@ import com.antitheft.admin.security.BaseSecureActivity
 
 class LiveTrackingActivity : BaseSecureActivity() {
 
+    override val isSensitiveRecoveryScreen: Boolean = true
+
     companion object {
         const val EXTRA_DEVICE_ID = "extra_device_id"
         const val EXTRA_DEVICE_ALIAS = "extra_device_alias"

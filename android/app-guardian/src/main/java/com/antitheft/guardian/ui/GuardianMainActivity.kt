@@ -550,8 +550,10 @@ class GuardianMainActivity : AppCompatActivity() {
                             storageHelper.setPairingSecret(secretBytes)
                         }
                         if (!trustedPhoneNumber.isNullOrBlank()) {
+                            // Security invariant: Pairing payload phone is provisional.
+                            // Only numbers cryptographically confirmed via /verify/phone/confirm will be marked verified.
                             storageHelper.setTrustedPhoneNumber(trustedPhoneNumber)
-                            android.util.Log.i("GuardianPairing", "CONFIGURED_TRUSTED_PHONE: Configured trusted phone from pairing payload.")
+                            android.util.Log.i("GuardianPairing", "PROVISIONAL_PHONE_STORED: Stored provisional phone (unverified until /verify/phone/confirm syncs).")
                         }
 
                         val respObj = com.google.gson.JsonParser.parseString(respBody).asJsonObject

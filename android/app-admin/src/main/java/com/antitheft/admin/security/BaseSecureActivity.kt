@@ -1,10 +1,11 @@
 package com.antitheft.admin.security
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
@@ -14,23 +15,32 @@ import com.antitheft.admin.BuildConfig
 import com.antitheft.admin.auth.AdminSessionManager
 
 /**
- * Base Activity providing banking-grade security protections:
+ * Base Activity providing configurable banking-grade security protections:
  * 1. Screen recording & screenshot prevention via WindowManager.LayoutParams.FLAG_SECURE
- * 2. Anti-debugging / tracer check
- * 3. Developer Options & USB Debugging enforcement
- * 4. Device integrity / Root check
- * 5. App-level Biometric authentication gate (Fingerprint / Face / Device PIN)
+ * 2. Environment integrity policy:
+ *    - Attached debugger: BLOCK (app cannot run under debugger)
+ *    - Rooted device: BLOCK only on Vault and Recovery/Command screens
+ *    - Developer options / ADB: Non-blocking WARNING BANNER
+ *    - All checks skipped when BuildConfig.DEBUG == true
+ * 3. Robust biometric handling:
+ *    - API 28/29 compatibility (no BIOMETRIC_STRONG | DEVICE_CREDENTIAL combo)
+ *    - Graceful no-enrollment handling (no lockout, no silent bypass without user notice)
  */
 abstract class BaseSecureActivity : AppCompatActivity() {
 
     protected val sessionManager by lazy { AdminSessionManager(this) }
     private var isBiometricAuthenticated = false
 
+    /**
+     * Override in sensitive activities (AdminVaultActivity, LiveTrackingActivity) to strictly
+     * block rooted handsets. Default is false (allow with warning).
+     */
+    protected open val isSensitiveRecoveryScreen: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. Block Screen Recording & Screenshots (Banking-grade protection)
-        // FLAG_SECURE prevents screen recording, screen casting, screenshots, and recents thumbnail snooping
+        // Block screen recording, screenshots, screencasting, and recents thumbnail leaking
         window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE
@@ -40,46 +50,52 @@ abstract class BaseSecureActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
 
-        // In production release builds, perform rigorous environment integrity checks
-        if (!BuildConfig.DEBUG && !sessionManager.isEmulator()) {
-            if (SecurityIntegrityManager.isDebuggerAttached()) {
-                showSecurityViolationDialog(
-                    title = "Security Alert: Debugger Detected",
-                    message = "A debugger or runtime tracer is attached to SHE Admin. For your security and to prevent memory theft, the app cannot run while being debugged."
-                )
-                return
-            }
+        // Skip all integrity policy blocks when BuildConfig.DEBUG is true
+        if (BuildConfig.DEBUG) {
+            return
+        }
 
-            if (SecurityIntegrityManager.isRooted()) {
-                showSecurityViolationDialog(
-                    title = "Security Alert: Rooted Device",
-                    message = "This device appears to be rooted or running modified system firmware. Key integrity and hardware Keystore storage cannot be guaranteed on rooted devices."
-                )
-                return
-            }
+        // 1. Attached debugger = BLOCK
+        if (SecurityIntegrityManager.isDebuggerAttached()) {
+            showSecurityViolationDialog(
+                title = "Security Alert: Debugger Detected",
+                message = "A debugger or runtime tracer is attached to SHE Admin. The app cannot run while being debugged.",
+                isBlocking = true
+            )
+            return
+        }
 
-            if (SecurityIntegrityManager.isAdbEnabled(this)) {
+        // 2. Rooted device = BLOCK vault and recovery screens only; warn on others
+        if (SecurityIntegrityManager.isRooted()) {
+            if (isSensitiveRecoveryScreen) {
                 showSecurityViolationDialog(
-                    title = "Security Alert: USB Debugging Enabled",
-                    message = "USB Debugging (ADB) is enabled on this handset. To prevent unauthorized extraction of cryptographic keys, please disable USB debugging in Android Settings.",
-                    intentAction = Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
+                    title = "Access Blocked: Rooted Device",
+                    message = "This device appears to be rooted. Access to the Encrypted Recovery Vault and emergency recovery controls is strictly restricted on rooted systems.",
+                    isBlocking = true
                 )
                 return
+            } else {
+                Toast.makeText(
+                    this,
+                    "Notice: Device has root/superuser binaries. Vault and recovery commands are restricted.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
+        }
 
-            if (SecurityIntegrityManager.isDeveloperOptionsEnabled(this)) {
-                showSecurityViolationDialog(
-                    title = "Security Alert: Developer Options Active",
-                    message = "Developer options are currently active. Please turn off Developer Options in Android Settings to ensure banking-level isolation.",
-                    intentAction = Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
-                )
-                return
-            }
+        // 3. Developer options / ADB = WARNING BANNER ONLY (non-blocking)
+        if (SecurityIntegrityManager.isAdbEnabled(this) || SecurityIntegrityManager.isDeveloperOptionsEnabled(this)) {
+            showSecurityViolationDialog(
+                title = "Security Advisory: Developer Options / ADB Active",
+                message = "Developer options or USB Debugging is currently active on your phone. For maximum security, we recommend disabling them in Android Settings.",
+                intentAction = Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS,
+                isBlocking = false
+            )
         }
     }
 
     /**
-     * Prompts for biometric authentication before granting access to sensitive screens or actions.
+     * Biometric authentication supporting API 28/29, API 30+, and device credentials.
      */
     protected fun requireBiometricAuth(
         title: String = "Biometric Verification",
@@ -88,9 +104,17 @@ abstract class BaseSecureActivity : AppCompatActivity() {
         onFailedOrCancelled: (() -> Unit)? = null
     ) {
         val biometricManager = BiometricManager.from(this)
-        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
 
-        when (biometricManager.canAuthenticate(authenticators)) {
+        // API 28/29 fix: BIOMETRIC_STRONG | DEVICE_CREDENTIAL combo was only introduced in API 30 (R)
+        // On API 28/29, combining them throws IllegalArgumentException in AndroidX Biometric.
+        val authenticators = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            BiometricManager.Authenticators.BIOMETRIC_WEAK
+        }
+
+        val canAuth = biometricManager.canAuthenticate(authenticators)
+        when (canAuth) {
             BiometricManager.BIOMETRIC_SUCCESS -> {
                 val executor = ContextCompat.getMainExecutor(this)
                 val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
@@ -107,32 +131,39 @@ abstract class BaseSecureActivity : AppCompatActivity() {
 
                     override fun onAuthenticationFailed() {
                         super.onAuthenticationFailed()
-                        // User failed biometric match, BiometricPrompt UI remains visible for retry
                     }
                 })
 
-                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                val promptBuilder = BiometricPrompt.PromptInfo.Builder()
                     .setTitle(title)
                     .setSubtitle(subtitle)
-                    .setAllowedAuthenticators(authenticators)
-                    .build()
 
-                prompt.authenticate(promptInfo)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    promptBuilder.setAllowedAuthenticators(authenticators)
+                } else {
+                    // API 28/29 requires negative button when device credential is not combined via API 30 flags
+                    promptBuilder.setNegativeButtonText("Use Account Credentials")
+                }
+
+                prompt.authenticate(promptBuilder.build())
             }
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
-                // If device has no biometric enrolled, alert user or allow fallback
+                // Inform user screen lock is recommended, but do NOT lock them out
                 AlertDialog.Builder(this)
                     .setTitle("Enroll Screen Lock")
-                    .setMessage("No biometric or screen lock PIN is enrolled on this phone. For banking-grade security, please set up a screen lock.")
-                    .setPositiveButton("Settings") { _, _ ->
+                    .setMessage("No fingerprint or screen lock PIN is enrolled on this phone. For banking-grade security, consider setting up a screen lock.")
+                    .setPositiveButton("Set Up") { _, _ ->
                         startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                        onSuccess()
                     }
-                    .setNegativeButton("Proceed", null)
+                    .setNegativeButton("Continue", { _, _ ->
+                        onSuccess()
+                    })
+                    .setCancelable(false)
                     .show()
-                onSuccess()
             }
             else -> {
-                // Not supported on hardware or unavailable; pass through
+                // Biometrics not present or hardware unsupported on older test devices
                 onSuccess()
             }
         }
@@ -141,27 +172,30 @@ abstract class BaseSecureActivity : AppCompatActivity() {
     private fun showSecurityViolationDialog(
         title: String,
         message: String,
-        intentAction: String? = null
+        intentAction: String? = null,
+        isBlocking: Boolean = true
     ) {
-        AlertDialog.Builder(this)
+        val builder = AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
-            .setCancelable(false)
-            .setPositiveButton(if (intentAction != null) "Open Settings" else "Exit App") { _, _ ->
-                if (intentAction != null) {
+            .setCancelable(!isBlocking)
+
+        if (isBlocking) {
+            builder.setPositiveButton("Exit App") { _, _ ->
+                finishAffinity()
+            }
+        } else {
+            if (intentAction != null) {
+                builder.setPositiveButton("Android Settings") { _, _ ->
                     try {
                         startActivity(Intent(intentAction))
                     } catch (_: Exception) {
                         startActivity(Intent(Settings.ACTION_SETTINGS))
                     }
-                    finishAffinity()
-                } else {
-                    finishAffinity()
                 }
             }
-            .setNegativeButton("Close") { _, _ ->
-                finishAffinity()
-            }
-            .show()
+            builder.setNegativeButton("Dismiss", null)
+        }
+        builder.show()
     }
 }

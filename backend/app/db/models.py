@@ -28,7 +28,7 @@ class User(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     username = Column(String(64), unique=True, index=True, nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
+    email = Column(String(255), index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     totp_secret = Column(Text, nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)

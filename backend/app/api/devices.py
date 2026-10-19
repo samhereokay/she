@@ -454,6 +454,7 @@ def dispatch_command(
         "UNPAIR",
         "CLEAR_DEVICE_OWNER",
         "SEND_VERIFY_SMS",
+        "SYNC_VERIFIED_PHONE",
     }
     if req.command_type not in ALLOWED_COMMAND_TYPES:
         raise HTTPException(
