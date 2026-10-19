@@ -22,11 +22,15 @@ engine_kwargs = {"pool_pre_ping": True}
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 elif "pooler.supabase.com" in db_url or ":6543" in db_url:
-    # Supabase Transaction Pooler (PgBouncer): NullPool delegates pooling to PgBouncer
+    # Supabase Transaction Pooler (PgBouncer): Persistent connection pooling avoids
+    # 1.5s+ trans-Pacific TLS handshakes on every single HTTP request.
     connect_args = {"connect_timeout": 10, "sslmode": "require"}
     engine_kwargs = {
-        "poolclass": NullPool,
-        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 10,
+        "pool_recycle": 300,
+        "pool_timeout": 15,
+        "pool_pre_ping": False,
     }
 else:
     connect_args = {"connect_timeout": 10, "sslmode": "require"}

@@ -932,16 +932,16 @@ async def get_logo():
     """Serve official SHE logo asset."""
     if not os.path.exists(LOGO_PATH):
         raise HTTPException(status_code=404, detail="Logo asset not found on server.")
-    return FileResponse(LOGO_PATH, media_type="image/png")
+    return FileResponse(LOGO_PATH, media_type="image/png", headers={"Cache-Control": "public, max-age=604800, immutable"})
 
 
 @router.api_route("/favicon.ico", methods=["GET", "HEAD"])
 async def get_favicon():
     """Serve official multi-resolution favicon.ico."""
     if os.path.exists(FAVICON_PATH):
-        return FileResponse(FAVICON_PATH, media_type="image/x-icon")
+        return FileResponse(FAVICON_PATH, media_type="image/x-icon", headers={"Cache-Control": "public, max-age=604800, immutable"})
     elif os.path.exists(LOGO_PATH):
-        return FileResponse(LOGO_PATH, media_type="image/png")
+        return FileResponse(LOGO_PATH, media_type="image/png", headers={"Cache-Control": "public, max-age=604800, immutable"})
     raise HTTPException(status_code=404, detail="Favicon not found on server.")
 
 
