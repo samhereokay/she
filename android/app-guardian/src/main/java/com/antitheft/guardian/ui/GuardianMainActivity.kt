@@ -77,6 +77,11 @@ class GuardianMainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Block screen recording, screenshots, and recents thumbnail snooping
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+            android.view.WindowManager.LayoutParams.FLAG_SECURE
+        )
         setContentView(R.layout.activity_main)
 
         storageHelper = DirectBootStorageHelper(this)

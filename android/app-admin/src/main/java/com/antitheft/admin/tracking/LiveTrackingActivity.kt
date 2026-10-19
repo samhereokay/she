@@ -43,8 +43,9 @@ import java.util.Base64
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import com.antitheft.admin.security.BaseSecureActivity
 
-class LiveTrackingActivity : AppCompatActivity() {
+class LiveTrackingActivity : BaseSecureActivity() {
 
     companion object {
         const val EXTRA_DEVICE_ID = "extra_device_id"
@@ -54,7 +55,6 @@ class LiveTrackingActivity : AppCompatActivity() {
         const val EXTRA_INITIAL_ACC = "extra_initial_acc"
     }
 
-    private lateinit var sessionManager: AdminSessionManager
     private val adminKeystore = AdminKeystoreManager()
 
     private lateinit var webViewMap: WebView
@@ -98,7 +98,6 @@ class LiveTrackingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_live_tracking)
 
-        sessionManager = AdminSessionManager(this)
         deviceId = intent.getStringExtra(EXTRA_DEVICE_ID) ?: ""
         deviceAlias = intent.getStringExtra(EXTRA_DEVICE_ALIAS) ?: "Guardian Handset"
 

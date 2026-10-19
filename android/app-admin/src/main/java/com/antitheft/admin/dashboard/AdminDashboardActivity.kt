@@ -31,21 +31,38 @@ import kotlinx.coroutines.withContext
 import java.util.Base64
 import java.util.Locale
 import java.util.UUID
+import com.antitheft.admin.security.BaseSecureActivity
 
-class AdminDashboardActivity : AppCompatActivity() {
+class AdminDashboardActivity : BaseSecureActivity() {
 
-    private lateinit var sessionManager: AdminSessionManager
     private val adminKeystore = AdminKeystoreManager()
     private var devicesList by mutableStateOf<List<DeviceDto>>(emptyList())
     private var isLoading by mutableStateOf(false)
+    private var isUnlockedByBiometric by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        sessionManager = AdminSessionManager(this)
+
+        if (sessionManager.isBiometricEnabled() && !sessionManager.isEmulator()) {
+            requireBiometricAuth(
+                title = "SHE Security Center",
+                subtitle = "Confirm fingerprint or screen lock to access command center",
+                onSuccess = {
+                    isUnlockedByBiometric = true
+                    loadDevices()
+                },
+                onFailedOrCancelled = {
+                    finish()
+                }
+            )
+        } else {
+            isUnlockedByBiometric = true
+        }
 
         setContent {
             SheTheme {
-                AdminDashboardScreen(
+                if (isUnlockedByBiometric) {
+                    AdminDashboardScreen(
                     devices = devicesList,
                     isLoading = isLoading,
                     onRefresh = { loadDevices() },
@@ -74,6 +91,7 @@ class AdminDashboardActivity : AppCompatActivity() {
                         showCommandGuideDialog()
                     }
                 )
+                }
             }
         }
 

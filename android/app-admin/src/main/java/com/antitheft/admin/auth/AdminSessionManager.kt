@@ -109,6 +109,15 @@ class AdminSessionManager(context: Context) {
         secureStorage.putEncryptedString(KEY_BASEMAP_PROVIDER, provider.trim())
     }
 
+    fun isBiometricEnabled(): Boolean {
+        val str = secureStorage.getDecryptedString(KEY_BIOMETRIC_ENABLED, "true") ?: "true"
+        return str.toBoolean()
+    }
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        secureStorage.putEncryptedString(KEY_BIOMETRIC_ENABLED, enabled.toString())
+    }
+
     companion object {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_SERVER_URL = "server_url"
@@ -117,5 +126,6 @@ class AdminSessionManager(context: Context) {
         private const val KEY_ADMIN_PHONE = "admin_phone_number"
         private const val KEY_CARTO_API_KEY = "carto_api_key"
         private const val KEY_BASEMAP_PROVIDER = "basemap_provider"
+        private const val KEY_BIOMETRIC_ENABLED = "biometric_app_lock_enabled"
     }
 }

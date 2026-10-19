@@ -22,9 +22,10 @@ import com.journeyapps.barcodescanner.BarcodeEncoder
 import kotlinx.coroutines.launch
 import java.security.SecureRandom
 
-class PairDeviceActivity : AppCompatActivity() {
+import com.antitheft.admin.security.BaseSecureActivity
 
-    private lateinit var sessionManager: AdminSessionManager
+class PairDeviceActivity : BaseSecureActivity() {
+
     private var currentPairingSecretHex: String = ""
     private var qrBitmapState by mutableStateOf<Bitmap?>(null)
     private var pairingSecretState by mutableStateOf("")
@@ -34,14 +35,6 @@ class PairDeviceActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!com.antitheft.admin.BuildConfig.DEBUG) {
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
-        }
-
-        sessionManager = AdminSessionManager(this)
         val savedPhone = sessionManager.getAdminPhoneNumber()
 
         setContent {

@@ -17,11 +17,11 @@ import com.antitheft.admin.network.RegisterRequest
 import com.antitheft.admin.network.TotpValidateRequest
 import com.antitheft.admin.network.TotpVerifyRequest
 import com.antitheft.admin.ui.theme.SheTheme
+import com.antitheft.admin.security.BaseSecureActivity
 import kotlinx.coroutines.launch
 
-class AdminLoginActivity : AppCompatActivity() {
+class AdminLoginActivity : BaseSecureActivity() {
 
-    private lateinit var sessionManager: AdminSessionManager
     private var isLoading by mutableStateOf(false)
     private var errorMessage by mutableStateOf<String?>(null)
 
@@ -33,7 +33,6 @@ class AdminLoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        sessionManager = AdminSessionManager(this)
 
         if (sessionManager.isLoggedIn()) {
             openDashboard()

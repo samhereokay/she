@@ -28,10 +28,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.antitheft.admin.security.BaseSecureActivity
 
-class AdminVaultActivity : AppCompatActivity() {
+class AdminVaultActivity : BaseSecureActivity() {
 
-    private lateinit var sessionManager: AdminSessionManager
     private val vaultManager by lazy { AdminVaultManager(context = this) }
     private var isVaultUnlocked = false
 
@@ -45,7 +45,6 @@ class AdminVaultActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_vault)
 
-        sessionManager = AdminSessionManager(this)
         tvStatus = findViewById(R.id.tvVaultStatus)
         containerItems = findViewById(R.id.containerVaultItems)
         btnAddSecret = findViewById(R.id.btnAddSecret)
