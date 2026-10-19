@@ -24,7 +24,7 @@ from app.schemas.device import (
     PairingConfirmResponse
 )
 from app.schemas.location import LocationResponse
-from app.api.deps import get_current_user, get_current_user_2fa, get_pairing_token_user
+from app.api.deps import get_current_user, get_verified_user, get_current_user_2fa, get_pairing_token_user
 from app.core.security import (
     verify_ecdsa_p256_signature,
     create_canonical_command_bytes,
@@ -161,7 +161,7 @@ def pair_device(
 
 @router.get("/pending-confirmations", response_model=List[DeviceResponse])
 def list_pending_confirmations(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """List devices currently awaiting owner mutual confirmation."""
@@ -240,7 +240,7 @@ def confirm_device_pairing(
 
 @router.get("", response_model=DeviceListResponse)
 def list_devices(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """List all protected devices owned by current user with live status indicators."""
@@ -278,7 +278,7 @@ def list_devices(
 @router.get("/{device_id}", response_model=DeviceResponse)
 def get_device(
     device_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """Get single protected device with strict ownership enforcement."""
@@ -364,7 +364,7 @@ def register_trusted_device(
 
 @router.get("/trusted", response_model=List[TrustedDeviceResponse])
 def list_trusted_devices(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """List approved Admin companion devices for the authenticated owner."""

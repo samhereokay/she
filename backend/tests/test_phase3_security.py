@@ -982,21 +982,8 @@ def test_clear_device_owner_command_dispatch_and_execution(client, pair_device):
         "password": "SecurePassword123!"
     }).json()["access_token"]
 
-    # Setup TOTP
-    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token}"})
-    totp_secret = setup_resp.json()["secret"]
-
-    import struct, hmac, hashlib
-    key = base64.b32decode(totp_secret + "=" * ((8 - len(totp_secret) % 8) % 8), casefold=True)
-    counter = int(time.time() // 30)
-    msg = struct.pack(">Q", counter)
-    h = hmac.new(key, msg, hashlib.sha1).digest()
-    idx = h[-1] & 0x0F
-    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
-    valid_code = f"{code_int % 1000000:06d}"
-
-    verify_resp = client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {token}"})
-    token_2fa = verify_resp.json()["access_token"]
+    from conftest import enroll_totp_and_get_2fa_token
+    token_2fa = enroll_totp_and_get_2fa_token(client, token)
 
     admin_priv = ec.generate_private_key(ec.SECP256R1())
     admin_pub = admin_priv.public_key().public_bytes(
@@ -1076,6 +1063,15 @@ def test_clear_device_owner_totp_older_than_60s_rejected(client):
         "username": "do_stale_owner",
         "password": "SecurePassword123!"
     }).json()["access_token"]
+
+    from app.db.models import User, utc_now
+    from conftest import TestingSessionLocal
+    _db = TestingSessionLocal()
+    _u = _db.query(User).filter(User.username == "do_stale_owner").first()
+    if _u:
+        _u.email_verified_at = utc_now()
+        _db.commit()
+    _db.close()
 
     setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token}"})
     totp_secret = setup_resp.json()["secret"]
@@ -1335,6 +1331,15 @@ def test_totp_recovery_codes_and_tamper_prevention(client):
         "password": "PasswordRecovery123!"
     })
     assert reg_resp.status_code == 201
+
+    from app.db.models import User, utc_now
+    from conftest import TestingSessionLocal
+    _db = TestingSessionLocal()
+    _u = _db.query(User).filter(User.username == username).first()
+    if _u:
+        _u.email_verified_at = utc_now()
+        _db.commit()
+    _db.close()
 
     # 2. Login (1FA)
     login_resp = client.post("/auth/login/json", json={

@@ -25,7 +25,23 @@ class UserResponse(BaseModel):
     email: str
     phone_number: Optional[str] = None
     device_info: Optional[str] = None
+    email_verified_at: Optional[datetime] = None
+    fallback_phone_e164: Optional[str] = None
+    phone_verified_at: Optional[datetime] = None
     created_at: datetime
+
+
+class EmailSendRequest(BaseModel):
+    email: Optional[str] = Field(None, description="Optional target email address, defaults to account email")
+
+
+class EmailConfirmRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6, description="6-digit verification code")
+
+
+class EmailVerifyResponse(BaseModel):
+    status: str
+    email_verified_at: datetime
 
 
 class Token(BaseModel):

@@ -7,6 +7,7 @@ from app.api.devices import router as devices_router
 from app.api.locations import router as locations_router
 from app.api.vault import router as vault_router
 from app.api.web import router as web_router
+from app.api.verify import router as verify_router
 
 # Auto-create tables for development / SQLite testing
 Base.metadata.create_all(bind=engine)
@@ -73,6 +74,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Register API Routers
 app.include_router(auth_router)
+app.include_router(verify_router)
 app.include_router(devices_router)
 app.include_router(locations_router)
 app.include_router(vault_router)

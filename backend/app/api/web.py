@@ -1027,8 +1027,8 @@ def download_release_admin():
 
 @router.get("/releases", response_class=HTMLResponse)
 def render_releases_page():
-    guardian_sha = get_file_sha256(STATIC_GUARDIAN_PATH)
-    admin_sha = get_file_sha256(STATIC_ADMIN_PATH)
+    guardian_sha = get_file_sha256(GUARDIAN_APK_PATH if os.path.exists(GUARDIAN_APK_PATH) else STATIC_GUARDIAN_PATH)
+    admin_sha = get_file_sha256(ADMIN_APK_PATH if os.path.exists(ADMIN_APK_PATH) else STATIC_ADMIN_PATH)
 
     content = f"""
     <header class="hero">

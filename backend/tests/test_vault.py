@@ -25,21 +25,8 @@ def _helper_setup_user_with_2fa(client, username="vault_user", email="vault@exam
         "password": "VaultPassword123!"
     }).json()["access_token"]
 
-    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {init_token}"})
-    secret = setup_resp.json()["secret"]
-
-    import time, struct, hmac, hashlib
-    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
-    counter = int(time.time() // 30)
-    msg = struct.pack(">Q", counter)
-    h = hmac.new(key, msg, hashlib.sha1).digest()
-    idx = h[-1] & 0x0F
-    code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
-    valid_code = f"{code_int % 1000000:06d}"
-
-    v_resp = client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {init_token}"})
-    token_2fa = v_resp.json()["access_token"]
-    return token_2fa
+    from conftest import enroll_totp_and_get_2fa_token
+    return enroll_totp_and_get_2fa_token(client, init_token)
 
 
 def test_vault_requires_2fa(client):
@@ -56,16 +43,8 @@ def test_vault_requires_2fa(client):
         "password": "VaultPassword123!"
     }).json()["access_token"]
 
-    setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {init_tok}"})
-    secret = setup_resp.json()["secret"]
-
-    import time, struct, hmac, hashlib
-    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
-    msg = struct.pack(">Q", int(time.time() // 30))
-    h = hmac.new(key, msg, hashlib.sha1).digest()
-    idx = h[-1] & 0x0F
-    valid_code = f"{(struct.unpack('>I', h[idx:idx + 4])[0] & 0x7FFFFFFF) % 1000000:06d}"
-    client.post("/auth/totp/verify", json={"code": valid_code}, headers={"Authorization": f"Bearer {init_tok}"})
+    from conftest import enroll_totp_and_get_2fa_token
+    enroll_totp_and_get_2fa_token(client, init_tok)
 
     # Subsequent login gives 1FA token (is_2fa=False)
     login_resp = client.post("/auth/login/json", json={

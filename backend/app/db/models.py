@@ -35,12 +35,33 @@ class User(Base):
     totp_recovery_hashes = Column(Text, nullable=True, default="[]")
     phone_number = Column(String(32), nullable=True)
     device_info = Column(Text, nullable=True)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    fallback_phone_e164 = Column(String(32), nullable=True)
+    phone_verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     trusted_devices = relationship("TrustedDevice", back_populates="user", cascade="all, delete-orphan")
     protected_devices = relationship("ProtectedDevice", back_populates="user", cascade="all, delete-orphan")
     commands = relationship("DeviceCommand", back_populates="user", cascade="all, delete-orphan")
     vault_items = relationship("VaultItem", back_populates="user", cascade="all, delete-orphan")
+    verification_challenges = relationship("VerificationChallenge", back_populates="user", cascade="all, delete-orphan")
+
+
+class VerificationChallenge(Base):
+    """Temporary verification challenge codes for email OTP and phone SMS fallback verification."""
+    __tablename__ = "verification_challenges"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel = Column(String(16), nullable=False)  # "email" | "sms"
+    target = Column(String(255), nullable=False)
+    code_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(BigInteger, default=0, nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user = relationship("User", back_populates="verification_challenges")
 
 
 class TrustedDevice(Base):

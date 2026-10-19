@@ -18,6 +18,10 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+import sys
+if "conftest" in sys.modules:
+    sys.modules["tests.conftest"] = sys.modules["conftest"]
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -71,6 +75,19 @@ import hashlib
 
 def enroll_totp_and_get_2fa_token(client, token_1fa):
     """Enrolls TOTP for an authenticated 1FA user and returns an upgraded 2FA JWT access token."""
+    from app.core.security import verify_access_token
+    from app.db.models import User, utc_now
+    payload = verify_access_token(token_1fa)
+    if payload and "sub" in payload:
+        db = TestingSessionLocal()
+        try:
+            user = db.query(User).filter(User.id == payload["sub"]).first()
+            if user and user.email_verified_at is None:
+                user.email_verified_at = utc_now()
+                db.commit()
+        finally:
+            db.close()
+
     setup_resp = client.post("/auth/totp/setup", headers={"Authorization": f"Bearer {token_1fa}"})
     if setup_resp.status_code != 200:
         return token_1fa
@@ -90,6 +107,19 @@ def enroll_totp_and_get_2fa_token(client, token_1fa):
 
 
 def pair_device_helper(client, token, alias, pubkey, phone, secret, device_id=None):
+    from app.core.security import verify_access_token
+    from app.db.models import User, utc_now
+    payload = verify_access_token(token)
+    if payload and "sub" in payload:
+        db = TestingSessionLocal()
+        try:
+            user = db.query(User).filter(User.id == payload["sub"]).first()
+            if user and user.email_verified_at is None:
+                user.email_verified_at = utc_now()
+                db.commit()
+        finally:
+            db.close()
+
     pt_resp = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
     if pt_resp.status_code == 403:
         token = enroll_totp_and_get_2fa_token(client, token)

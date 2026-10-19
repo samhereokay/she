@@ -434,6 +434,16 @@ def test_cross_user_authorization(client, test_keypair, pair_device):
     token_a = client.post("/auth/login/json", json={"username": "user_a", "password": "PasswordA123!"}).json()["access_token"]
     token_b = client.post("/auth/login/json", json={"username": "user_b", "password": "PasswordB123!"}).json()["access_token"]
 
+    from app.db.models import User, utc_now
+    from conftest import TestingSessionLocal
+    _db = TestingSessionLocal()
+    for _u in ["user_a", "user_b"]:
+        _rec = _db.query(User).filter(User.username == _u).first()
+        if _rec:
+            _rec.email_verified_at = utc_now()
+    _db.commit()
+    _db.close()
+
     headers_a = {"Authorization": f"Bearer {token_a}"}
     headers_b = {"Authorization": f"Bearer {token_b}"}
 

@@ -33,6 +33,10 @@ services:
       DEBUG: ${DEBUG:-false}
       ACCESS_TOKEN_EXPIRE_MINUTES: "30"
       LOCATION_RETENTION_DAYS: "30"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: no-reply@she.local
+      VERIFY_SECRET: ${VERIFY_SECRET:-development-challenge-hmac-sha256-secret-minimum-32bytes}
     ports:
       - "8000:8000"
     healthcheck:
@@ -40,6 +44,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: antitheft-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
     restart: unless-stopped
 
 volumes:

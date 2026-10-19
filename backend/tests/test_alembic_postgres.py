@@ -38,6 +38,7 @@ def test_alembic_migrations_on_real_postgresql():
         "device_commands",
         "location_events",
         "vault_items",
+        "verification_challenges",
     }
     assert expected_tables.issubset(tables), f"Missing tables in PostgreSQL: {expected_tables - tables}"
 

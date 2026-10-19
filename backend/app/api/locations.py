@@ -14,7 +14,7 @@ from app.schemas.location import (
     LocationResponse
 )
 from app.core.security import verify_ecdsa_p256_signature, verify_access_token
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_verified_user
 from app.core.ws_manager import ws_manager
 
 logger = logging.getLogger("uvicorn.error")
@@ -185,7 +185,7 @@ async def ingest_location_batch(
 def get_device_location_history(
     device_id: str,
     limit: int = 100,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """Retrieve historical location traces for a protected device owned by current user."""
@@ -237,6 +237,10 @@ async def websocket_device_location_stream(
     user = db.query(User).filter(User.id == payload["sub"]).first()
     if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
+        return
+
+    if user.email_verified_at is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Email address not verified")
         return
 
     device = db.query(ProtectedDevice).filter(

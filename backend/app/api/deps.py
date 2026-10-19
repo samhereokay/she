@@ -35,12 +35,28 @@ def get_current_user(
     return user
 
 
+def get_verified_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Strict dependency enforcing verified ownership of the account email address.
+    Unverified accounts cannot perform device operations, commands, or access vault.
+    """
+    if current_user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="email_not_verified"
+        )
+    return current_user
+
+
 def get_current_user_2fa(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     """
-    Strict dependency enforcing verified Two-Factor Authentication (is_2fa=True).
+    Strict dependency enforcing verified Two-Factor Authentication (is_2fa=True)
+    and verified account ownership (email_verified_at is not None).
     Mandated before any recovery command endpoint is permitted to execute.
     """
     credentials_exception = HTTPException(
@@ -68,6 +84,11 @@ def get_current_user_2fa(
     user = db.query(User).filter(User.id == payload["sub"]).first()
     if user is None:
         raise credentials_exception
+    if user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="email_not_verified"
+        )
     if not user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
