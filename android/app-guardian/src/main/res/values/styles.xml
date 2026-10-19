@@ -1,17 +1,18 @@
 <resources>
     <style name="Theme.Guardian" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">#10B981</item>
-        <item name="colorOnPrimary">#022C22</item>
-        <item name="colorPrimaryContainer">#064E3B</item>
-        <item name="colorOnPrimaryContainer">#D1FAE5</item>
-        <item name="colorSecondary">#06B6D4</item>
-        <item name="colorOnSecondary">#000000</item>
+        <item name="colorPrimary">#FFFFFF</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimaryContainer">#27272A</item>
+        <item name="colorOnPrimaryContainer">#F5F5F7</item>
+        <item name="colorSecondary">#1C1C1E</item>
+        <item name="colorOnSecondary">#F5F5F7</item>
         <item name="android:windowBackground">#000000</item>
         <item name="colorSurface">#121212</item>
-        <item name="colorOnSurface">#F8FAFC</item>
+        <item name="colorOnSurface">#F5F5F7</item>
         <item name="colorSurfaceVariant">#1C1C1E</item>
-        <item name="colorOnSurfaceVariant">#94A3B8</item>
-        <item name="colorOutline">#262626</item>
+        <item name="colorOnSurfaceVariant">#A1A1AA</item>
+        <item name="colorOutline">#2C2C2E</item>
+        <item name="colorOutlineVariant">#3F3F46</item>
         <item name="android:statusBarColor">#000000</item>
         <item name="android:navigationBarColor">#000000</item>
     </style>

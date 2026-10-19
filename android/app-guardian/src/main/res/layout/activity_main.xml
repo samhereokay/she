@@ -20,10 +20,10 @@
             android:layout_marginBottom="16dp"
             android:visibility="gone"
             app:cardCornerRadius="14dp"
-            app:cardElevation="6dp"
-            app:strokeWidth="2dp"
-            app:strokeColor="#DC2626"
-            app:cardBackgroundColor="#450A0A">
+            app:cardElevation="0dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#EF4444"
+            app:cardBackgroundColor="#351010">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -36,7 +36,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="STOLEN DEVICE: RECOVERY ACTIVE"
-                    android:textColor="#FCA5A5"
+                    android:textColor="#EF4444"
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
@@ -46,7 +46,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
                     android:text="This device is protected by SHE (Sentinel for Handheld Equipment). If found, please return to owner immediately:"
-                    android:textColor="#FECACA"
+                    android:textColor="#F5F5F7"
                     android:textSize="13sp" />
 
                 <TextView
@@ -64,7 +64,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
                     android:layout_marginTop="12dp"
-                    android:backgroundTint="#DC2626"
+                    android:backgroundTint="#EF4444"
                     android:text="CALL OWNER EMERGENCY CONTACT"
                     android:textColor="#FFFFFF"
                     android:textStyle="bold"
@@ -72,12 +72,15 @@
 
                 <Button
                     android:id="@+id/btnCallPolice112"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
                     android:layout_marginTop="8dp"
-                    android:backgroundTint="#1E3A8A"
+                    android:backgroundTint="#1C1C1E"
+                    app:strokeColor="#2C2C2E"
+                    app:strokeWidth="1dp"
                     android:text="CALL EMERGENCY SERVICES (112)"
-                    android:textColor="#FFFFFF"
+                    android:textColor="#F5F5F7"
                     app:cornerRadius="10dp" />
 
                 <TextView
@@ -86,9 +89,8 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:text="Kiosk lockdown can only be lifted by an owner-signed EXIT_KIOSK command from the registered Admin phone or via offline recovery key."
-                    android:textColor="#FCA5A5"
-                    android:textSize="11sp"
-                    android:textStyle="italic" />
+                    android:textColor="#A1A1AA"
+                    android:textSize="11sp" />
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -101,7 +103,7 @@
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#262626"
+            app:strokeColor="#2C2C2E"
             app:cardBackgroundColor="#121212">
 
             <LinearLayout
@@ -134,7 +136,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="SHE GUARDIAN"
-                            android:textColor="#F8FAFC"
+                            android:textColor="#F5F5F7"
                             android:textSize="20sp"
                             android:letterSpacing="0.05"
                             android:textStyle="bold" />
@@ -143,7 +145,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Anti-Theft Sentinel Handset Service"
-                            android:textColor="#10B981"
+                            android:textColor="#A1A1AA"
                             android:textSize="11sp" />
                     </LinearLayout>
 
@@ -151,11 +153,11 @@
                         android:id="@+id/tvStatusBadge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="#064E3B"
+                        android:background="@drawable/bg_badge_success"
                         android:paddingHorizontal="10dp"
                         android:paddingVertical="4dp"
                         android:text="PROTECTED (ACTIVE)"
-                        android:textColor="#34D399"
+                        android:textColor="#22C55E"
                         android:textSize="11sp"
                         android:textStyle="bold" />
 
@@ -166,7 +168,7 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="12dp"
-                    android:background="#262626" />
+                    android:background="#2C2C2E" />
 
                 <TextView
                     android:id="@+id/tvDeviceId"
@@ -174,7 +176,7 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
                     android:text="Device ID: loading..."
-                    android:textColor="#94A3B8"
+                    android:textColor="#A1A1AA"
                     android:textSize="12sp" />
 
                 <TextView
@@ -183,7 +185,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="Last Fix: None"
-                    android:textColor="#38BDF8"
+                    android:textColor="#F5F5F7"
                     android:textSize="13sp" />
 
                 <TextView
@@ -192,7 +194,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="Offline Queue: 0 pending"
-                    android:textColor="#64748B"
+                    android:textColor="#71717A"
                     android:textSize="12sp" />
 
                 <!-- Map & Info Row -->
@@ -204,12 +206,16 @@
 
                     <Button
                         android:id="@+id/btnViewLocationMap"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
-                        android:layout_height="40dp"
+                        android:layout_height="42dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="6dp"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
                         android:text="View on Map"
+                        android:textColor="#F5F5F7"
                         android:textSize="12sp"
                         app:cornerRadius="10dp" />
 
@@ -217,11 +223,13 @@
                         android:id="@+id/btnLocationInfo"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="40dp"
+                        android:layout_height="42dp"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
                         android:text="Info"
                         android:textSize="12sp"
-                        android:textColor="#94A3B8"
-                        app:strokeColor="#262626"
+                        android:textColor="#A1A1AA"
                         app:cornerRadius="10dp" />
                 </LinearLayout>
 
@@ -235,11 +243,11 @@
                     <Button
                         android:id="@+id/btnCaptureNow"
                         android:layout_width="0dp"
-                        android:layout_height="44dp"
+                        android:layout_height="46dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="8dp"
-                        android:backgroundTint="#10B981"
-                        android:textColor="#022C22"
+                        android:backgroundTint="#FFFFFF"
+                        android:textColor="#000000"
                         android:textStyle="bold"
                         android:textSize="12sp"
                         android:text="Capture Fix Now"
@@ -247,10 +255,14 @@
 
                     <Button
                         android:id="@+id/btnSyncNow"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
-                        android:layout_height="44dp"
+                        android:layout_height="46dp"
                         android:layout_weight="1"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
+                        android:textColor="#F5F5F7"
                         android:textSize="12sp"
                         android:text="Sync to Server"
                         app:cornerRadius="10dp" />
@@ -263,21 +275,26 @@
                     android:layout_width="match_parent"
                     android:layout_height="46dp"
                     android:layout_marginTop="10dp"
+                    android:backgroundTint="#1C1C1E"
+                    app:strokeColor="#2C2C2E"
+                    app:strokeWidth="1dp"
                     android:text="Pair with Admin Phone (QR / Code)"
-                    android:textColor="#38BDF8"
+                    android:textColor="#F5F5F7"
                     android:textSize="13sp"
-                    app:strokeColor="#0284C7"
                     app:cornerRadius="10dp" />
 
                 <!-- Share Guardian APK Button -->
                 <Button
                     android:id="@+id/btnShareGuardianApk"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
                     android:layout_marginTop="8dp"
+                    android:backgroundTint="#1C1C1E"
+                    app:strokeColor="#2C2C2E"
+                    app:strokeWidth="1dp"
                     android:text="Share Guardian APK / Link (Bluetooth / Web)"
-                    android:textColor="#E2E8F0"
+                    android:textColor="#A1A1AA"
                     android:textSize="12sp"
                     app:cornerRadius="10dp" />
 
@@ -293,7 +310,7 @@
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#262626"
+            app:strokeColor="#2C2C2E"
             app:cardBackgroundColor="#121212">
 
             <LinearLayout
@@ -313,7 +330,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="TIER 2: DEVICE ADMIN PERMISSION"
-                        android:textColor="#F59E0B"
+                        android:textColor="#F5F5F7"
                         android:textSize="13sp"
                         android:letterSpacing="0.05"
                         android:textStyle="bold" />
@@ -322,11 +339,11 @@
                         android:id="@+id/tvDeviceAdminBadge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="#78350F"
-                        android:paddingHorizontal="8dp"
-                        android:paddingVertical="3dp"
+                        android:background="@drawable/bg_badge_warning"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
                         android:text="NOT GRANTED"
-                        android:textColor="#FDE68A"
+                        android:textColor="#F59E0B"
                         android:textSize="11sp"
                         android:textStyle="bold" />
                 </LinearLayout>
@@ -336,7 +353,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
                     android:text="Grants hardware permission to lock the screen, block unauthorized app uninstall, and prevent thief bypass. Never erases personal data."
-                    android:textColor="#94A3B8"
+                    android:textColor="#A1A1AA"
                     android:textSize="12sp" />
 
                 <LinearLayout
@@ -351,8 +368,8 @@
                         android:layout_height="44dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="6dp"
-                        android:backgroundTint="#F59E0B"
-                        android:textColor="#451A03"
+                        android:backgroundTint="#FFFFFF"
+                        android:textColor="#000000"
                         android:textStyle="bold"
                         android:text="Activate Admin (1-Tap)"
                         android:textSize="11sp"
@@ -364,9 +381,11 @@
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
                         android:text="Brand Setup Guide"
-                        android:textColor="#38BDF8"
-                        app:strokeColor="#0284C7"
+                        android:textColor="#F5F5F7"
                         android:textSize="11sp"
                         app:cornerRadius="8dp" />
                 </LinearLayout>
@@ -382,7 +401,7 @@
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#262626"
+            app:strokeColor="#2C2C2E"
             app:cardBackgroundColor="#121212">
 
             <LinearLayout
@@ -395,7 +414,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="TIER 1: OS SECURITY CHECKLIST"
-                    android:textColor="#38BDF8"
+                    android:textColor="#F5F5F7"
                     android:textSize="13sp"
                     android:letterSpacing="0.05"
                     android:textStyle="bold" />
@@ -405,7 +424,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:text="Android system settings recommended for anti-theft defense"
-                    android:textColor="#94A3B8"
+                    android:textColor="#A1A1AA"
                     android:textSize="11sp" />
 
                 <CheckBox
@@ -413,28 +432,28 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:textColor="#F8FAFC"
+                    android:textColor="#F5F5F7"
                     android:text="@string/tier1_find_hub" />
 
                 <CheckBox
                     android:id="@+id/cbTheftDetection"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#F8FAFC"
+                    android:textColor="#F5F5F7"
                     android:text="@string/tier1_theft_detection" />
 
                 <CheckBox
                     android:id="@+id/cbSimLock"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#F8FAFC"
+                    android:textColor="#F5F5F7"
                     android:text="@string/tier1_sim_lock" />
 
                 <CheckBox
                     android:id="@+id/cbPowerMenu"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#F8FAFC"
+                    android:textColor="#F5F5F7"
                     android:text="@string/tier1_power_menu" />
 
             </LinearLayout>
@@ -448,7 +467,7 @@
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="#262626"
+            app:strokeColor="#2C2C2E"
             app:cardBackgroundColor="#121212">
 
             <LinearLayout
@@ -468,7 +487,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="TIER 3: DEVICE OWNER"
-                        android:textColor="#10B981"
+                        android:textColor="#F5F5F7"
                         android:textSize="13sp"
                         android:letterSpacing="0.05"
                         android:textStyle="bold" />
@@ -477,11 +496,11 @@
                         android:id="@+id/tvDeviceOwnerBadge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="#78350F"
-                        android:paddingHorizontal="8dp"
-                        android:paddingVertical="3dp"
+                        android:background="@drawable/bg_badge_warning"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
                         android:text="CHECKING..."
-                        android:textColor="#FDE68A"
+                        android:textColor="#F59E0B"
                         android:textSize="11sp"
                         android:textStyle="bold" />
                 </LinearLayout>
@@ -492,7 +511,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
                     android:text="Prevents factory reset, safe boot, and unauthorized uninstallation. Engages tamper-proof kiosk mode on theft."
-                    android:textColor="#94A3B8"
+                    android:textColor="#A1A1AA"
                     android:textSize="12sp" />
 
                 <TextView
@@ -500,9 +519,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:background="#0A0A0A"
+                    android:background="#1C1C1E"
                     android:padding="10dp"
-                    android:textColor="#38BDF8"
+                    android:textColor="#F5F5F7"
                     android:fontFamily="monospace"
                     android:textSize="11sp"
                     android:text="Loading restrictions status..." />
@@ -515,12 +534,15 @@
 
                     <Button
                         android:id="@+id/btnEnforceRestrictions"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="42dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="6dp"
-                        android:backgroundTint="#065F46"
-                        android:textColor="#D1FAE5"
+                        android:backgroundTint="#351010"
+                        app:strokeColor="#EF4444"
+                        app:strokeWidth="1dp"
+                        android:textColor="#EF4444"
                         android:textStyle="bold"
                         android:text="Lockdown (Enforce)"
                         android:textSize="11sp"
@@ -532,20 +554,26 @@
                         android:layout_width="0dp"
                         android:layout_height="42dp"
                         android:layout_weight="1"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
                         android:text="Clear Lockdown"
-                        android:textColor="#94A3B8"
-                        app:strokeColor="#262626"
+                        android:textColor="#F5F5F7"
                         android:textSize="11sp"
                         app:cornerRadius="8dp" />
                 </LinearLayout>
 
                 <Button
                     android:id="@+id/btnToggleLockTaskKiosk"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="42dp"
                     android:layout_marginTop="8dp"
+                    android:backgroundTint="#1C1C1E"
+                    app:strokeColor="#2C2C2E"
+                    app:strokeWidth="1dp"
                     android:text="Enter Stolen Kiosk Mode"
+                    android:textColor="#F5F5F7"
                     android:textSize="12sp"
                     app:cornerRadius="8dp" />
 
@@ -556,7 +584,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="Show Provisioning ADB Command"
-                    android:textColor="#38BDF8"
+                    android:textColor="#A1A1AA"
                     android:textSize="12sp" />
 
             </LinearLayout>

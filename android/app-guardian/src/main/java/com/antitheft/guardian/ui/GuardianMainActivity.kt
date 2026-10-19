@@ -688,13 +688,13 @@ class GuardianMainActivity : AppCompatActivity() {
                 val btnGrantDeviceAdmin = findViewById<Button>(R.id.btnGrantDeviceAdmin)
                 if (isAdmin) {
                     tvDeviceAdminBadge?.text = "ADMIN: ACTIVE (TIER 2)"
-                    tvDeviceAdminBadge?.setBackgroundColor(Color.parseColor("#14532D"))
-                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#86EFAC"))
+                    tvDeviceAdminBadge?.setBackgroundResource(R.drawable.bg_badge_success)
+                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#22C55E"))
                     btnGrantDeviceAdmin?.text = "Admin Active (Protected)"
                 } else {
                     tvDeviceAdminBadge?.text = "NOT GRANTED"
-                    tvDeviceAdminBadge?.setBackgroundColor(Color.parseColor("#78350F"))
-                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#FDE68A"))
+                    tvDeviceAdminBadge?.setBackgroundResource(R.drawable.bg_badge_warning)
+                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#F59E0B"))
                     btnGrantDeviceAdmin?.text = "Activate Admin (1-Tap)"
                 }
 
@@ -703,12 +703,12 @@ class GuardianMainActivity : AppCompatActivity() {
                 val tvRestrictionsStatus = findViewById<TextView>(R.id.tvRestrictionsStatus)
                 if (isDO) {
                     tvDeviceOwnerBadge.text = "DEVICE OWNER: ACTIVE (TIER 3)"
-                    tvDeviceOwnerBadge.setBackgroundColor(Color.parseColor("#DCFCE7"))
-                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#166534"))
+                    tvDeviceOwnerBadge.setBackgroundResource(R.drawable.bg_badge_success)
+                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#22C55E"))
                 } else {
                     tvDeviceOwnerBadge.text = "DEVICE OWNER: NOT PROVISIONED"
-                    tvDeviceOwnerBadge.setBackgroundColor(Color.parseColor("#FEF3C7"))
-                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#92400E"))
+                    tvDeviceOwnerBadge.setBackgroundResource(R.drawable.bg_badge_warning)
+                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#F59E0B"))
                 }
 
                 val sb = StringBuilder()
