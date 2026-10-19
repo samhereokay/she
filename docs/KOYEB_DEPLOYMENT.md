@@ -23,9 +23,20 @@ This guide provides step-by-step instructions for deploying the **SHE Anti-Theft
 
 ## 3. Step-by-Step Deployment via Koyeb Web Console
 
-### Step 1: Provision Managed PostgreSQL (Recommended)
+### Step 1: Prepare Database (Supabase or Koyeb PostgreSQL)
+
+#### Option A: Using Supabase (Recommended)
+1. Go to your [Supabase Dashboard](https://supabase.com/dashboard) and select your project.
+2. Go to **Project Settings** $\rightarrow$ **Database**.
+3. Under **Connection string**, select **URI**:
+   - **Connection Pooling (Session Mode)**: `postgresql://postgres.[PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres`
+   - *Or* **Direct connection**: `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
+4. Replace `[YOUR-PASSWORD]` with your actual database password.
+5. *Note*: The backend automatically handles both `postgres://` and `postgresql://` URI prefixes without requiring manual string edits.
+
+#### Option B: Using Koyeb Managed PostgreSQL
 1. In the Koyeb Console, click **"Create"** $\rightarrow$ select **"Database"**.
-2. Select **PostgreSQL**, choose a region closest to you (e.g., Frankfurt, Washington D.C., or Singapore).
+2. Select **PostgreSQL**, choose a region closest to you.
 3. Choose the **Free Instance (512MB / 1GB storage)**.
 4. Name the database (e.g. `she-db`) and click **"Create Database"**.
 5. Copy the **Connection String** (e.g., `postgres://user:password@ep-xyz.koyeb.app/koyebdb`).
