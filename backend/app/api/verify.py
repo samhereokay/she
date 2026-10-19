@@ -4,11 +4,12 @@ import json
 import logging
 import time
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_verified_user
+from app.core.rate_limit import email_verify_limiter
 from app.core.kyc_validator import validate_email_kyc, validate_phone_kyc, normalize_phone_number
 from app.core.security import create_canonical_command_bytes, compute_truncated_hmac, decrypt_pairing_secret
 from app.db.session import get_db
@@ -37,6 +38,7 @@ router = APIRouter(prefix="/verify", tags=["Verification"])
 def send_email_verification(
     req: EmailSendRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -47,6 +49,7 @@ def send_email_verification(
     Re-validates email against disposable lists and live MX checks before issuance.
     Dispatches email asynchronously via background tasks.
     """
+    email_verify_limiter.check_rate_limit(request)
     target_email = (req.email or current_user.email).strip().lower()
 
     # Pre-filter KYC validation (disposable domains, RFC syntax, MX resolution)
@@ -99,6 +102,7 @@ def send_email_verification(
 @router.post("/email/confirm", response_model=EmailVerifyResponse)
 def confirm_email_verification(
     req: EmailConfirmRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -110,6 +114,7 @@ def confirm_email_verification(
     - Marks challenge as consumed
     - Unlocks full access to devices, locations, and commands
     """
+    email_verify_limiter.check_rate_limit(request)
     target_email = current_user.email.strip().lower()
 
     # Confirm via engine (enforces lock-out, expiry, timing attack resistance, replay prevention)
