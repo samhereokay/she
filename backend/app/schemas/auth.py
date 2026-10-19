@@ -8,6 +8,8 @@ class UserCreate(BaseModel):
     email: str = Field(..., min_length=5, max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(..., min_length=8)
     registration_token: Optional[str] = Field(None, description="Optional verification/invite token required when registration verification is enabled")
+    phone_number: Optional[str] = Field(None, description="Owner phone number for emergency contact and SMS beacons")
+    device_info: Optional[str] = Field(None, description="Client hardware model and OS details")
 
 
 class UserLogin(BaseModel):
@@ -21,6 +23,8 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
+    phone_number: Optional[str] = None
+    device_info: Optional[str] = None
     created_at: datetime
 
 
@@ -29,6 +33,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
     expires_in_minutes: int
     is_2fa: bool = False
+    totp_required: bool = False
     recovery_codes: Optional[list[str]] = None
 
 

@@ -86,6 +86,8 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     user = User(
         username=user_in.username,
         email=user_in.email,
+        phone_number=user_in.phone_number,
+        device_info=user_in.device_info,
         hashed_password=hash_password(user_in.password)
     )
     db.add(user)
@@ -152,7 +154,8 @@ def login(
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-        "is_2fa": False
+        "is_2fa": False,
+        "totp_required": bool(user.totp_enabled)
     }
 
 
@@ -209,7 +212,8 @@ def login_json(
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-        "is_2fa": False
+        "is_2fa": False,
+        "totp_required": bool(user.totp_enabled)
     }
 
 

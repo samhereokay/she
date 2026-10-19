@@ -12,11 +12,37 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import java.util.concurrent.TimeUnit
 
-data class RegisterRequest(val username: String, val email: String, val password: String)
-data class UserResponseDto(val id: String, val username: String, val email: String)
+data class RegisterRequest(
+    val username: String,
+    val email: String,
+    val password: String,
+    val registration_token: String? = null,
+    val phone_number: String? = null,
+    val device_info: String? = null
+)
+data class UserResponseDto(
+    val id: String,
+    val username: String,
+    val email: String,
+    val phone_number: String? = null,
+    val device_info: String? = null
+)
 
 data class LoginRequest(val username: String, val password: String)
-data class TokenResponse(val access_token: String, val token_type: String)
+data class TokenResponse(
+    val access_token: String,
+    val token_type: String,
+    val is_2fa: Boolean = false,
+    val totp_required: Boolean = false,
+    val recovery_codes: List<String>? = null
+)
+
+data class TotpSetupResponse(
+    val secret: String,
+    val otpauth_uri: String
+)
+
+data class TotpVerifyRequest(val code: String)
 
 data class DeviceLocationDto(
     val latitude: Double,
@@ -134,6 +160,12 @@ interface AdminApiService {
 
     @POST("auth/login/json")
     suspend fun login(@Body request: LoginRequest): TokenResponse
+
+    @POST("auth/totp/setup")
+    suspend fun setupTotp(): TotpSetupResponse
+
+    @POST("auth/totp/verify")
+    suspend fun verifyTotp(@Body request: TotpVerifyRequest): TokenResponse
 
     @POST("auth/totp/validate")
     suspend fun validateTotp(@Body request: TotpValidateRequest): TokenResponse

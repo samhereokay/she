@@ -1,6 +1,7 @@
 package com.antitheft.admin.auth
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -12,6 +13,9 @@ import androidx.lifecycle.lifecycleScope
 import com.antitheft.admin.dashboard.AdminDashboardActivity
 import com.antitheft.admin.network.ApiClient
 import com.antitheft.admin.network.LoginRequest
+import com.antitheft.admin.network.RegisterRequest
+import com.antitheft.admin.network.TotpValidateRequest
+import com.antitheft.admin.network.TotpVerifyRequest
 import com.antitheft.admin.ui.theme.SheTheme
 import kotlinx.coroutines.launch
 
@@ -20,6 +24,11 @@ class AdminLoginActivity : AppCompatActivity() {
     private lateinit var sessionManager: AdminSessionManager
     private var isLoading by mutableStateOf(false)
     private var errorMessage by mutableStateOf<String?>(null)
+
+    // 2FA & Recovery State
+    private var totpSetupState by mutableStateOf<TotpSetupState?>(null)
+    private var recoveryKeysState by mutableStateOf<List<String>?>(null)
+    private var show2faLoginDialog by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,13 +51,32 @@ class AdminLoginActivity : AppCompatActivity() {
                             performLogin(u, p, url)
                         }
                     },
-                    onRegisterClick = { u, p, url ->
+                    onRegisterClick = { u, email, phone, p, regToken, url ->
                         errorMessage = null
-                        if (u.isBlank() || p.isBlank()) {
-                            errorMessage = "Please enter username and password to register"
-                        } else {
-                            performRegister(u, p, url)
+                        when {
+                            u.isBlank() -> errorMessage = "Please enter an account username"
+                            email.isBlank() -> errorMessage = "Please enter your recovery email"
+                            phone.isBlank() -> errorMessage = "Please enter your owner mobile number"
+                            p.isBlank() -> errorMessage = "Please enter a master password"
+                            regToken.isBlank() -> errorMessage = "Please enter the server registration verification token"
+                            else -> performRegister(u, email, phone, p, regToken, url)
                         }
+                    },
+                    totpSetupState = totpSetupState,
+                    onVerifyTotpSetup = { code ->
+                        verifyTotpSetup(code)
+                    },
+                    recoveryKeysState = recoveryKeysState,
+                    onDismissRecoveryKeys = {
+                        recoveryKeysState = null
+                        openDashboard()
+                    },
+                    show2faLoginDialog = show2faLoginDialog,
+                    onValidate2faLogin = { code ->
+                        validate2faLogin(code)
+                    },
+                    onDismiss2faLogin = {
+                        show2faLoginDialog = false
                     },
                     isLoading = isLoading,
                     errorMessage = errorMessage
@@ -95,7 +123,7 @@ class AdminLoginActivity : AppCompatActivity() {
             full.contains("401", ignoreCase = true) || full.contains("Unauthorized", ignoreCase = true) ->
                 "Authentication Failed (401): Invalid username or password."
             full.contains("403", ignoreCase = true) || full.contains("Forbidden", ignoreCase = true) ->
-                "Registration Closed (403): An owner account already exists."
+                "Registration or Authorization Failed (403): Verify registration token or user permissions."
             full.contains("422", ignoreCase = true) ->
                 "Validation Error (422): Request payload invalid or malformed."
             else ->
@@ -103,21 +131,68 @@ class AdminLoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun performRegister(username: String, password: String, serverUrl: String) {
+    private fun performRegister(
+        username: String,
+        email: String,
+        phone: String,
+        password: String,
+        registrationToken: String,
+        serverUrl: String
+    ) {
         sessionManager.setServerUrl(serverUrl)
         isLoading = true
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val email = if (username.contains("@")) username else "$username@example.com"
-                api.register(com.antitheft.admin.network.RegisterRequest(username, email, password))
+                val deviceInfo = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})"
+                api.register(
+                    RegisterRequest(
+                        username = username.trim(),
+                        email = email.trim(),
+                        password = password,
+                        registration_token = registrationToken.trim(),
+                        phone_number = phone.trim(),
+                        device_info = deviceInfo
+                    )
+                )
                 android.util.Log.i("AdminLogin", "REGISTER_SUCCESSFUL user:$username")
-                Toast.makeText(this@AdminLoginActivity, "Owner registered successfully! Signing in...", Toast.LENGTH_SHORT).show()
-                performLogin(username, password, serverUrl)
+                sessionManager.setAdminPhoneNumber(phone.trim())
+
+                // Obtain 1FA session to initialize TOTP
+                val tokenResp = api.login(LoginRequest(username.trim(), password))
+                sessionManager.saveToken(tokenResp.access_token)
+
+                // Request TOTP secret for setup
+                val totpSetup = api.setupTotp()
+                totpSetupState = TotpSetupState(
+                    secret = totpSetup.secret,
+                    otpauthUri = totpSetup.otpauth_uri
+                )
+                isLoading = false
             } catch (e: Exception) {
                 isLoading = false
                 android.util.Log.e("AdminLogin", "REGISTER_FAILED", e)
                 val formatted = formatErrorMessage(e, serverUrl)
+                errorMessage = formatted
+                Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun verifyTotpSetup(code: String) {
+        isLoading = true
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val tokenResp = api.verifyTotp(TotpVerifyRequest(code.trim()))
+                sessionManager.saveToken(tokenResp.access_token)
+                totpSetupState = null
+                isLoading = false
+                recoveryKeysState = tokenResp.recovery_codes ?: emptyList()
+            } catch (e: Exception) {
+                isLoading = false
+                android.util.Log.e("AdminLogin", "TOTP_VERIFY_FAILED", e)
+                val formatted = formatErrorMessage(e, sessionManager.getServerUrl())
                 errorMessage = formatted
                 Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
             }
@@ -145,16 +220,42 @@ class AdminLoginActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val tokenResp = api.login(LoginRequest(username, password))
+                val tokenResp = api.login(LoginRequest(username.trim(), password))
                 sessionManager.saveToken(tokenResp.access_token)
                 isLoading = false
-                android.util.Log.i("AdminLogin", "LOGIN_SUCCESSFUL user:$username")
-                Toast.makeText(this@AdminLoginActivity, "Authenticated successfully", Toast.LENGTH_SHORT).show()
-                openDashboard()
+
+                if (tokenResp.totp_required) {
+                    show2faLoginDialog = true
+                } else {
+                    android.util.Log.i("AdminLogin", "LOGIN_SUCCESSFUL user:$username")
+                    Toast.makeText(this@AdminLoginActivity, "Authenticated successfully", Toast.LENGTH_SHORT).show()
+                    openDashboard()
+                }
             } catch (e: Exception) {
                 isLoading = false
                 android.util.Log.e("AdminLogin", "LOGIN_FAILED", e)
                 val formatted = formatErrorMessage(e, serverUrl)
+                errorMessage = formatted
+                Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun validate2faLogin(code: String) {
+        isLoading = true
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val finalToken = api.validateTotp(TotpValidateRequest(code.trim()))
+                sessionManager.saveToken(finalToken.access_token)
+                isLoading = false
+                show2faLoginDialog = false
+                Toast.makeText(this@AdminLoginActivity, "2FA Authenticated successfully", Toast.LENGTH_SHORT).show()
+                openDashboard()
+            } catch (e: Exception) {
+                isLoading = false
+                android.util.Log.e("AdminLogin", "2FA_LOGIN_FAILED", e)
+                val formatted = formatErrorMessage(e, sessionManager.getServerUrl())
                 errorMessage = formatted
                 Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
             }

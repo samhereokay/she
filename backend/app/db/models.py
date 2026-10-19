@@ -33,6 +33,8 @@ class User(Base):
     totp_secret = Column(String(64), nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)
     totp_recovery_hashes = Column(Text, nullable=True, default="[]")
+    phone_number = Column(String(32), nullable=True)
+    device_info = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     trusted_devices = relationship("TrustedDevice", back_populates="user", cascade="all, delete-orphan")
