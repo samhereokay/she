@@ -78,6 +78,17 @@ def pair_device(
     pairing_id = generate_uuid()
     confirmation_code = f"{secrets.randbelow(900) + 100}-{secrets.randbelow(900) + 100}"
     
+    # Restrict one device per user account
+    user_other_device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.user_id == current_user.id,
+        ProtectedDevice.id != pair_in.device_id
+    ).first()
+    if user_other_device:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account limit reached: Each user account is strictly restricted to 1 protected device. To pair a new handset, unpair your current device first."
+        )
+
     if pair_in.device_id:
         existing = db.query(ProtectedDevice).filter(ProtectedDevice.id == pair_in.device_id).first()
         if existing:

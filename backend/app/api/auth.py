@@ -53,6 +53,15 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
                 detail="Invalid or missing admin setup token. Set X-Admin-Setup-Token header to initialize owner."
             )
 
+    # If REGISTRATION_TOKEN is configured in environment, verify the user's registration token
+    if settings.REGISTRATION_TOKEN:
+        token_provided = user_in.registration_token or request.headers.get("X-Registration-Token", "")
+        if not secrets.compare_digest(token_provided, settings.REGISTRATION_TOKEN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or missing registration verification token. Account creation requires a verified invitation token."
+            )
+
     # Registration lockdown: The platform operates under a single-owner model.
     # In production (ALLOW_PUBLIC_REGISTRATION=False), once the first owner account exists,
     # public registration is permanently closed.

@@ -116,3 +116,29 @@ def test_releases_page_and_binary_downloads():
     assert "application/vnd.android.package-archive" in resp_a.headers["content-type"]
     assert len(resp_a.content) > 30_000_000
 
+
+def test_2fa_and_recovery_guide_route():
+    client = TestClient(app)
+    resp = client.get("/docs/2fa-and-recovery")
+    assert resp.status_code == 200
+    assert "Two-Factor Authentication, Recovery Keys" in resp.text
+    assert "otpauth://" in resp.text
+    assert "1-Device-Per-User" in resp.text
+    assert "Emergency Playbook" in resp.text
+
+    # Alias check
+    resp_alias = client.get("/blog/setup-2fa-recovery")
+    assert resp_alias.status_code == 200
+    assert "Emergency Handset Tracking" in resp_alias.text
+
+
+def test_emergency_console_route():
+    client = TestClient(app)
+    resp = client.get("/emergency")
+    assert resp.status_code == 200
+    assert "Emergency Web Console" in resp.text
+    assert "Authenticate Handset Owner" in resp.text
+    assert "Emergency Recovery Key" in resp.text
+    assert "Sound Siren" in resp.text
+    assert "mapFrame" in resp.text
+

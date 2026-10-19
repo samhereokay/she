@@ -665,12 +665,11 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
     nav_links = [
         ("/", "Home", "home"),
         ("/releases", "Releases & Download", "releases"),
-        ("/#telemetry", "Live Map", "telemetry"),
-        ("/#features", "Features", "features"),
+        ("/emergency", "Emergency Console", "emergency"),
+        ("/docs/2fa-and-recovery", "2FA & Recovery Guide", "2fa-recovery"),
         ("/docs/user-guide", "User Guide", "user-guide"),
         ("/docs/setup-order", "Setup Runbook", "setup-order"),
         ("/privacy", "Data Privacy", "privacy"),
-        ("/#blog", "Security Guide", "blog"),
     ]
     nav_items_html = "".join([
         f'<a href="{url}" class="{"active" if active_tab == tab_id else ""}">{label}</a>'
@@ -721,10 +720,11 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
         <div class="footer-links">
             <a href="/">Home</a>
             <a href="/releases">Releases &amp; APKs</a>
+            <a href="/emergency">Emergency Console</a>
+            <a href="/docs/2fa-and-recovery">2FA &amp; Recovery Blog</a>
             <a href="/docs/user-guide">User Guide</a>
             <a href="/docs/setup-order">Setup Runbook</a>
             <a href="/privacy">Data Privacy &amp; Security</a>
-            <a href="/#blog">Security Blog</a>
         </div>
         <p>&copy; 2026 SHE (Sentinel for Handheld Equipment). Free & Open-Source Software under Apache 2.0.</p>
         <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-subtle);">
@@ -1872,10 +1872,461 @@ def render_privacy_page():
             </ul>
 
             <div style="margin-top: 2.5rem; text-align: center;">
-                <a href="/docs/user-guide" class="btn btn-secondary">&larr; Read User Guide</a>
-                <a href="/" class="btn btn-primary" style="margin-left: 1rem;">Return to Homepage</a>
+                <a href="/docs/2fa-and-recovery" class="btn btn-primary">Read 2FA &amp; Recovery Guide &rarr;</a>
+                <a href="/docs/user-guide" class="btn btn-secondary" style="margin-left: 1rem;">User Guide</a>
             </div>
         </div>
     </div>
     """
     return HTMLResponse(content=render_html_shell("SHE Data Privacy & Security Architecture", body, "privacy"))
+
+
+# -----------------------------------------------------------------------------
+# 2FA & Handset Recovery Documentation & Security Blog Route
+# -----------------------------------------------------------------------------
+@router.get("/docs/2fa-and-recovery", response_class=HTMLResponse)
+@router.get("/blog/setup-2fa-recovery", response_class=HTMLResponse)
+def render_2fa_and_recovery_guide():
+    body = f"""
+    <div class="container">
+        <div class="doc-page">
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+                <span class="card-badge badge-warning">{SVG_SHIELD} Security Architecture</span>
+                <span class="card-badge badge-info">{SVG_KEY} 2FA &amp; Recovery</span>
+                <span style="font-size: 0.85rem; color: var(--text-muted); font-family: var(--font-mono);">Updated: October 2026</span>
+            </div>
+
+            <h1>Two-Factor Authentication, Recovery Keys &amp; Emergency Handset Tracking</h1>
+            <p style="font-size: 1.15rem; color: var(--text-muted); margin-bottom: 2rem;">
+                A comprehensive security guide on verifying user accounts, the strict 1-device-per-user restriction, instant 1-tap 2FA setup, and how to recover your device from someone else's phone when your own handset is stolen.
+            </p>
+
+            <div class="card" style="border-left: 4px solid var(--accent); margin-bottom: 2.5rem; background: var(--bg-card);">
+                <h3 style="margin-bottom: 0.5rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+                    {SVG_SHIELD} Core Principles of SHE Handset Protection
+                </h3>
+                <ul style="margin-left: 1.25rem; color: var(--text-muted); font-size: 0.95rem;">
+                    <li><strong>Verified User Registration:</strong> Accounts cannot be created by arbitrary unauthorized third parties. Registration requires a verified invitation token.</li>
+                    <li><strong>1-Device-Per-User Policy:</strong> Each account is strictly restricted to one active protected phone to prevent identity confusion and guarantee cryptographic chain of custody.</li>
+                    <li><strong>Emergency Friend/Web Access:</strong> When your phone is stolen, you can borrow any friend's device or computer, authenticate with an emergency recovery key, and track your handset live.</li>
+                </ul>
+            </div>
+
+            <h2>1. User Verification &amp; Account Gating</h2>
+            <p>
+                Unlike generic consumer platforms where anyone can spam registrations, SHE operates on an <strong>enterprise zero-trust model</strong>:
+            </p>
+            <ul>
+                <li><strong>No Public Unverified Signups:</strong> When <code>REGISTRATION_TOKEN</code> is enabled on the backend, every registration request must provide a valid invite token. Arbitrary bots and unauthorized individuals are rejected with <code>403 Forbidden</code>.</li>
+                <li><strong>Single-Owner Enforcement:</strong> In dedicated private deployments (<code>ALLOW_PUBLIC_REGISTRATION=false</code>), the system automatically locks down public account creation once the initial owner registers.</li>
+                <li><strong>Argon2id Memory-Hard Passwords:</strong> Passwords are protected using OWASP-recommended Argon2id hashing with per-user cryptographic salts.</li>
+            </ul>
+
+            <h2>2. The 1-Device-Per-User Restriction</h2>
+            <p>
+                To maintain uncompromising tracking accuracy and prevent unauthorized handset swapping, SHE enforces a <strong>strict 1:1 binding</strong> between user accounts and protected devices:
+            </p>
+            <ul>
+                <li><strong>Dedicated Pair Token:</strong> Handset pairing requires a single-use, 5-minute QR pairing token generated by the owner's Admin Companion.</li>
+                <li><strong>1 Protected Phone per Account:</strong> An account cannot pair multiple handsets simultaneously. If you acquire a new phone or upgrade, you must unpair your previous phone first from the Admin settings.</li>
+                <li><strong>Hardware Cryptographic Anchors:</strong> During initial pairing, the Guardian handset generates an ECDSA P-256 asymmetric keypair inside Android Keystore. The server binds this public key exclusively to your account.</li>
+            </ul>
+
+            <h2>3. 1-Tap Two-Factor Authentication (TOTP) Setup</h2>
+            <p>
+                SHE supports the standard RFC 6238 Time-based One-Time Password (TOTP) protocol, compatible with <strong>Google Authenticator, Aegis, 2FAS, Bitwarden, and Apple Keychain</strong>:
+            </p>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin: 1.5rem 0;">
+                <div class="card" style="padding: 1.25rem;">
+                    <h4 style="color: var(--text-main); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        {SVG_PHONE} 1-Tap Mobile Link (otpauth://)
+                    </h4>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                        On mobile, you do not need to manually type any secret strings. Tapping the direct <code>otpauth://</code> link automatically opens your installed authenticator app and adds your SHE account with 1 click.
+                    </p>
+                    <code style="display: block; padding: 0.5rem; font-size: 0.8rem; background: var(--bg-inset); border-radius: 8px; word-break: break-all;">
+                        otpauth://totp/SHE:username?secret=JBSWY3DPEHPK3PXP&amp;issuer=SHE
+                    </code>
+                </div>
+
+                <div class="card" style="padding: 1.25rem;">
+                    <h4 style="color: var(--text-main); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        {SVG_KEY} Encrypted Database Storage
+                    </h4>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">
+                        Unlike platforms that store 2FA seeds in plaintext, the SHE server encrypts all TOTP secrets using <strong>AES-256-GCM</strong> with <code>TOTP_ENCRYPTION_KEY</code> before writing to PostgreSQL/Supabase.
+                    </p>
+                </div>
+            </div>
+
+            <h2>4. Emergency Recovery Keys: Your Anti-Theft Lifeline</h2>
+            <p>
+                <strong>The Critical Problem:</strong> When your phone is stolen, your Google Authenticator app is on that stolen phone! If you cannot bypass 2FA, you cannot log in to track your handset.
+            </p>
+            <p>
+                <strong>The SHE Solution:</strong> When you enable 2FA, the backend instantly issues <strong>8 Emergency Recovery Codes</strong> in human-readable Crockford Base32 format (e.g. <code>K4M9-7P2X</code>):
+            </p>
+            <ul>
+                <li><strong>Single-Use Burning:</strong> Each recovery code is stored on the server as an Argon2id memory-hard hash. When used once to log in during a crisis, that code is immediately and permanently destroyed.</li>
+                <li><strong>Full 2FA Authorization:</strong> Entering a recovery code grants full 2FA clearance, allowing you to access the emergency tracking radar and remote commands.</li>
+                <li><strong>How to Store Them:</strong>
+                    <ol style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                        <li>Print them out on paper and keep them in your physical wallet, passport folder, or home safe.</li>
+                        <li>Save them in a secure password manager that syncs across your laptop or browser (e.g., Bitwarden or 1Password).</li>
+                        <li>Never screenshot them on the protected phone itself!</li>
+                    </ol>
+                </li>
+            </ul>
+
+            <h2>5. Emergency Playbook: "My Phone Was Just Stolen!"</h2>
+            <p>
+                If your handset is taken, follow this exact 4-step emergency recovery procedure:
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem; margin: 1.5rem 0;">
+                <div class="card" style="padding: 1.25rem; border-left: 4px solid var(--primary);">
+                    <strong style="color: var(--text-main); font-size: 1rem;">Step 1: Borrow Any Phone, Tablet, or Laptop</strong>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        Borrow a friend's phone, colleague's laptop, or use a public library terminal. Open any modern web browser.
+                    </p>
+                </div>
+
+                <div class="card" style="padding: 1.25rem; border-left: 4px solid var(--accent);">
+                    <strong style="color: var(--text-main); font-size: 1rem;">Step 2: Navigate to the Emergency Console</strong>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        Visit your deployed backend URL: <a href="/emergency" style="color: var(--primary); font-weight: 600;">https://she.up.railway.app/emergency</a>
+                    </p>
+                </div>
+
+                <div class="card" style="padding: 1.25rem; border-left: 4px solid var(--warning);">
+                    <strong style="color: var(--text-main); font-size: 1rem;">Step 3: Log In with Your Emergency Recovery Key</strong>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        Enter your username and password. In the 2FA code field, enter one of your 8-character recovery backup codes (e.g. <code>K4M9-7P2X</code>).
+                    </p>
+                </div>
+
+                <div class="card" style="padding: 1.25rem; border-left: 4px solid var(--danger);">
+                    <strong style="color: var(--text-main); font-size: 1rem;">Step 4: Track, Ring, or Lock Your Handset Live</strong>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        The interactive OpenStreetMap radar immediately pinpoints your handset's real-time GPS coordinates. Tap <strong>Ring Siren</strong> to sound a 100 dB alarm, or tap <strong>Activate Lost Mode</strong> to lock the handset with your emergency contact banner.
+                    </p>
+                </div>
+            </div>
+
+            <div style="margin-top: 2.5rem; text-align: center; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <a href="/emergency" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                    {SVG_RADAR} Open Emergency Console
+                </a>
+                <a href="/docs/user-guide" class="btn btn-secondary">Read Full User Guide</a>
+                <a href="/privacy" class="btn btn-secondary">Data Privacy Architecture</a>
+            </div>
+        </div>
+    </div>
+    """
+    return HTMLResponse(content=render_html_shell("SHE - 2FA Setup, Recovery Keys & Emergency Handset Tracking Guide", body, "2fa-recovery"))
+
+
+# -----------------------------------------------------------------------------
+# Emergency Web Recovery Console Route (Access from any phone or computer)
+# -----------------------------------------------------------------------------
+@router.get("/emergency", response_class=HTMLResponse)
+def render_emergency_console():
+    body = f"""
+    <div class="container" style="max-width: 900px; padding: 2rem 1rem;">
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 1rem; background: var(--danger-soft); border: 1px solid var(--danger); border-radius: var(--pill-radius); margin-bottom: 0.75rem;">
+                <span style="color: var(--danger); display: flex;">{SVG_ALERT}</span>
+                <span style="color: var(--danger); font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Emergency Stolen Handset Recovery</span>
+            </div>
+            <h1 style="font-size: 2rem; color: var(--text-main); margin-bottom: 0.5rem;">Emergency Web Console</h1>
+            <p style="color: var(--text-muted); font-size: 1rem;">
+                Lost your phone? Borrow any friend's device or computer, sign in with your password and emergency recovery key, and track your handset live.
+            </p>
+        </div>
+
+        <!-- Login Card -->
+        <div id="authCard" class="card" style="padding: 2rem; max-width: 480px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border);">
+            <h3 style="color: var(--text-main); margin-bottom: 1.25rem; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+                {SVG_LOCK} Authenticate Handset Owner
+            </h3>
+
+            <div id="loginAlert" style="display: none; padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.88rem;"></div>
+
+            <form id="emergencyLoginForm" onsubmit="handleEmergencyLogin(event)">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.35rem;">Username or Email</label>
+                    <input type="text" id="usernameInput" required placeholder="e.g. sam" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 0.95rem; font-family: var(--font-sans);" />
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.35rem;">Account Password</label>
+                    <input type="password" id="passwordInput" required placeholder="Your password" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 0.95rem;" />
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.35rem;">
+                        2FA Code <span style="color: var(--accent); font-weight: 700;">OR</span> Emergency Recovery Key
+                    </label>
+                    <input type="text" id="codeInput" placeholder="6-digit TOTP (123456) or Key (XXXX-XXXX)" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 0.95rem; font-family: var(--font-mono);" />
+                    <span style="display: block; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
+                        If your phone was stolen, enter one of your 8 backup recovery codes (e.g. ABCD-EFGH).
+                    </span>
+                </div>
+
+                <button type="submit" id="loginBtn" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 1rem; font-weight: 700; cursor: pointer;">
+                    Sign In &amp; Locate Handset &rarr;
+                </button>
+            </form>
+        </div>
+
+        <!-- Live Emergency Dashboard (Hidden until login) -->
+        <div id="dashboardCard" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <h2 id="deviceAliasTitle" style="color: var(--text-main); font-size: 1.5rem;">Protected Handset</h2>
+                    <p style="color: var(--text-muted); font-size: 0.88rem;">Authenticated Owner Emergency Tracking Session</p>
+                </div>
+                <button onclick="handleLogout()" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
+                    End Emergency Session (Log Out)
+                </button>
+            </div>
+
+            <!-- Device Telemetry Status Cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div class="card" style="padding: 1.25rem;">
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Status</div>
+                    <div id="deviceStatusVal" style="font-size: 1.3rem; font-weight: 800; color: var(--accent);">CONNECTING...</div>
+                </div>
+                <div class="card" style="padding: 1.25rem;">
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Last Known Coordinates</div>
+                    <div id="deviceCoordsVal" style="font-size: 1.05rem; font-weight: 700; font-family: var(--font-mono); color: var(--text-main);">Locating...</div>
+                </div>
+                <div class="card" style="padding: 1.25rem;">
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Reported Accuracy</div>
+                    <div id="deviceAccuracyVal" style="font-size: 1.3rem; font-weight: 800; color: var(--text-main);">--</div>
+                </div>
+                <div class="card" style="padding: 1.25rem;">
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Last Server Contact</div>
+                    <div id="deviceTimestampVal" style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted);">--</div>
+                </div>
+            </div>
+
+            <!-- Action Status Alert -->
+            <div id="actionAlert" style="display: none; padding: 0.85rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 600; font-size: 0.9rem;"></div>
+
+            <!-- Emergency Actions Panel -->
+            <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border);">
+                <h3 style="color: var(--text-main); font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    {SVG_ALERT} Remote Combat &amp; Recovery Actions
+                </h3>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <button onclick="triggerEmergencyAction('RING')" class="btn btn-primary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                        Sound Siren (100 dB Alarm)
+                    </button>
+                    <button onclick="triggerEmergencyAction('LOST_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--warning); color: var(--warning); cursor: pointer;">
+                        Activate Lost Mode
+                    </button>
+                    <button onclick="triggerEmergencyAction('LOCK')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                        Lock Handset Screen
+                    </button>
+                    <button onclick="if(confirm('WARNING: This will permanently erase all data on the stolen handset. Proceed?')) triggerEmergencyAction('WIPE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--danger); color: var(--danger); cursor: pointer;">
+                        Emergency Wipe Handset
+                    </button>
+                </div>
+            </div>
+
+            <!-- Embedded Live OpenStreetMap -->
+            <div class="card" style="padding: 0; overflow: hidden; border: 1px solid var(--border);">
+                <div style="padding: 1rem 1.25rem; background: var(--bg-inset); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+                        {SVG_MAP} Live Satellite &amp; Street Tracking Radar
+                    </div>
+                    <button onclick="refreshDeviceLocation()" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                        Refresh Radar
+                    </button>
+                </div>
+                <div id="mapContainer" style="height: 440px; width: 100%; background: #000; position: relative;">
+                    <iframe id="mapFrame" style="width: 100%; height: 100%; border: 0;" src="about:blank"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var currentToken = sessionStorage.getItem('she_emergency_token');
+        var currentDeviceId = null;
+
+        if (currentToken) {{
+            showDashboard();
+        }}
+
+        function showAlert(msg, isError) {{
+            var el = document.getElementById('loginAlert');
+            el.style.display = 'block';
+            el.style.background = isError ? 'var(--danger-soft)' : 'var(--accent-soft)';
+            el.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+            el.style.border = '1px solid ' + (isError ? 'var(--danger)' : 'var(--accent)');
+            el.textContent = msg;
+        }}
+
+        function showActionAlert(msg, isError) {{
+            var el = document.getElementById('actionAlert');
+            el.style.display = 'block';
+            el.style.background = isError ? 'var(--danger-soft)' : 'var(--accent-soft)';
+            el.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+            el.style.border = '1px solid ' + (isError ? 'var(--danger)' : 'var(--accent)');
+            el.textContent = msg;
+            setTimeout(function() {{ el.style.display = 'none'; }}, 5000);
+        }}
+
+        async function handleEmergencyLogin(e) {{
+            e.preventDefault();
+            var btn = document.getElementById('loginBtn');
+            btn.disabled = true;
+            btn.textContent = 'Verifying Credentials...';
+
+            var u = document.getElementById('usernameInput').value.trim();
+            var p = document.getElementById('passwordInput').value;
+            var c = document.getElementById('codeInput').value.trim();
+
+            try {{
+                // Step 1: Authenticate with password
+                var resp = await fetch('/auth/login/json', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ username: u, password: p }})
+                }});
+
+                var data = await resp.json();
+                if (!resp.ok) {{
+                    throw new Error(data.detail || 'Authentication failed');
+                }}
+
+                var token = data.access_token;
+
+                // Step 2: If code is provided or 2FA required, validate TOTP / recovery code
+                if (c) {{
+                    btn.textContent = 'Validating 2FA / Recovery Code...';
+                    var valResp = await fetch('/auth/totp/validate', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + token
+                        }},
+                        body: JSON.stringify({{ code: c }})
+                    }});
+
+                    var valData = await valResp.json();
+                    if (!valResp.ok) {{
+                        throw new Error(valData.detail || 'Invalid 2FA or recovery code');
+                    }}
+                    token = valData.access_token;
+                }}
+
+                sessionStorage.setItem('she_emergency_token', token);
+                currentToken = token;
+                showDashboard();
+            }} catch (err) {{
+                showAlert(err.message, true);
+                btn.disabled = false;
+                btn.textContent = 'Sign In & Locate Handset \u2192';
+            }}
+        }}
+
+        async function showDashboard() {{
+            document.getElementById('authCard').style.display = 'none';
+            document.getElementById('dashboardCard').style.display = 'block';
+            await loadDevices();
+        }}
+
+        function handleLogout() {{
+            sessionStorage.removeItem('she_emergency_token');
+            currentToken = null;
+            window.location.reload();
+        }}
+
+        async function loadDevices() {{
+            try {{
+                var resp = await fetch('/api/v1/devices', {{
+                    headers: {{ 'Authorization': 'Bearer ' + currentToken }}
+                }});
+                var data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Failed to load protected device');
+
+                var devices = data.devices || [];
+                if (devices.length === 0) {{
+                    document.getElementById('deviceAliasTitle').textContent = 'No Devices Paired';
+                    document.getElementById('deviceStatusVal').textContent = 'UNPAIRED';
+                    document.getElementById('deviceCoordsVal').textContent = 'No handset registered to this account';
+                    return;
+                }}
+
+                var dev = devices[0];
+                currentDeviceId = dev.id;
+                document.getElementById('deviceAliasTitle').textContent = dev.device_alias || 'Protected Phone';
+                document.getElementById('deviceStatusVal').textContent = dev.status || 'ACTIVE';
+                
+                await refreshDeviceLocation();
+            }} catch (err) {{
+                showActionAlert(err.message, true);
+            }}
+        }}
+
+        async function refreshDeviceLocation() {{
+            if (!currentDeviceId) return;
+            try {{
+                var resp = await fetch('/api/v1/devices/' + currentDeviceId + '/location', {{
+                    headers: {{ 'Authorization': 'Bearer ' + currentToken }}
+                }});
+                var loc = await resp.json();
+                if (!resp.ok || !loc.latitude) {{
+                    document.getElementById('deviceCoordsVal').textContent = 'Awaiting GPS Fix';
+                    return;
+                }}
+
+                var lat = loc.latitude.toFixed(6);
+                var lon = loc.longitude.toFixed(6);
+                var acc = loc.accuracy ? loc.accuracy.toFixed(1) + ' m' : 'Unknown';
+                var ts = loc.timestamp ? new Date(loc.timestamp).toLocaleString() : 'Recent';
+
+                document.getElementById('deviceCoordsVal').textContent = lat + ', ' + lon;
+                document.getElementById('deviceAccuracyVal').textContent = acc;
+                document.getElementById('deviceTimestampVal').textContent = ts;
+
+                // Load OpenStreetMap with target marker
+                var osmUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' +
+                    (loc.longitude - 0.01) + '%2C' + (loc.latitude - 0.01) + '%2C' +
+                    (loc.longitude + 0.01) + '%2C' + (loc.latitude + 0.01) +
+                    '&layer=mapnik&marker=' + loc.latitude + '%2C' + loc.longitude;
+                document.getElementById('mapFrame').src = osmUrl;
+            }} catch (err) {{
+                document.getElementById('deviceCoordsVal').textContent = 'GPS fix unavailable';
+            }}
+        }}
+
+        async function triggerEmergencyAction(actionType) {{
+            if (!currentDeviceId) {{
+                alert('No active protected handset found.');
+                return;
+            }}
+            try {{
+                showActionAlert('Dispatching emergency ' + actionType + ' command...', false);
+                var resp = await fetch('/api/v1/devices/' + currentDeviceId + '/command', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + currentToken
+                    }},
+                    body: JSON.stringify({{ command_type: actionType, payload: {{}} }})
+                }});
+                var res = await resp.json();
+                if (!resp.ok) throw new Error(res.detail || 'Command dispatch rejected');
+                showActionAlert('Emergency command ' + actionType + ' dispatched successfully (ID: ' + (res.command_id || 'Queued') + ')', false);
+            }} catch (err) {{
+                showActionAlert(err.message, true);
+            }}
+        }}
+    </script>
+    """
+    return HTMLResponse(content=render_html_shell("SHE Emergency Stolen Handset Recovery Console", body, "emergency"))

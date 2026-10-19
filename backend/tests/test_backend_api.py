@@ -513,3 +513,75 @@ def test_rate_limiter_logic():
     with pytest.raises(Exception) as excinfo:
         limiter.check_rate_limit(req)
     assert "429" in str(excinfo.value)
+
+
+def test_single_device_per_user_restriction():
+    """Verify that a user account is strictly restricted to 1 protected device."""
+    client = TestClient(app)
+    # Register a new user
+    u_resp = client.post("/auth/register", json={
+        "username": "singledev_user",
+        "email": "singledev@example.com",
+        "password": "Password123!"
+    })
+    assert u_resp.status_code == 201
+
+    login_resp = client.post("/auth/login/json", json={
+        "username": "singledev_user",
+        "password": "Password123!"
+    })
+    token = login_resp.json()["access_token"]
+    from conftest import enroll_totp_and_get_2fa_token
+    token = enroll_totp_and_get_2fa_token(client, token)
+
+    # Pair Device 1
+    pt_resp = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
+    assert pt_resp.status_code == 200
+    pt1 = pt_resp.json()["pairing_token"]
+    pair1 = client.post("/api/v1/devices/pair", headers={"Authorization": f"Bearer {pt1}"}, json={
+        "device_alias": "Phone 1",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtest1\n-----END PUBLIC KEY-----",
+        "trusted_phone_number": "+15551111111",
+        "pairing_secret": "secret123456789012345678901234"
+    })
+    assert pair1.status_code == 201
+
+    # Attempt to pair Device 2 on the same account -> MUST BE REJECTED with 400
+    pt_resp2 = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
+    assert pt_resp2.status_code == 200
+    pt2 = pt_resp2.json()["pairing_token"]
+    pair2 = client.post("/api/v1/devices/pair", headers={"Authorization": f"Bearer {pt2}"}, json={
+        "device_alias": "Phone 2",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtest2\n-----END PUBLIC KEY-----",
+        "trusted_phone_number": "+15552222222",
+        "pairing_secret": "secret123456789012345678901234"
+    })
+    assert pair2.status_code == 400
+    assert "strictly restricted to 1 protected device" in pair2.json()["detail"]
+
+
+def test_registration_token_verification(monkeypatch):
+    """Verify that when REGISTRATION_TOKEN is configured, unverified signups are rejected."""
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "REGISTRATION_TOKEN", "SECRET_INVITE_TOKEN_XYZ")
+
+    client = TestClient(app)
+
+    # Attempt registration without token -> REJECTED 403
+    rej = client.post("/auth/register", json={
+        "username": "unverified_bot",
+        "email": "bot@example.com",
+        "password": "Password123!"
+    })
+    assert rej.status_code == 403
+    assert "verified invitation token" in rej.json()["detail"]
+
+    # Registration with valid token -> SUCCESS 201
+    ok = client.post("/auth/register", json={
+        "username": "verified_user",
+        "email": "verified@example.com",
+        "password": "Password123!",
+        "registration_token": "SECRET_INVITE_TOKEN_XYZ"
+    })
+    assert ok.status_code == 201
+    assert ok.json()["username"] == "verified_user"
