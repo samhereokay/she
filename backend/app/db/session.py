@@ -22,23 +22,24 @@ engine_kwargs = {"pool_pre_ping": True}
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 elif "pooler.supabase.com" in db_url or ":6543" in db_url:
-    # Supabase Transaction Pooler (PgBouncer): Pool size is capped at 8 with max_overflow=3
-    # to stay safely within Supabase's 15-client pooler limit while avoiding timeouts.
+    # Supabase Transaction Pooler (PgBouncer port 6543):
+    # Optimized pool configuration with pre-ping validation, fast recycling,
+    # and lower checkout timeout to immediately surface and recover from stale connections.
     connect_args = {"connect_timeout": 15, "sslmode": "require"}
     engine_kwargs = {
-        "pool_size": 8,
-        "max_overflow": 3,
-        "pool_recycle": 300,
-        "pool_timeout": 30,
+        "pool_size": 20,
+        "max_overflow": 10,
+        "pool_recycle": 180,
+        "pool_timeout": 15,
         "pool_pre_ping": True,
     }
 else:
     connect_args = {"connect_timeout": 15, "sslmode": "require"}
     engine_kwargs.update({
-        "pool_recycle": 300,
-        "pool_timeout": 30,
-        "pool_size": 10,
-        "max_overflow": 5,
+        "pool_recycle": 180,
+        "pool_timeout": 15,
+        "pool_size": 20,
+        "max_overflow": 10,
         "pool_pre_ping": True,
     })
 
@@ -52,6 +53,9 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+from contextlib import contextmanager
+
+
 def get_db():
     """Dependency yielding database session."""
     db = SessionLocal()
@@ -59,3 +63,16 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@contextmanager
+def get_db_context():
+    """Context manager for short-lived database operations.
+    Guarantees that the session and connection are closed and returned to the pool immediately.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+

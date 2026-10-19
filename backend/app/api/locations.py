@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSoc
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_db, SessionLocal, get_db_context
 from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent
 from app.schemas.location import (
     LocationBatchIngestRequest,
@@ -238,8 +238,7 @@ def get_device_location_history(
 async def websocket_device_location_stream(
     websocket: WebSocket,
     device_id: str,
-    token: str = None,
-    db: Session = Depends(get_db)
+    token: str = None
 ):
     """
     Real-time authenticated WebSocket stream for device location tracking.
@@ -260,23 +259,52 @@ async def websocket_device_location_stream(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid authentication token")
         return
 
-    user = db.query(User).filter(User.id == payload["sub"]).first()
-    if not user:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
-        return
+    # Use short-lived scoped DB session so connection is never held during the long-lived WebSocket loop
+    with get_db_context() as db:
+        user = db.query(User).filter(User.id == payload["sub"]).first()
+        if not user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
+            return
 
-    if user.email_verified_at is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Email address not verified")
-        return
+        if user.email_verified_at is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Email address not verified")
+            return
 
-    device = db.query(ProtectedDevice).filter(
-        ProtectedDevice.id == device_id,
-        ProtectedDevice.user_id == user.id
-    ).first()
+        device = db.query(ProtectedDevice).filter(
+            ProtectedDevice.id == device_id,
+            ProtectedDevice.user_id == user.id
+        ).first()
 
-    if not device:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Device not found or unauthorized")
-        return
+        if not device:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Device not found or unauthorized")
+            return
+
+        device_alias = device.device_alias
+        device_status = device.status
+        saved_device_id = device.id
+
+        # Retrieve up to 50 recent points for breadcrumb trail
+        recent_locs = (
+            db.query(LocationEvent)
+            .filter(LocationEvent.protected_device_id == device.id)
+            .order_by(LocationEvent.sequence_number.desc())
+            .limit(50)
+            .all()
+        )
+        recent_locs.reverse()
+
+        trail_data = [
+            {
+                "latitude": loc.latitude,
+                "longitude": loc.longitude,
+                "accuracy": loc.accuracy,
+                "altitude": loc.altitude,
+                "velocity": loc.velocity,
+                "capture_time": loc.capture_time.isoformat() if loc.capture_time else None,
+                "sequence_number": loc.sequence_number
+            }
+            for loc in recent_locs
+        ]
 
     # Register and accept WebSocket connection
     connected = await ws_manager.connect(device_id, websocket)
@@ -284,37 +312,14 @@ async def websocket_device_location_stream(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Max concurrent connections reached for device")
         return
 
-    # Retrieve up to 50 recent points for breadcrumb trail
-    recent_locs = (
-        db.query(LocationEvent)
-        .filter(LocationEvent.protected_device_id == device.id)
-        .order_by(LocationEvent.sequence_number.desc())
-        .limit(50)
-        .all()
-    )
-    recent_locs.reverse()
-
-    trail_data = [
-        {
-            "latitude": loc.latitude,
-            "longitude": loc.longitude,
-            "accuracy": loc.accuracy,
-            "altitude": loc.altitude,
-            "velocity": loc.velocity,
-            "capture_time": loc.capture_time.isoformat() if loc.capture_time else None,
-            "sequence_number": loc.sequence_number
-        }
-        for loc in recent_locs
-    ]
-
     latest = trail_data[-1] if trail_data else None
 
     # Send initial state payload
     await websocket.send_json({
         "type": "INITIAL_STATE",
-        "device_id": device.id,
-        "device_alias": device.device_alias,
-        "status": device.status,
+        "device_id": saved_device_id,
+        "device_alias": device_alias,
+        "status": device_status,
         "latest_location": latest,
         "trail": trail_data
     })
