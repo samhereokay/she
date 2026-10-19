@@ -1,0 +1,35 @@
+app = "she-anti-theft"
+primary_region = "sin"   # Singapore — closest free region to India
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ALLOW_PUBLIC_REGISTRATION = "true"
+  ENFORCE_HTTPS             = "true"
+  DEBUG                     = "false"
+  PROJECT_NAME              = "SHE Anti-Theft"
+
+[http_service]
+  internal_port       = 8000
+  force_https         = true
+  auto_stop_machines  = false   # Keep always-on for WebSocket tracking
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type       = "requests"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "256mb"
+
+[checks]
+  [checks.health]
+    port     = 8000
+    type     = "http"
+    interval = "15s"
+    timeout  = "5s"
+    path     = "/health"
