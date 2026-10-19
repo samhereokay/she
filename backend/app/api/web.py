@@ -154,35 +154,49 @@ SHARED_CSS = """
     --text-main: #09090B;
     --text-muted: #52525B;
     --text-subtle: #A1A1AA;
-    --nav-bg: rgba(248, 249, 250, 0.92);
+    --nav-bg: rgba(248, 249, 250, 0.94);
     --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
     --shadow-hover: 0 12px 30px -4px rgba(0, 0, 0, 0.08);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+}
+
 body {
     background: var(--bg-dark);
     color: var(--text-main);
     font-family: var(--font-sans);
     line-height: 1.6;
     overflow-x: hidden;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-/* Navigation Bar */
+/* Base Top Navigation */
 nav {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 2.25rem;
+    padding: 0.85rem 2rem;
     background: var(--nav-bg);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: 1000;
     transition: background 0.25s, border-color 0.25s;
+    width: 100%;
 }
 .brand {
     display: flex;
@@ -193,6 +207,7 @@ nav {
     color: var(--text-main);
     text-decoration: none;
     letter-spacing: -0.02em;
+    flex-shrink: 0;
 }
 .brand img {
     width: 36px;
@@ -211,31 +226,43 @@ nav {
     border: 1px solid var(--border);
     letter-spacing: 0.06em;
 }
+
+.nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    order: 3;
+}
+
 .nav-links {
     display: flex;
-    gap: 1.25rem;
+    gap: 0.5rem 0.75rem;
     align-items: center;
     flex-wrap: wrap;
+    order: 2;
 }
 .nav-links a {
     color: var(--text-muted);
     text-decoration: none;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     font-weight: 600;
-    transition: color 0.2s;
-    padding: 0.4rem 0.6rem;
+    transition: color 0.2s, background-color 0.2s;
+    padding: 0.45rem 0.65rem;
     border-radius: 8px;
+    white-space: nowrap;
 }
 .nav-links a:hover, .nav-links a.active {
     color: var(--primary);
+    background: var(--primary-soft);
 }
 
 /* Theme Switcher Toggle Pill */
 .theme-toggle-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.45rem;
-    padding: 0.4rem 0.85rem;
+    padding: 0.45rem 0.85rem;
     border-radius: var(--pill-radius);
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -246,6 +273,7 @@ nav {
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    min-height: 38px;
 }
 .theme-toggle-btn:hover {
     border-color: var(--primary);
@@ -253,33 +281,125 @@ nav {
     transform: translateY(-1px);
 }
 .theme-icon-light { display: none; }
-.theme-icon-dark { display: inline-block; }
-[data-theme="light"] .theme-icon-light { display: inline-block; }
+.theme-icon-dark { display: inline-flex; align-items: center; }
+[data-theme="light"] .theme-icon-light { display: inline-flex; align-items: center; }
 [data-theme="light"] .theme-icon-dark { display: none; }
 
-/* Layout & Containers */
-.container {
-    max-width: 1140px;
-    margin: 0 auto;
-    padding: 2.75rem 1.5rem;
+.nav-toggle-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.nav-toggle-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--primary);
 }
 
-/* Warning & Status Banners */
+/* Mobile Responsive Navigation Drawer */
+@media (max-width: 991px) {
+    nav {
+        padding: 0.75rem 1rem;
+        flex-wrap: wrap;
+    }
+    .brand {
+        font-size: 1.12rem;
+        gap: 0.5rem;
+    }
+    .brand img {
+        width: 30px;
+        height: 30px;
+    }
+    .brand-badge {
+        font-size: 0.58rem;
+        padding: 0.15rem 0.45rem;
+    }
+    .nav-actions {
+        order: 2;
+    }
+    .theme-toggle-btn {
+        padding: 0.35rem 0.65rem;
+        font-size: 0.78rem;
+    }
+    .nav-toggle-btn {
+        display: inline-flex;
+    }
+    .nav-links {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.35rem;
+        padding: 0.85rem 0 0.25rem 0;
+        margin-top: 0.65rem;
+        border-top: 1px solid var(--border);
+        order: 3;
+    }
+    .nav-links.open {
+        display: flex;
+        animation: navSlideDown 0.22s ease-out;
+    }
+    .nav-links a {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 0.75rem 1rem;
+        font-size: 0.95rem;
+        min-height: 44px;
+        border-radius: 10px;
+    }
+}
+
+@keyframes navSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Containers */
+.container {
+    max-width: 1140px;
+    width: 100%;
+    margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 2.75rem) clamp(0.85rem, 3vw, 1.5rem);
+    box-sizing: border-box;
+}
+
+.banner-wrap {
+    width: 100%;
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 0 clamp(0.85rem, 3vw, 1.5rem);
+    box-sizing: border-box;
+}
+
+/* Banners */
+.warning-banner, .release-banner {
+    border-radius: 16px;
+    padding: clamp(1rem, 3vw, 1.25rem) clamp(1rem, 3vw, 1.6rem);
+    margin: 1.25rem auto 0 auto;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-sizing: border-box;
+}
 .warning-banner {
     background: var(--warning-soft);
     border: 1px solid rgba(245, 158, 11, 0.35);
-    border-radius: 16px;
-    padding: 1.25rem 1.6rem;
-    margin: 1.5rem auto 0 auto;
-    max-width: 1140px;
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
     box-shadow: 0 4px 16px rgba(245, 158, 11, 0.08);
-}
-.warning-icon {
-    font-size: 1.5rem;
-    line-height: 1;
 }
 .warning-body {
     flex: 1;
@@ -299,13 +419,6 @@ nav {
 .release-banner {
     background: rgba(56, 189, 248, 0.08);
     border: 1px solid rgba(56, 189, 248, 0.35);
-    border-radius: 16px;
-    padding: 1.25rem 1.6rem;
-    margin: 1.5rem auto 0 auto;
-    max-width: 1140px;
-    display: flex;
-    align-items: center;
-    gap: 1.15rem;
     box-shadow: 0 4px 20px rgba(56, 189, 248, 0.08);
 }
 .release-icon {
@@ -337,11 +450,31 @@ nav {
     gap: 0.5rem;
 }
 
+@media (max-width: 768px) {
+    .warning-banner, .release-banner {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.85rem;
+        padding: 1.1rem;
+    }
+    .release-banner .btn, .warning-banner .btn {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+}
+
 /* Hero Section */
 .hero {
     text-align: center;
-    padding: 4.5rem 1.5rem 3rem 1.5rem;
+    padding: clamp(2.5rem, 6vw, 4.5rem) clamp(1rem, 3vw, 1.5rem) clamp(1.5rem, 4vw, 3rem) clamp(1rem, 3vw, 1.5rem);
     background: radial-gradient(circle at 50% 15%, var(--primary-soft), transparent 75%);
+    width: 100%;
+    box-sizing: border-box;
+}
+.hero img {
+    max-width: 100%;
+    height: auto;
 }
 .hero-badge {
     display: inline-flex;
@@ -352,19 +485,22 @@ nav {
     background: var(--primary-soft);
     border: 1px solid rgba(56, 189, 248, 0.35);
     color: var(--primary);
-    font-size: 0.85rem;
+    font-size: clamp(0.75rem, 2vw, 0.85rem);
     font-weight: 700;
     margin-bottom: 1.5rem;
     letter-spacing: 0.02em;
+    max-width: 100%;
+    word-break: break-word;
 }
 .hero h1 {
-    font-size: 3.25rem;
+    font-size: clamp(1.85rem, 5vw + 0.5rem, 3.25rem);
     font-weight: 800;
     letter-spacing: -0.035em;
-    line-height: 1.15;
+    line-height: 1.18;
     max-width: 840px;
     margin: 0 auto 1.35rem auto;
     color: var(--text-main);
+    word-break: break-word;
 }
 .hero h1 span {
     background: linear-gradient(135deg, var(--primary), #3B82F6);
@@ -372,25 +508,28 @@ nav {
     -webkit-text-fill-color: transparent;
 }
 .hero p {
-    font-size: 1.12rem;
+    font-size: clamp(0.95rem, 2.2vw, 1.12rem);
     color: var(--text-muted);
     max-width: 660px;
     margin: 0 auto 2.25rem auto;
     line-height: 1.7;
+    padding: 0 0.5rem;
 }
 
 /* Buttons */
 .btn-group {
     display: flex;
-    gap: 0.85rem;
+    gap: 0.75rem;
     justify-content: center;
     flex-wrap: wrap;
+    width: 100%;
 }
 .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
+    padding: 0.75rem 1.4rem;
     border-radius: 14px;
     font-weight: 700;
     font-size: 0.92rem;
@@ -399,6 +538,9 @@ nav {
     cursor: pointer;
     border: none;
     font-family: var(--font-sans);
+    min-height: 44px;
+    box-sizing: border-box;
+    text-align: center;
 }
 .btn-primary {
     background: var(--primary);
@@ -425,41 +567,66 @@ nav {
     transform: translateY(-1px);
 }
 
+@media (max-width: 640px) {
+    .btn-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .btn-group .btn {
+        width: 100%;
+    }
+}
+
 /* Headers & Grids */
 .section-header {
     text-align: center;
-    margin-bottom: 2.75rem;
+    margin-bottom: clamp(1.75rem, 4vw, 2.75rem);
+    width: 100%;
 }
 .section-header h2 {
-    font-size: 2.15rem;
+    font-size: clamp(1.4rem, 3.5vw, 2.15rem);
     font-weight: 800;
     letter-spacing: -0.025em;
     margin-bottom: 0.5rem;
     color: var(--text-main);
+    word-break: break-word;
 }
 .section-header p {
     color: var(--text-muted);
-    font-size: 1.05rem;
+    font-size: clamp(0.92rem, 2vw, 1.05rem);
+    padding: 0 0.5rem;
 }
 .grid-2 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 1.6rem;
+    width: 100%;
 }
 .grid-3 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.6rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 1.4rem;
+    width: 100%;
+}
+@media (max-width: 640px) {
+    .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+        gap: 1.15rem;
+    }
 }
 
-/* Cards (Refined flat elevation with crisp borders matching Admin) */
+/* Cards */
 .card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    padding: 1.85rem;
+    padding: clamp(1.15rem, 3vw, 1.85rem);
     box-shadow: var(--shadow-card);
     transition: border-color 0.22s, transform 0.22s, box-shadow 0.22s;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 .card:hover {
     border-color: var(--border);
@@ -468,14 +635,21 @@ nav {
 .card-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
+    gap: 0.85rem;
+    margin-bottom: 1.15rem;
+    flex-wrap: wrap;
 }
 .card-title {
-    font-size: 1.22rem;
+    font-size: clamp(1.08rem, 2.5vw, 1.22rem);
     font-weight: 800;
     letter-spacing: -0.015em;
     color: var(--text-main);
+}
+@media (max-width: 480px) {
+    .card-header .card-badge {
+        margin-left: 0 !important;
+        margin-top: 0.25rem;
+    }
 }
 
 /* Badges & Chips */
@@ -489,6 +663,7 @@ nav {
     font-family: var(--font-mono);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    white-space: nowrap;
 }
 .badge-warning {
     background: var(--warning-soft);
@@ -516,14 +691,19 @@ nav {
     background: var(--bg-code);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 0.85rem 1.15rem;
+    padding: 0.75rem 1rem;
     font-family: var(--font-mono);
-    font-size: 0.84rem;
+    font-size: clamp(0.72rem, 2vw, 0.84rem);
     color: var(--primary);
     overflow-x: auto;
-    margin: 0.75rem 0;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    margin: 0.65rem 0;
     user-select: all;
     line-height: 1.55;
+    word-break: break-all;
+    white-space: pre-wrap;
+    box-sizing: border-box;
 }
 .code-pill {
     background: var(--bg-code);
@@ -533,10 +713,11 @@ nav {
     font-size: 0.82rem;
     color: var(--primary);
     border: 1px solid var(--border);
+    display: inline-block;
 }
 .feature-icon {
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
     border-radius: 14px;
     background: var(--primary-soft);
     border: 1px solid var(--border);
@@ -572,9 +753,11 @@ nav {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    padding: 2.25rem;
+    padding: clamp(1.25rem, 4vw, 2.25rem);
     margin-bottom: 2rem;
     box-shadow: var(--shadow-card);
+    width: 100%;
+    box-sizing: border-box;
 }
 .blog-meta {
     display: flex;
@@ -587,14 +770,14 @@ nav {
     flex-wrap: wrap;
 }
 .blog-card h3 {
-    font-size: 1.7rem;
+    font-size: clamp(1.35rem, 3.5vw, 1.7rem);
     font-weight: 800;
     margin-bottom: 1.25rem;
     line-height: 1.3;
     color: var(--text-main);
 }
 .blog-content h4 {
-    font-size: 1.2rem;
+    font-size: clamp(1.08rem, 2.5vw, 1.2rem);
     font-weight: 700;
     color: var(--text-main);
     margin: 1.75rem 0 0.75rem 0;
@@ -602,7 +785,7 @@ nav {
 .blog-content p {
     color: var(--text-muted);
     margin-bottom: 1.15rem;
-    font-size: 1.02rem;
+    font-size: clamp(0.95rem, 2vw, 1.02rem);
     line-height: 1.75;
 }
 .blog-callout {
@@ -629,52 +812,59 @@ nav {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    padding: 2.5rem;
+    padding: clamp(1.25rem, 4vw, 2.5rem);
     margin-bottom: 2rem;
     box-shadow: var(--shadow-card);
+    width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 .doc-page h1 {
-    font-size: 2.25rem;
+    font-size: clamp(1.6rem, 4vw, 2.25rem);
     font-weight: 800;
     letter-spacing: -0.025em;
     margin-bottom: 0.5rem;
     color: var(--text-main);
 }
 .doc-page h2 {
-    font-size: 1.55rem;
+    font-size: clamp(1.25rem, 3vw, 1.55rem);
     font-weight: 800;
     color: var(--text-main);
-    margin: 2.25rem 0 0.85rem 0;
+    margin: 2rem 0 0.85rem 0;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
 }
 .doc-page h3 {
-    font-size: 1.2rem;
+    font-size: clamp(1.08rem, 2.5vw, 1.2rem);
     font-weight: 700;
     color: var(--primary);
     margin: 1.5rem 0 0.65rem 0;
 }
 .doc-page p, .doc-page li {
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: clamp(0.92rem, 2vw, 1rem);
     line-height: 1.7;
     margin-bottom: 0.85rem;
 }
 .doc-page ul, .doc-page ol {
-    margin-left: 1.5rem;
+    margin-left: 1.25rem;
     margin-bottom: 1.25rem;
 }
 .doc-page table {
     width: 100%;
     border-collapse: collapse;
     margin: 1.5rem 0;
-    font-size: 0.92rem;
+    font-size: clamp(0.78rem, 2vw, 0.92rem);
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid var(--border);
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .doc-page th, .doc-page td {
-    padding: 0.85rem 1rem;
+    padding: clamp(0.6rem, 2vw, 0.85rem) clamp(0.65rem, 2vw, 1rem);
     border: 1px solid var(--border);
     text-align: left;
 }
@@ -683,25 +873,69 @@ nav {
     color: var(--primary);
     font-family: var(--font-mono);
     font-weight: 700;
+    white-space: nowrap;
 }
 .doc-page td {
     background: var(--bg-card);
     color: var(--text-muted);
 }
 
+/* Emergency Console Specific Responsive Styles */
+.emergency-dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.emergency-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1.5rem;
+}
+.emergency-actions-grid {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.emergency-actions-grid .btn {
+    flex: 1 1 calc(50% - 0.5rem);
+    min-width: 140px;
+    justify-content: center;
+    text-align: center;
+}
+@media (max-width: 540px) {
+    .emergency-actions-grid .btn {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+    .emergency-dashboard-header > div:last-child {
+        width: 100%;
+        display: flex;
+    }
+    .emergency-dashboard-header > div:last-child .btn {
+        flex: 1;
+        justify-content: center;
+    }
+}
+
 /* Footer */
 footer {
     border-top: 1px solid var(--border);
-    padding: 3.5rem 1.5rem;
+    padding: clamp(2rem, 5vw, 3.5rem) 1rem;
     text-align: center;
     color: var(--text-muted);
-    font-size: 0.9rem;
-    margin-top: 4rem;
+    font-size: 0.88rem;
+    margin-top: auto;
     background: var(--bg-dark);
+    width: 100%;
+    box-sizing: border-box;
 }
 .footer-links {
     display: flex;
-    gap: 1.5rem;
+    gap: 0.85rem 1.4rem;
     justify-content: center;
     margin-bottom: 1.25rem;
     flex-wrap: wrap;
@@ -712,6 +946,7 @@ footer {
     font-weight: 600;
     font-size: 0.88rem;
     transition: color 0.2s;
+    white-space: nowrap;
 }
 .footer-links a:hover { color: var(--primary); }
 
@@ -876,13 +1111,26 @@ def render_html_shell(
             <span>SHE</span>
             <span class="brand-badge">ANTI-THEFT</span>
         </a>
-        <div class="nav-links">
-            {nav_items_html}
+        <div class="nav-actions">
             <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Light/Dark Theme" title="Toggle Light/Dark Theme">
                 <span class="theme-icon-dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span>
                 <span class="theme-icon-light"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg></span>
                 <span id="theme-text">Theme</span>
             </button>
+            <button id="nav-toggle" class="nav-toggle-btn" aria-label="Toggle Navigation Menu" aria-expanded="false">
+                <svg class="hamburger-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+                <svg class="close-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div id="nav-links" class="nav-links">
+            {nav_items_html}
         </div>
     </nav>
 
@@ -923,6 +1171,30 @@ def render_html_shell(
                     document.documentElement.setAttribute('data-theme', next);
                     localStorage.setItem('she_theme', next);
                     refreshThemeText();
+                }});
+            }}
+
+            var navToggle = document.getElementById('nav-toggle');
+            var navLinks = document.getElementById('nav-links');
+            if (navToggle && navLinks) {{
+                navToggle.addEventListener('click', function(e) {{
+                    e.stopPropagation();
+                    var isOpen = navLinks.classList.toggle('open');
+                    navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                    var h = navToggle.querySelector('.hamburger-icon');
+                    var c = navToggle.querySelector('.close-icon');
+                    if (h) h.style.display = isOpen ? 'none' : 'block';
+                    if (c) c.style.display = isOpen ? 'block' : 'none';
+                }});
+                document.addEventListener('click', function(e) {{
+                    if (!navLinks.contains(e.target) && !navToggle.contains(e.target) && navLinks.classList.contains('open')) {{
+                        navLinks.classList.remove('open');
+                        navToggle.setAttribute('aria-expanded', 'false');
+                        var h = navToggle.querySelector('.hamburger-icon');
+                        var c = navToggle.querySelector('.close-icon');
+                        if (h) h.style.display = 'block';
+                        if (c) c.style.display = 'none';
+                    }}
                 }});
             }}
         }});
@@ -1245,7 +1517,7 @@ async def render_landing_page():
 
 
     body = f"""
-    <div style="padding: 0 1.5rem;">
+    <div class="banner-wrap">
         <div class="release-banner">
             <div class="release-icon">{SVG_DOWNLOAD}</div>
             <div class="release-body">
@@ -1288,15 +1560,15 @@ async def render_landing_page():
                 <span class="card-badge badge-success" style="margin-left: auto;">{badge_text}</span>
             </div>
 
-            <div style="background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin: 1rem 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px; padding: clamp(0.85rem, 3vw, 1.25rem); margin: 1rem 0;">
+                <div class="telemetry-stat-row">
                     <div>
                         <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Satellite Coordinates:</div>
-                        <div style="font-family: var(--font-mono); font-size: 1.35rem; font-weight: 700; color: #38bdf8; margin-top: 0.25rem;">
+                        <div style="font-family: var(--font-mono); font-size: clamp(1.1rem, 3vw, 1.35rem); font-weight: 700; color: #38bdf8; margin-top: 0.25rem;">
                             {lat}, {lng} <span style="font-size: 0.9rem; color: #10b981; font-weight: 600;">({acc})</span>
                         </div>
                     </div>
-                    <div style="text-align: right;">
+                    <div>
                         <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Hardware Precision:</div>
                         <div style="font-size: 0.88rem; color: #f3f4f6; font-weight: 600; margin-top: 0.25rem;">
                             High-Precision Sat-Lock
@@ -1310,8 +1582,8 @@ async def render_landing_page():
             </div>
 
             <!-- Action Buttons: Search on Map & Info -->
-            <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1.25rem;">
-                <a href="{map_url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="flex: 1; justify-content: center; text-decoration: none;">
+            <div class="btn-group" style="margin-top: 1.25rem;">
+                <a href="{map_url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="flex: 1; min-width: 180px; justify-content: center; text-decoration: none;">
                     {SVG_MAP} Search on Google Maps
                 </a>
                 <button onclick="document.getElementById('locationInfoModal').style.display='flex'" class="btn btn-secondary" style="justify-content: center; cursor: pointer;">
@@ -2365,21 +2637,21 @@ async def render_2fa_and_recovery_guide():
 @router.get("/emergency", response_class=HTMLResponse)
 async def render_emergency_console():
     body = f"""
-    <div class="container" style="max-width: 900px; padding: 2rem 1rem;">
+    <div class="container" style="max-width: 900px;">
         <div style="text-align: center; margin-bottom: 2rem;">
-            <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 1rem; background: var(--danger-soft); border: 1px solid var(--danger); border-radius: var(--pill-radius); margin-bottom: 0.75rem;">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 1rem; background: var(--danger-soft); border: 1px solid var(--danger); border-radius: var(--pill-radius); margin-bottom: 0.75rem; max-width: 100%;">
                 <span style="color: var(--danger); display: flex;">{SVG_ALERT}</span>
-                <span style="color: var(--danger); font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Emergency Stolen Handset Recovery</span>
+                <span style="color: var(--danger); font-size: clamp(0.72rem, 2vw, 0.85rem); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Emergency Stolen Handset Recovery</span>
             </div>
-            <h1 style="font-size: 2rem; color: var(--text-main); margin-bottom: 0.5rem;">Emergency Web Console</h1>
-            <p style="color: var(--text-muted); font-size: 1rem;">
+            <h1 style="font-size: clamp(1.6rem, 4vw, 2rem); color: var(--text-main); margin-bottom: 0.5rem;">Emergency Web Console</h1>
+            <p style="color: var(--text-muted); font-size: clamp(0.92rem, 2vw, 1rem); padding: 0 0.5rem;">
                 Lost your phone? Borrow any friend's device or computer, sign in with your password and emergency recovery key, and track your handset live.
             </p>
         </div>
 
         <!-- Login Card -->
-        <div id="authCard" class="card" style="padding: 2rem; max-width: 480px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border);">
-            <h3 style="color: var(--text-main); margin-bottom: 1.25rem; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+        <div id="authCard" class="card" style="padding: clamp(1.25rem, 4vw, 2rem); max-width: 480px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border);">
+            <h3 style="color: var(--text-main); margin-bottom: 1.25rem; font-size: clamp(1.1rem, 2.5vw, 1.2rem); display: flex; align-items: center; gap: 0.5rem;">
                 {SVG_LOCK} Authenticate Handset Owner
             </h3>
 
@@ -2388,19 +2660,19 @@ async def render_emergency_console():
             <form id="emergencyLoginForm" onsubmit="handleEmergencyLogin(event)">
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.35rem;">Username or Email</label>
-                    <input type="text" id="usernameInput" required placeholder="e.g. sam" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 0.95rem; font-family: var(--font-sans);" />
+                    <input type="text" id="usernameInput" required placeholder="e.g. sam" style="width: 100%; box-sizing: border-box; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 16px; font-family: var(--font-sans);" />
                 </div>
 
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.35rem;">Account Password</label>
-                    <input type="password" id="passwordInput" required placeholder="Your password" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 0.95rem;" />
+                    <input type="password" id="passwordInput" required placeholder="Your password" style="width: 100%; box-sizing: border-box; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 16px;" />
                 </div>
 
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.35rem;">
                         2FA Code <span style="color: var(--accent); font-weight: 700;">OR</span> Emergency Recovery Key
                     </label>
-                    <input type="text" id="codeInput" placeholder="6-digit TOTP (123456) or Key (XXXX-XXXX)" style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 0.95rem; font-family: var(--font-mono);" />
+                    <input type="text" id="codeInput" placeholder="6-digit TOTP (123456) or Key (XXXX-XXXX)" style="width: 100%; box-sizing: border-box; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-main); font-size: 16px; font-family: var(--font-mono);" />
                     <span style="display: block; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem;">
                         If your phone was stolen, enter one of your 8 backup recovery codes (e.g. ABCD-EFGH).
                     </span>
@@ -2414,15 +2686,15 @@ async def render_emergency_console():
 
         <!-- Live Emergency Dashboard (Hidden until login) -->
         <div id="dashboardCard" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+            <div class="emergency-dashboard-header">
                 <div>
                     <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-                        <h2 id="deviceAliasTitle" style="color: var(--text-main); font-size: 1.5rem; margin: 0;">Protected Handset</h2>
+                        <h2 id="deviceAliasTitle" style="color: var(--text-main); font-size: clamp(1.2rem, 3vw, 1.5rem); margin: 0;">Protected Handset</h2>
                         <select id="deviceSelector" onchange="switchDevice(this.value)" style="display: none; padding: 0.35rem 0.75rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); border-radius: 6px; font-weight: 600; font-size: 0.88rem; cursor: pointer;"></select>
                     </div>
                     <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.25rem 0 0 0;">Authenticated Owner Emergency Tracking Session</p>
                 </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                     <button onclick="unpairCurrentDevice()" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 1rem; border-color: var(--danger); color: var(--danger); font-weight: 600;">
                         Delete / Unpair Handset
                     </button>
@@ -2433,22 +2705,22 @@ async def render_emergency_console():
             </div>
 
             <!-- Device Telemetry Status Cards -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-                <div class="card" style="padding: 1.25rem;">
-                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Status</div>
-                    <div id="deviceStatusVal" style="font-size: 1.3rem; font-weight: 800; color: var(--accent);">CONNECTING...</div>
+            <div class="emergency-stats-grid">
+                <div class="card" style="padding: 1.15rem;">
+                    <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Status</div>
+                    <div id="deviceStatusVal" style="font-size: clamp(1.1rem, 2.5vw, 1.3rem); font-weight: 800; color: var(--accent);">CONNECTING...</div>
                 </div>
-                <div class="card" style="padding: 1.25rem;">
-                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Last Known Coordinates</div>
-                    <div id="deviceCoordsVal" style="font-size: 1.05rem; font-weight: 700; font-family: var(--font-mono); color: var(--text-main);">Locating...</div>
+                <div class="card" style="padding: 1.15rem;">
+                    <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Last Known Coordinates</div>
+                    <div id="deviceCoordsVal" style="font-size: clamp(0.95rem, 2vw, 1.05rem); font-weight: 700; font-family: var(--font-mono); color: var(--text-main); word-break: break-all;">Locating...</div>
                 </div>
-                <div class="card" style="padding: 1.25rem;">
-                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Reported Accuracy</div>
-                    <div id="deviceAccuracyVal" style="font-size: 1.3rem; font-weight: 800; color: var(--text-main);">--</div>
+                <div class="card" style="padding: 1.15rem;">
+                    <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Reported Accuracy</div>
+                    <div id="deviceAccuracyVal" style="font-size: clamp(1.1rem, 2.5vw, 1.3rem); font-weight: 800; color: var(--text-main);">--</div>
                 </div>
-                <div class="card" style="padding: 1.25rem;">
-                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Last Server Contact</div>
-                    <div id="deviceTimestampVal" style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted);">--</div>
+                <div class="card" style="padding: 1.15rem;">
+                    <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 0.25rem;">Last Server Contact</div>
+                    <div id="deviceTimestampVal" style="font-size: 0.88rem; font-weight: 600; color: var(--text-muted); word-break: break-all;">--</div>
                 </div>
             </div>
 
@@ -2456,27 +2728,27 @@ async def render_emergency_console():
             <div id="actionAlert" style="display: none; padding: 0.85rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 600; font-size: 0.9rem;"></div>
 
             <!-- Emergency Actions Panel -->
-            <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border);">
-                <h3 style="color: var(--text-main); font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <div class="card" style="padding: clamp(1.15rem, 3vw, 1.5rem); margin-bottom: 1.5rem; border: 1px solid var(--border);">
+                <h3 style="color: var(--text-main); font-size: clamp(1.05rem, 2.5vw, 1.1rem); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
                     {SVG_ALERT} Remote Combat &amp; Recovery Actions
                 </h3>
-                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                    <button onclick="triggerEmergencyAction('RING')" class="btn btn-primary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                <div class="emergency-actions-grid">
+                    <button onclick="triggerEmergencyAction('RING')" class="btn btn-primary" style="font-weight: 700; padding: 0.75rem 1.15rem; cursor: pointer;">
                         Sound Siren (100 dB Alarm)
                     </button>
-                    <button onclick="triggerEmergencyAction('STOP_RING')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                    <button onclick="triggerEmergencyAction('STOP_RING')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.15rem; cursor: pointer;">
                         Silence Siren
                     </button>
-                    <button onclick="triggerEmergencyAction('LOCATE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                    <button onclick="triggerEmergencyAction('LOCATE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.15rem; cursor: pointer;">
                         Request Fresh GPS Fix
                     </button>
-                    <button onclick="triggerEmergencyAction('LOST_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--warning); color: var(--warning); cursor: pointer;">
+                    <button onclick="triggerEmergencyAction('LOST_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.15rem; border-color: var(--warning); color: var(--warning); cursor: pointer;">
                         Activate Lost Mode
                     </button>
-                    <button onclick="triggerEmergencyAction('LOCK')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                    <button onclick="triggerEmergencyAction('LOCK')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.15rem; cursor: pointer;">
                         Lock Handset Screen
                     </button>
-                    <button onclick="if(confirm('Engage Stolen Kiosk Lockdown on handset? This locks down the device into kiosk mode, suppresses power menu shutdown, and requires your recovery code to exit.')) triggerEmergencyAction('STOLEN_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--danger); color: var(--danger); cursor: pointer;">
+                    <button onclick="if(confirm('Engage Stolen Kiosk Lockdown on handset? This locks down the device into kiosk mode, suppresses power menu shutdown, and requires your recovery code to exit.')) triggerEmergencyAction('STOLEN_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.15rem; border-color: var(--danger); color: var(--danger); cursor: pointer;">
                         Engage Stolen Kiosk Lockdown
                     </button>
                 </div>
@@ -2484,15 +2756,15 @@ async def render_emergency_console():
 
             <!-- Embedded Live OpenStreetMap -->
             <div class="card" style="padding: 0; overflow: hidden; border: 1px solid var(--border);">
-                <div style="padding: 1rem 1.25rem; background: var(--bg-inset); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 0.85rem 1.15rem; background: var(--bg-inset); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                     <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
-                        {SVG_MAP} Live Satellite &amp; Street Tracking Radar
+                        {SVG_MAP} Live Satellite Tracking Radar
                     </div>
                     <button onclick="refreshDeviceLocation()" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
                         Refresh Radar
                     </button>
                 </div>
-                <div id="mapContainer" style="height: 440px; width: 100%; background: #000; position: relative;">
+                <div id="mapContainer" style="height: clamp(280px, 45vh, 440px); width: 100%; background: #000; position: relative;">
                     <iframe id="mapFrame" style="width: 100%; height: 100%; border: 0;" src="about:blank"></iframe>
                 </div>
             </div>
