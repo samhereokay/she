@@ -8,15 +8,30 @@ if db_url.startswith("postgres://"):
 elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-# If SQLite, ensure connect_args allows multi-threaded access
+# Supabase connection pooler: auto-route session mode (:5432) to transaction mode (:6543)
+# to avoid EMAXCONNSESSION max 15 clients limit exhaustion
+if "pooler.supabase.com:5432" in db_url:
+    db_url = db_url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543")
+
+# Connection parameters & pooling strategy
 connect_args = {}
+engine_kwargs = {"pool_pre_ping": True}
+
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+else:
+    connect_args = {"connect_timeout": 5}
+    engine_kwargs.update({
+        "pool_recycle": 120,
+        "pool_timeout": 5,
+        "pool_size": 10,
+        "max_overflow": 10
+    })
 
 engine = create_engine(
     db_url,
     connect_args=connect_args,
-    pool_pre_ping=True
+    **engine_kwargs
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
