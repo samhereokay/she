@@ -2408,12 +2408,20 @@ async def render_emergency_console():
         <div id="dashboardCard" style="display: none;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
                 <div>
-                    <h2 id="deviceAliasTitle" style="color: var(--text-main); font-size: 1.5rem;">Protected Handset</h2>
-                    <p style="color: var(--text-muted); font-size: 0.88rem;">Authenticated Owner Emergency Tracking Session</p>
+                    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                        <h2 id="deviceAliasTitle" style="color: var(--text-main); font-size: 1.5rem; margin: 0;">Protected Handset</h2>
+                        <select id="deviceSelector" onchange="switchDevice(this.value)" style="display: none; padding: 0.35rem 0.75rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); border-radius: 6px; font-weight: 600; font-size: 0.88rem; cursor: pointer;"></select>
+                    </div>
+                    <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.25rem 0 0 0;">Authenticated Owner Emergency Tracking Session</p>
                 </div>
-                <button onclick="handleLogout()" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
-                    End Emergency Session (Log Out)
-                </button>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button onclick="unpairCurrentDevice()" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 1rem; border-color: var(--danger); color: var(--danger); font-weight: 600;">
+                        Delete / Unpair Handset
+                    </button>
+                    <button onclick="handleLogout()" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 1rem;">
+                        Log Out
+                    </button>
+                </div>
             </div>
 
             <!-- Device Telemetry Status Cards -->
@@ -2486,6 +2494,8 @@ async def render_emergency_console():
     <script>
         var currentToken = sessionStorage.getItem('she_emergency_token');
         var currentDeviceId = null;
+        var currentDeviceAlias = '';
+        var allDevices = [];
 
         if (currentToken) {{
             showDashboard();
@@ -2507,7 +2517,7 @@ async def render_emergency_console():
             el.style.color = isError ? 'var(--danger)' : 'var(--accent)';
             el.style.border = '1px solid ' + (isError ? 'var(--danger)' : 'var(--accent)');
             el.textContent = msg;
-            setTimeout(function() {{ el.style.display = 'none'; }}, 5000);
+            setTimeout(function() {{ el.style.display = 'none'; }}, 6000);
         }}
 
         async function handleEmergencyLogin(e) {{
@@ -2592,20 +2602,78 @@ async def render_emergency_console():
                 var data = await resp.json();
                 if (!resp.ok) throw new Error(data.detail || 'Failed to load protected device');
 
-                var devices = data.devices || [];
-                if (devices.length === 0) {{
+                allDevices = data.devices || [];
+                var selector = document.getElementById('deviceSelector');
+                if (allDevices.length === 0) {{
                     document.getElementById('deviceAliasTitle').textContent = 'No Devices Paired';
                     document.getElementById('deviceStatusVal').textContent = 'UNPAIRED';
                     document.getElementById('deviceCoordsVal').textContent = 'No handset registered to this account';
+                    if (selector) selector.style.display = 'none';
                     return;
                 }}
 
-                var dev = devices[0];
+                if (selector) {{
+                    if (allDevices.length > 1) {{
+                        selector.innerHTML = '';
+                        allDevices.forEach(function(d) {{
+                            var opt = document.createElement('option');
+                            opt.value = d.id;
+                            opt.textContent = (d.device_alias || 'Handset') + ' (' + (d.calculated_status || d.status) + ')';
+                            if (d.id === currentDeviceId) opt.selected = true;
+                            selector.appendChild(opt);
+                        }});
+                        selector.style.display = 'inline-block';
+                    }} else {{
+                        selector.style.display = 'none';
+                    }}
+                }}
+
+                if (!currentDeviceId || !allDevices.some(function(d) {{ return d.id === currentDeviceId; }})) {{
+                    currentDeviceId = allDevices[0].id;
+                }}
+
+                var dev = allDevices.find(function(d) {{ return d.id === currentDeviceId; }}) || allDevices[0];
                 currentDeviceId = dev.id;
-                document.getElementById('deviceAliasTitle').textContent = dev.device_alias || 'Protected Phone';
-                document.getElementById('deviceStatusVal').textContent = dev.status || 'ACTIVE';
+                currentDeviceAlias = dev.device_alias || 'Protected Phone';
+                document.getElementById('deviceAliasTitle').textContent = currentDeviceAlias;
+                document.getElementById('deviceStatusVal').textContent = dev.calculated_status || dev.status || 'ACTIVE';
                 
                 await refreshDeviceLocation();
+            }} catch (err) {{
+                showActionAlert(err.message, true);
+            }}
+        }}
+
+        function switchDevice(devId) {{
+            currentDeviceId = devId;
+            var dev = allDevices.find(function(d) {{ return d.id === devId; }});
+            if (dev) {{
+                currentDeviceAlias = dev.device_alias || 'Protected Phone';
+                document.getElementById('deviceAliasTitle').textContent = currentDeviceAlias;
+                document.getElementById('deviceStatusVal').textContent = dev.calculated_status || dev.status || 'ACTIVE';
+            }}
+            refreshDeviceLocation();
+        }}
+
+        async function unpairCurrentDevice() {{
+            if (!currentDeviceId) {{
+                alert('No handset selected.');
+                return;
+            }}
+            if (!confirm('Permanently unpair and delete "' + currentDeviceAlias + '"?\\n\\nThis will remove the handset from your account, delete its tracking history, and free up a device slot.')) {{
+                return;
+            }}
+            try {{
+                showActionAlert('Unpairing and deleting handset...', false);
+                var resp = await fetch('/api/v1/devices/' + currentDeviceId, {{
+                    method: 'DELETE',
+                    headers: {{ 'Authorization': 'Bearer ' + currentToken }}
+                }});
+                var res = await resp.json();
+                if (!resp.ok) throw new Error(res.detail || 'Failed to delete device');
+                showActionAlert(res.message || 'Device deleted successfully.', false);
+                currentDeviceId = null;
+                await loadDevices();
             }} catch (err) {{
                 showActionAlert(err.message, true);
             }}

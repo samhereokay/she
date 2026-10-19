@@ -525,19 +525,21 @@ def test_rate_limiter_logic():
     assert "429" in str(excinfo.value)
 
 
-def test_single_device_per_user_restriction():
-    """Verify that a user account is strictly restricted to 1 protected device."""
+def test_device_quota_per_user_restriction(monkeypatch):
+    """Verify that a user account respects MAX_DEVICES_PER_USER quota."""
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "MAX_DEVICES_PER_USER", 2)
     client = TestClient(app)
     # Register a new user
     u_resp = client.post("/auth/register", json={
-        "username": "singledev_user",
-        "email": "singledev@example.com",
+        "username": "quota_user",
+        "email": "quota@example.com",
         "password": "Password123!"
     })
     assert u_resp.status_code == 201
 
     login_resp = client.post("/auth/login/json", json={
-        "username": "singledev_user",
+        "username": "quota_user",
         "password": "Password123!"
     })
     token = login_resp.json()["access_token"]
@@ -556,7 +558,7 @@ def test_single_device_per_user_restriction():
     })
     assert pair1.status_code == 201
 
-    # Attempt to pair Device 2 on the same account -> MUST BE REJECTED with 400
+    # Pair Device 2 (allowed under quota of 2)
     pt_resp2 = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
     assert pt_resp2.status_code == 200
     pt2 = pt_resp2.json()["pairing_token"]
@@ -566,8 +568,20 @@ def test_single_device_per_user_restriction():
         "trusted_phone_number": "+15552222222",
         "pairing_secret": "secret123456789012345678901234"
     })
-    assert pair2.status_code == 400
-    assert "strictly restricted to 1 protected device" in pair2.json()["detail"]
+    assert pair2.status_code == 201
+
+    # Attempt to pair Device 3 (exceeds quota of 2) -> REJECTED with 400
+    pt_resp3 = client.post("/auth/pairing-token", headers={"Authorization": f"Bearer {token}"}, json={})
+    assert pt_resp3.status_code == 200
+    pt3 = pt_resp3.json()["pairing_token"]
+    pair3 = client.post("/api/v1/devices/pair", headers={"Authorization": f"Bearer {pt3}"}, json={
+        "device_alias": "Phone 3",
+        "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtest3\n-----END PUBLIC KEY-----",
+        "trusted_phone_number": "+15553333333",
+        "pairing_secret": "secret123456789012345678901234"
+    })
+    assert pair3.status_code == 400
+    assert "reached the limit of 2 protected devices" in pair3.json()["detail"]
 
 
 def test_registration_token_verification(monkeypatch):
@@ -941,6 +955,67 @@ def test_emergency_console_location_and_command_dispatch(client, test_keypair, p
         parameters_json="{}"
     )
     assert verify_truncated_hmac(pairing_secret.encode("utf-8"), expected_canonical, ring_cmd["admin_signature"])
+
+
+def test_multiple_devices_pairing_and_deletion(client, test_keypair, pair_device):
+    """
+    Verify:
+    1. A single user can pair multiple protected handsets (up to MAX_DEVICES_PER_USER).
+    2. Confirming an already ACTIVE device is idempotent (returns 200 without 400).
+    3. DELETE /api/v1/devices/{device_id} successfully unpairs and deletes the device.
+    """
+    _, pem_public = test_keypair
+    client.post("/auth/register", json={
+        "username": "owner_multidev",
+        "email": "multidev@example.com",
+        "password": "PasswordMulti123!"
+    })
+    token_1fa = client.post("/auth/login/json", json={
+        "username": "owner_multidev",
+        "password": "PasswordMulti123!"
+    }).json()["access_token"]
+    from conftest import enroll_totp_and_get_2fa_token
+    token = enroll_totp_and_get_2fa_token(client, token_1fa)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Pair Device 1
+    dev1_id, _ = pair_device(client, token, "Phone 1", pem_public, "+15551112233", "secretmultitestkey111")
+    # Pair Device 2
+    dev2_id, _ = pair_device(client, token, "Phone 2", pem_public, "+15554445566", "secretmultitestkey222")
+
+    # Verify both devices appear in list
+    list_resp = client.get("/api/v1/devices", headers=headers)
+    assert list_resp.status_code == 200
+    devices = list_resp.json()["devices"]
+    assert len(devices) == 2
+    dev_ids = [d["id"] for d in devices]
+    assert dev1_id in dev_ids
+    assert dev2_id in dev_ids
+
+    # Verify idempotent confirm-pairing does not fail with 400
+    from conftest import enroll_totp_and_get_2fa_token
+    token_2fa = enroll_totp_and_get_2fa_token(client, token)
+    headers_2fa = {"Authorization": f"Bearer {token_2fa}"}
+    conf_resp = client.post(
+        f"/api/v1/devices/{dev1_id}/confirm-pairing",
+        headers=headers_2fa,
+        json={"confirmation_code": "000-000"}
+    )
+    assert conf_resp.status_code == 200
+    assert conf_resp.json()["status"] == "ACTIVE"
+
+    # Delete Device 1
+    del_resp = client.delete(f"/api/v1/devices/{dev1_id}", headers=headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "deleted"
+
+    # Verify Device 1 is gone from list
+    list_after = client.get("/api/v1/devices", headers=headers)
+    assert list_after.status_code == 200
+    remaining_ids = [d["id"] for d in list_after.json()["devices"]]
+    assert dev1_id not in remaining_ids
+    assert dev2_id in remaining_ids
+
 
 
 

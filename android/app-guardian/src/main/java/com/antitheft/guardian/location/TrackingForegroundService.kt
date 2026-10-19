@@ -46,8 +46,10 @@ class TrackingForegroundService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
     private val gson = Gson()
 
@@ -94,6 +96,9 @@ class TrackingForegroundService : Service() {
         serviceScope.launch {
             while (isActive) {
                 try {
+                    // Flush pending location fixes to eliminate data delay
+                    com.antitheft.guardian.sync.LocationSyncWorker.syncPendingLocationsNow(this@TrackingForegroundService)
+
                     val serverUrl = storageHelper.getServerUrl().trimEnd('/')
                     val deviceId = storageHelper.getDeviceId()
                     val endpoint = "$serverUrl/api/v1/devices/$deviceId/commands/pending"

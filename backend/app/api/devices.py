@@ -58,7 +58,7 @@ def compute_device_status(last_location: LocationEvent) -> str:
         
     diff_seconds = (now - receipt_time).total_seconds()
     
-    if diff_seconds < 300:  # 5 minutes
+    if diff_seconds < 900:  # 15 minutes (generous window to prevent false DELAYED on idle phones)
         return "RECENT"
     elif diff_seconds < 86400:  # 24 hours
         return "DELAYED"
@@ -84,15 +84,15 @@ def pair_device(
     pairing_id = generate_uuid()
     confirmation_code = f"{secrets.randbelow(900) + 100}-{secrets.randbelow(900) + 100}"
     
-    # Restrict one device per user account
-    user_other_device = db.query(ProtectedDevice).filter(
+    # Check device pairing quota per account
+    user_device_count = db.query(ProtectedDevice).filter(
         ProtectedDevice.user_id == current_user.id,
         ProtectedDevice.id != pair_in.device_id
-    ).first()
-    if user_other_device:
+    ).count()
+    if user_device_count >= settings.MAX_DEVICES_PER_USER:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account limit reached: Each user account is strictly restricted to 1 protected device. To pair a new handset, unpair your current device first."
+            detail=f"Account limit reached: You have reached the limit of {settings.MAX_DEVICES_PER_USER} protected devices. To pair another handset, delete or unpair an old device first."
         )
 
     if pair_in.device_id:
@@ -214,6 +214,13 @@ def confirm_device_pairing(
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
+    if device.status == "ACTIVE":
+        return PairingConfirmResponse(
+            device_id=device.id,
+            status="ACTIVE",
+            pairing_id=device.pairing_id or ""
+        )
+
     if device.status != "PENDING_CONFIRMATION":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -321,6 +328,45 @@ def get_device(
         last_location=loc_resp,
         calculated_status=calc_status
     )
+
+
+@router.delete("/{device_id}", status_code=status.HTTP_200_OK)
+def delete_device(
+    device_id: str,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Unpair and delete a protected handset from the owner's account.
+    Cleans up all associated recovery commands and location traces.
+    """
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protected device not found")
+
+    alias = device.device_alias
+    # Cascade cleanup of commands and location events
+    db.query(DeviceCommand).filter(DeviceCommand.protected_device_id == device.id).delete()
+    db.query(LocationEvent).filter(LocationEvent.protected_device_id == device.id).delete()
+    db.delete(device)
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        protected_device_id=None,
+        event_type="DEVICE_UNPAIRED",
+        details=f"Device {alias} ({device_id}) was unpaired and deleted by owner."
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "device_id": device_id,
+        "message": f"Handset '{alias}' successfully unpaired and deleted."
+    }
 
 
 @router.get("/{device_id}/sync-status")
@@ -605,7 +651,7 @@ def dispatch_emergency_command(
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protected device not found")
 
-    if device.status not in ("ACTIVE", "STOLEN"):
+    if device.status not in ("ACTIVE", "STOLEN", "PENDING_CONFIRMATION"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot dispatch commands to device with status {device.status}. Must be ACTIVE."

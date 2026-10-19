@@ -19,6 +19,9 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.Base64
 
 class LocationCaptureManager(private val context: Context) {
@@ -111,6 +114,14 @@ class LocationCaptureManager(private val context: Context) {
     }
 
     fun enqueueSyncWork() {
+        // 1. Immediately attempt rapid direct sync over current network
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                LocationSyncWorker.syncPendingLocationsNow(context)
+            } catch (_: Exception) {}
+        }
+
+        // 2. Schedule persistent WorkManager backup for guaranteed offline delivery
         try {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)

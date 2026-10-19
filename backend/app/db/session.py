@@ -22,23 +22,24 @@ engine_kwargs = {"pool_pre_ping": True}
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 elif "pooler.supabase.com" in db_url or ":6543" in db_url:
-    # Supabase Transaction Pooler (PgBouncer): Pool size is capped at 5 with max_overflow=2
-    # to stay strictly within Supabase's 15-client pooler limit while keeping persistent TLS sockets warm.
-    connect_args = {"connect_timeout": 5, "sslmode": "require"}
+    # Supabase Transaction Pooler (PgBouncer): Pool size is capped at 8 with max_overflow=3
+    # to stay safely within Supabase's 15-client pooler limit while avoiding timeouts.
+    connect_args = {"connect_timeout": 15, "sslmode": "require"}
     engine_kwargs = {
-        "pool_size": 5,
-        "max_overflow": 2,
-        "pool_recycle": 180,
-        "pool_timeout": 5,
+        "pool_size": 8,
+        "max_overflow": 3,
+        "pool_recycle": 300,
+        "pool_timeout": 30,
         "pool_pre_ping": True,
     }
 else:
-    connect_args = {"connect_timeout": 10, "sslmode": "require"}
+    connect_args = {"connect_timeout": 15, "sslmode": "require"}
     engine_kwargs.update({
-        "pool_recycle": 120,
-        "pool_timeout": 5,
+        "pool_recycle": 300,
+        "pool_timeout": 30,
         "pool_size": 10,
-        "max_overflow": 10
+        "max_overflow": 5,
+        "pool_pre_ping": True,
     })
 
 engine = create_engine(
