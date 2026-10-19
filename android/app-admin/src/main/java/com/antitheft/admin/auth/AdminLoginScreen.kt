@@ -7,6 +7,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.asImageBitmap
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.BarcodeEncoder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -483,19 +486,53 @@ fun AdminLoginScreen(
                     }
                 },
                 text = {
+                    val qrBitmap = remember(totpSetupState.otpauthUri) {
+                        try {
+                            val barcodeEncoder = BarcodeEncoder()
+                            barcodeEncoder.encodeBitmap(
+                                totpSetupState.otpauthUri,
+                                BarcodeFormat.QR_CODE,
+                                600,
+                                600
+                            )
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Two-Factor Authentication is required to activate your anti-theft admin account. Add this secret key to Google Authenticator, Aegis, or your preferred authenticator app:",
+                            text = "Scan this QR code with Google Authenticator, Aegis, 2FAS, or Bitwarden to link 2FA, or enter the secret key manually below:",
                             color = SheTheme.colors.textSecondary,
                             fontSize = 12.sp,
-                            lineHeight = 17.sp
+                            lineHeight = 17.sp,
+                            modifier = Modifier.fillMaxWidth()
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // High-contrast QR Code Container
+                        if (qrBitmap != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(androidx.compose.ui.graphics.Color.White)
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    bitmap = qrBitmap.asImageBitmap(),
+                                    contentDescription = "TOTP Setup QR Code",
+                                    modifier = Modifier.size(190.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                        }
 
                         // Secret Key Box
                         Box(

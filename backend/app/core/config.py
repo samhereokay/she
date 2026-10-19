@@ -36,5 +36,10 @@ class Settings(BaseSettings):
     # Location Privacy Limits
     LOCATION_RETENTION_DAYS: int = int(os.getenv("LOCATION_RETENTION_DAYS", "30"))
 
+    # Recovery Vault Storage Quotas (Per User)
+    MAX_VAULT_ITEMS_PER_USER: int = int(os.getenv("MAX_VAULT_ITEMS_PER_USER", "100"))
+    MAX_VAULT_ITEM_BYTES: int = int(os.getenv("MAX_VAULT_ITEM_BYTES", "262144"))  # 256 KB max per item
+    MAX_VAULT_STORAGE_BYTES_PER_USER: int = int(os.getenv("MAX_VAULT_STORAGE_BYTES_PER_USER", "5242880"))  # 5 MB max per user
+
 
 settings = Settings()

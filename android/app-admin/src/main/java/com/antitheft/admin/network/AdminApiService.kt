@@ -146,7 +146,10 @@ data class VaultItemDto(
 
 data class VaultItemListDto(
     val items: List<VaultItemDto>,
-    val total: Int
+    val total: Int,
+    val max_items: Int = 100,
+    val used_storage_bytes: Long = 0,
+    val max_storage_bytes: Long = 5242880
 )
 
 data class VaultPurgeResponse(

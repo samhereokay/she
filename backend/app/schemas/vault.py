@@ -44,3 +44,6 @@ class VaultItemResponse(BaseModel):
 class VaultItemListResponse(BaseModel):
     items: List[VaultItemResponse]
     total: int
+    max_items: int = 100
+    used_storage_bytes: int = 0
+    max_storage_bytes: int = 5242880

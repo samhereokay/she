@@ -303,3 +303,67 @@ def test_vault_deletion_and_purge(client, db_session):
     purge_audit = db_session.query(AuditEvent).filter(AuditEvent.event_type == "VAULT_PURGED").first()
     assert purge_audit is not None
     assert "2 items permanently deleted" in purge_audit.details
+
+
+def test_vault_storage_limits_enforced(client, db_session):
+    """Enforces item payload limit, per-user item quota, and cumulative storage limits."""
+    token = _helper_setup_user_with_2fa(client, "quota_user", "quota@example.com")
+
+    # 1. Payload size limit (exceeds MAX_VAULT_ITEM_BYTES)
+    oversized_bytes = os.urandom(settings.MAX_VAULT_ITEM_BYTES + 1024)
+    oversized_resp = client.post("/api/v1/vault/items", json={
+        "item_type": "BACKUP",
+        "title": "Oversized Item",
+        "encrypted_blob": base64.b64encode(oversized_bytes).decode(),
+        "iv": base64.b64encode(os.urandom(12)).decode(),
+        "tag": base64.b64encode(os.urandom(16)).decode()
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert oversized_resp.status_code == 413
+    assert "exceeds maximum size limit" in oversized_resp.json()["detail"]
+
+    # 2. Test count quota with lowered limit
+    orig_limit = settings.MAX_VAULT_ITEMS_PER_USER
+    try:
+        settings.MAX_VAULT_ITEMS_PER_USER = 2
+
+        # Item 1: OK
+        r1 = client.post("/api/v1/vault/items", json={
+            "item_type": "NOTE",
+            "title": "Item 1",
+            "encrypted_blob": base64.b64encode(b"hello").decode(),
+            "iv": base64.b64encode(os.urandom(12)).decode(),
+            "tag": base64.b64encode(os.urandom(16)).decode()
+        }, headers={"Authorization": f"Bearer {token}"})
+        assert r1.status_code == 201
+
+        # Item 2: OK
+        r2 = client.post("/api/v1/vault/items", json={
+            "item_type": "NOTE",
+            "title": "Item 2",
+            "encrypted_blob": base64.b64encode(b"world").decode(),
+            "iv": base64.b64encode(os.urandom(12)).decode(),
+            "tag": base64.b64encode(os.urandom(16)).decode()
+        }, headers={"Authorization": f"Bearer {token}"})
+        assert r2.status_code == 201
+
+        # Item 3: Exceeds count limit -> 400 Bad Request
+        r3 = client.post("/api/v1/vault/items", json={
+            "item_type": "NOTE",
+            "title": "Item 3",
+            "encrypted_blob": base64.b64encode(b"overflow").decode(),
+            "iv": base64.b64encode(os.urandom(12)).decode(),
+            "tag": base64.b64encode(os.urandom(16)).decode()
+        }, headers={"Authorization": f"Bearer {token}"})
+        assert r3.status_code == 400
+        assert "storage limit reached" in r3.json()["detail"]
+
+        # List returns quota metadata
+        list_resp = client.get("/api/v1/vault/items", headers={"Authorization": f"Bearer {token}"})
+        assert list_resp.status_code == 200
+        data = list_resp.json()
+        assert data["total"] == 2
+        assert data["max_items"] == 2
+        assert data["used_storage_bytes"] > 0
+        assert data["max_storage_bytes"] == settings.MAX_VAULT_STORAGE_BYTES_PER_USER
+    finally:
+        settings.MAX_VAULT_ITEMS_PER_USER = orig_limit

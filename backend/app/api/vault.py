@@ -12,6 +12,7 @@ from app.schemas.vault import (
     VaultItemListResponse
 )
 from app.api.deps import get_current_user_2fa
+from app.core.config import settings
 
 router = APIRouter(prefix="/api/v1/vault", tags=["Recovery Vault"])
 
@@ -48,7 +49,31 @@ def create_vault_item(
     """
     _validate_base64_payload(req.iv, exact_bytes=12)
     _validate_base64_payload(req.tag, exact_bytes=16)
-    _validate_base64_payload(req.encrypted_blob, min_bytes=1)
+    raw_blob = _validate_base64_payload(req.encrypted_blob, min_bytes=1)
+
+    # 1. Enforce per-item size limit
+    if len(raw_blob) > settings.MAX_VAULT_ITEM_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Vault item payload exceeds maximum size limit of {settings.MAX_VAULT_ITEM_BYTES // 1024} KB."
+        )
+
+    # 2. Enforce per-user item count limit
+    current_count = db.query(VaultItem).filter(VaultItem.user_id == current_user.id).count()
+    if current_count >= settings.MAX_VAULT_ITEMS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Vault storage limit reached. Maximum allowed is {settings.MAX_VAULT_ITEMS_PER_USER} items per user account."
+        )
+
+    # 3. Enforce per-user cumulative storage limit
+    existing_items = db.query(VaultItem.encrypted_blob).filter(VaultItem.user_id == current_user.id).all()
+    current_used_bytes = sum(len(i[0]) for i in existing_items)
+    if current_used_bytes + len(req.encrypted_blob) > settings.MAX_VAULT_STORAGE_BYTES_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Vault cumulative storage limit exceeded ({settings.MAX_VAULT_STORAGE_BYTES_PER_USER // (1024 * 1024)} MB limit per user)."
+        )
 
     item = VaultItem(
         user_id=current_user.id,
@@ -87,7 +112,14 @@ def list_vault_items(
         query = query.filter(VaultItem.item_type == item_type.strip().upper())
     
     items = query.order_by(VaultItem.created_at.desc()).all()
-    return VaultItemListResponse(items=items, total=len(items))
+    used_bytes = sum(len(item.encrypted_blob) for item in items)
+    return VaultItemListResponse(
+        items=items,
+        total=len(items),
+        max_items=settings.MAX_VAULT_ITEMS_PER_USER,
+        used_storage_bytes=used_bytes,
+        max_storage_bytes=settings.MAX_VAULT_STORAGE_BYTES_PER_USER
+    )
 
 
 @router.get("/items/{item_id}", response_model=VaultItemResponse)
@@ -134,7 +166,19 @@ def update_vault_item(
         _validate_base64_payload(req.tag, exact_bytes=16)
         item.tag = req.tag.strip()
     if req.encrypted_blob is not None:
-        _validate_base64_payload(req.encrypted_blob, min_bytes=1)
+        raw_blob = _validate_base64_payload(req.encrypted_blob, min_bytes=1)
+        if len(raw_blob) > settings.MAX_VAULT_ITEM_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Vault item payload exceeds maximum size limit of {settings.MAX_VAULT_ITEM_BYTES // 1024} KB."
+            )
+        existing_items = db.query(VaultItem.id, VaultItem.encrypted_blob).filter(VaultItem.user_id == current_user.id).all()
+        current_used_bytes = sum(len(b) for (iid, b) in existing_items if iid != item.id)
+        if current_used_bytes + len(req.encrypted_blob) > settings.MAX_VAULT_STORAGE_BYTES_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Vault cumulative storage limit exceeded ({settings.MAX_VAULT_STORAGE_BYTES_PER_USER // (1024 * 1024)} MB limit per user)."
+            )
         item.encrypted_blob = req.encrypted_blob.strip()
 
     if req.title is not None:
