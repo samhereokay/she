@@ -130,8 +130,9 @@ def test_2fa_and_recovery_guide_route():
     assert resp.status_code == 200
     assert "Two-Factor Authentication, Recovery Keys" in resp.text
     assert "otpauth://" in resp.text
-    assert "1-Device-Per-User" in resp.text
-    assert "Emergency Playbook" in resp.text
+    assert "Strict 1-Device-Per-User Restriction" in resp.text
+    assert "Emergency Login from Someone Else" in resp.text
+    assert "she.up.railway.app/emergency" in resp.text
 
     # Alias check
     resp_alias = client.get("/blog/setup-2fa-recovery")
