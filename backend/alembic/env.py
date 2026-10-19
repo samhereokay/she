@@ -26,8 +26,12 @@ def get_url():
         return x_args["db_url"]
     cfg_url = config.get_main_option("sqlalchemy.url")
     if cfg_url and cfg_url != "driver://user:pass@localhost/dbname":
-        return cfg_url
-    return settings.DATABASE_URL
+        url = cfg_url
+    else:
+        url = settings.DATABASE_URL
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:
