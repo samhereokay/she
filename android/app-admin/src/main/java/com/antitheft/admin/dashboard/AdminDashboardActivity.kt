@@ -341,14 +341,17 @@ class AdminDashboardActivity : BaseSecureActivity() {
             phoneVerifyMessage = "Please enter an international phone number (e.g. +1... or +91...)"
             return
         }
+        val normalized = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(clean)
+        val targetPhone = if (normalized.isNotBlank()) normalized else clean
+
         isPhoneVerifying = true
         phoneVerifyMessage = null
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                api.startPhoneVerification(PhoneStartRequest(clean))
+                api.startPhoneVerification(PhoneStartRequest(targetPhone))
                 withContext(Dispatchers.Main) {
-                    phoneVerifyMessage = "SMS challenge dispatched via active Guardian handset to $clean."
+                    phoneVerifyMessage = "SMS challenge dispatched via active Guardian handset to $targetPhone."
                     Toast.makeText(this@AdminDashboardActivity, "SMS challenge dispatched", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {

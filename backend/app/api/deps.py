@@ -55,7 +55,7 @@ def get_verified_user(
     Strict dependency enforcing verified ownership of the account email address.
     Unverified accounts cannot perform device operations, commands, or access vault.
     """
-    if current_user.email_verified_at is None:
+    if current_user.email_verified_at is None and current_user.phone_verified_at is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="email_not_verified"

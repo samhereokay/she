@@ -167,22 +167,23 @@ def confirm_email_verification(
 
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Phone Verification (SMS via Paired Guardian Handset)
 # -----------------------------------------------------------------------------
 
 @router.post("/phone/start", status_code=status.HTTP_202_ACCEPTED)
 def start_phone_verification(
     req: PhoneStartRequest,
-    current_user: User = Depends(get_verified_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
     Initiate SMS ownership verification for offline emergency fallback beacons.
     
     CRITICAL SECURITY ENFORCEMENT:
-    1. Caller must have verified their account email address (get_verified_user).
+    1. Caller must be an authenticated account owner (get_current_user).
     2. Phone number is validated against international E.164 syntax, mobile ranges, and landline blocks.
-    3. User must have an ACTIVE paired Guardian handset. If none online/paired, returns clear retryable 409 error.
+    3. User must have a paired Guardian handset (ACTIVE or PENDING_CONFIRMATION). If none found, returns clear 409 error.
     4. Enqueues a cryptographically authenticated SEND_VERIFY_SMS command to the Guardian phone.
     5. Plaintext OTP code is NEVER exposed in the HTTP response to Admin or client.
     """
@@ -202,16 +203,16 @@ def start_phone_verification(
             detail="Failed to normalize phone number to E.164 format."
         )
 
-    # 2. Check if a Guardian phone is paired and active
+    # 2. Check if a Guardian phone is paired (ACTIVE or PENDING_CONFIRMATION)
     guardian_device = db.query(ProtectedDevice).filter(
         ProtectedDevice.user_id == current_user.id,
-        ProtectedDevice.status == "ACTIVE"
+        ProtectedDevice.status.in_(["ACTIVE", "PENDING_CONFIRMATION"])
     ).first()
 
     if not guardian_device:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="no_active_guardian_device: A paired, active Guardian handset is required to dispatch the SMS verification challenge. Please pair your Guardian handset first."
+            detail="no_active_guardian_device: A paired Guardian handset is required to dispatch the SMS verification challenge. Please pair your Guardian handset first or verify via email OTP."
         )
 
     # 3. If changing fallback number, revoke verified status
@@ -294,7 +295,7 @@ def start_phone_verification(
 @router.post("/phone/confirm", response_model=PhoneVerifyResponse)
 def confirm_phone_verification(
     req: PhoneConfirmRequest,
-    current_user: User = Depends(get_verified_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
@@ -333,6 +334,15 @@ def confirm_phone_verification(
     now = utc_now()
     current_user.fallback_phone_e164 = target_phone
     current_user.phone_verified_at = now
+
+    # Promote any pending guardian devices to ACTIVE since owner confirmed via SMS challenge
+    pending_devices = db.query(ProtectedDevice).filter(
+        ProtectedDevice.user_id == current_user.id,
+        ProtectedDevice.status == "PENDING_CONFIRMATION"
+    ).all()
+    for pd in pending_devices:
+        pd.status = "ACTIVE"
+        pd.confirmation_code = None
 
     # Synchronize verified fallback phone number to paired Guardian devices
     devices = db.query(ProtectedDevice).filter(ProtectedDevice.user_id == current_user.id).all()

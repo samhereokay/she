@@ -43,6 +43,13 @@ EMAIL_TYPO_MAP = {
 # RFC-reserved and test domains permitted during offline testing
 RFC_TEST_DOMAINS = {"example.com", "example.org", "example.net", "test.com", "localhost", "test.local"}
 
+# Major reputable email providers guaranteed to have active MX records (eliminates DNS roundtrip timeout)
+REPUTABLE_EMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "outlook.com", "hotmail.com",
+    "live.com", "icloud.com", "me.com", "mac.com", "proton.me", "protonmail.com",
+    "aol.com", "zoho.com", "gmx.com", "mail.com", "yandex.com"
+}
+
 
 def _load_disposable_domains() -> set[str]:
     """Load disposable email domains from disposable_domains.txt once at import time."""
@@ -62,9 +69,16 @@ DISPOSABLE_EMAIL_DOMAINS = _load_disposable_domains()
 
 def check_domain_dns_mx(domain_part: str, resolver: dns.resolver.Resolver | None = None) -> Tuple[bool, str | None]:
     """Perform DNS MX record resolution with A/AAAA fallback, checking for RFC 7505 Null MX and failing open on transient errors."""
+    clean_domain = (domain_part or "").strip().lower()
+
+    # Fast-path for verified major providers and RFC test domains (prevents DNS resolution delays)
+    if clean_domain in REPUTABLE_EMAIL_DOMAINS or clean_domain in RFC_TEST_DOMAINS:
+        return True, None
+
     if resolver is None:
         resolver = dns.resolver.Resolver()
-        resolver.lifetime = 5.0  # 5-second timeout policy
+        resolver.lifetime = 2.5  # 2.5-second timeout policy
+        resolver.timeout = 2.5
 
     try:
         # 1. Query MX records
@@ -156,13 +170,36 @@ def is_dummy_number(digits: str) -> bool:
     return False
 
 
+def _preprocess_phone(phone: str) -> str:
+    """Preprocess user-entered phone number with smart E.164 country code defaults."""
+    cleaned = (phone or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace(".", "")
+    if not cleaned:
+        return ""
+    if cleaned.startswith("+"):
+        return cleaned
+    # Indian mobile: 10 digits starting with 6, 7, 8, 9 -> auto prefix +91
+    if len(cleaned) == 10 and cleaned[0] in "6789":
+        return "+91" + cleaned
+    # Indian mobile with leading 0: 09876543210 -> +919876543210
+    if len(cleaned) == 11 and cleaned.startswith("0") and cleaned[1] in "6789":
+        return "+91" + cleaned[1:]
+    # Indian mobile with leading 91 without plus: 919876543210 -> +919876543210
+    if len(cleaned) == 12 and cleaned.startswith("91") and cleaned[2] in "6789":
+        return "+" + cleaned
+    # North American 10 digits: area code starting with 2-9 -> auto prefix +1
+    if len(cleaned) == 10 and cleaned[0] in "23456789":
+        return "+1" + cleaned
+    # North American 11 digits: 1xxxxxxxxxx -> auto prefix +
+    if len(cleaned) == 11 and cleaned.startswith("1"):
+        return "+" + cleaned
+    return "+" + cleaned
+
+
 def validate_phone_kyc(phone: str) -> Tuple[bool, str | None]:
     """Validate phone number using phonenumbers library as the base, enforcing mobile carrier type and anti-dummy checks."""
-    cleaned = (phone or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    if not cleaned:
+    raw = _preprocess_phone(phone)
+    if not raw:
         return False, "Owner mobile number is required for emergency offline SMS beacons."
-
-    raw = cleaned if cleaned.startswith("+") else "+" + cleaned
 
     # 1. Base validation and parsing using phonenumbers
     try:
@@ -171,7 +208,7 @@ def validate_phone_kyc(phone: str) -> Tuple[bool, str | None]:
         return False, "Invalid international phone number format. Please include your country code (e.g. +91... or +1...)."
 
     if not phonenumbers.is_valid_number(parsed):
-        return False, f"The phone number '{cleaned}' is not a valid international phone number."
+        return False, f"The phone number '{phone}' is not a valid international phone number."
 
     # 2. Reject FIXED_LINE landlines
     ntype = phonenumbers.number_type(parsed)
@@ -224,8 +261,9 @@ def validate_phone_kyc(phone: str) -> Tuple[bool, str | None]:
 
 def normalize_phone_number(phone: str) -> str:
     """Normalize phone number to international E.164 format."""
-    cleaned = (phone or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    raw = cleaned if cleaned.startswith("+") else "+" + cleaned
+    raw = _preprocess_phone(phone)
+    if not raw:
+        return ""
     parsed = phonenumbers.parse(raw, None)
     return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
 

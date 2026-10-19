@@ -14,12 +14,33 @@ from app.core.config import settings
 logger = logging.getLogger("uvicorn.error")
 
 
+def _dispatch_smtp(msg: MIMEMultipart, clean_target: str, host: str, port: int, timeout: float = 6.0) -> None:
+    """Attempt email dispatch using the appropriate protocol for the given port."""
+    if port == 465:
+        # Port 465 requires direct SSL handshake (SMTPS)
+        with smtplib.SMTP_SSL(host=host, port=port, timeout=timeout) as server:
+            server.ehlo()
+            if settings.SMTP_USER and settings.SMTP_PASS:
+                server.login(settings.SMTP_USER, settings.SMTP_PASS)
+            server.send_message(msg)
+    else:
+        # Port 587 (or 25/1025) uses plain connect with opportunistic STARTTLS
+        with smtplib.SMTP(host=host, port=port, timeout=timeout) as server:
+            server.ehlo()
+            if settings.SMTP_USER and settings.SMTP_PASS:
+                if server.has_extn("STARTTLS"):
+                    server.starttls()
+                    server.ehlo()
+                server.login(settings.SMTP_USER, settings.SMTP_PASS)
+            server.send_message(msg)
+
+
 def send_verification_email(to_email: str, code: str) -> None:
     """
     Deliver a 6-digit verification code to the target email.
     
     Supports:
-    - STARTTLS when credentials are provided
+    - STARTTLS (587) and direct SSL (465) with automatic failover
     - Plain SMTP when unauthenticated (e.g. local Mailpit test instance)
     - Zero credential / code leakage in application logs
     """
@@ -71,19 +92,31 @@ If you did not request this code, no further action is required.
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    try:
-        with smtplib.SMTP(host=settings.SMTP_HOST, port=settings.SMTP_PORT, timeout=10.0) as server:
-            # If server supports EHLO/STARTTLS and user credentials provided, upgrade to TLS
-            server.ehlo()
-            if settings.SMTP_USER and settings.SMTP_PASS:
-                if server.has_extn("STARTTLS"):
-                    server.starttls()
-                    server.ehlo()
-                server.login(settings.SMTP_USER, settings.SMTP_PASS)
+    host = settings.SMTP_HOST
+    primary_port = settings.SMTP_PORT
 
-            server.send_message(msg)
-            logger.info(f"Verification email dispatched successfully to {clean_target}")
-    except Exception as e:
-        # Crucial security rule: NEVER log the verification code or SMTP password
-        logger.error(f"Failed to dispatch verification email to {clean_target}: {type(e).__name__}")
-        raise
+    # Attempt 1: Configured primary port
+    try:
+        _dispatch_smtp(msg, clean_target, host, primary_port, timeout=6.0)
+        logger.info(f"Verification email dispatched successfully to {clean_target} via {host}:{primary_port}")
+        return
+    except Exception as primary_err:
+        logger.warning(
+            f"Primary SMTP dispatch via {host}:{primary_port} failed ({type(primary_err).__name__}). Trying automatic failover..."
+        )
+
+    # Attempt 2: Automatic failover between port 587 (STARTTLS) and port 465 (SSL)
+    fallback_port = 465 if primary_port != 465 else 587
+    if host in ("smtp.gmail.com", "smtp.sendgrid.net", "smtp.mailgun.org", "smtp-relay.brevo.com") or primary_port in (587, 465):
+        try:
+            _dispatch_smtp(msg, clean_target, host, fallback_port, timeout=6.0)
+            logger.info(f"Verification email dispatched successfully via fallback {host}:{fallback_port} to {clean_target}")
+            return
+        except Exception as fallback_err:
+            logger.error(
+                f"Fallback SMTP dispatch via {host}:{fallback_port} also failed ({type(fallback_err).__name__})."
+            )
+
+    # If all attempts failed, log clean diagnostic without leaking credentials or OTP
+    logger.error(f"Failed to dispatch verification email to {clean_target} across all available SMTP transports.")
+    raise
