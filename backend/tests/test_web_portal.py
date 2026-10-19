@@ -84,6 +84,13 @@ def test_documentation_and_privacy_routes():
     assert "30-day" in resp_p.text
     assert "Zero-Retention OTP Discard" in resp_p.text
 
+    # Terms of Service
+    resp_t = client.get("/terms")
+    assert resp_t.status_code == 200
+    assert "Terms of Service & Handset Defense Agreement" in resp_t.text
+    assert "Permitted Anti-Theft" in resp_t.text
+    assert "Zero Surveillance" in resp_t.text
+
 
 def test_logo_asset_serves_png():
     client = TestClient(app)

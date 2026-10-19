@@ -16,13 +16,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Usb
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +64,9 @@ fun AdminLoginScreen(
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isRegisterMode by remember { mutableStateOf(false) }
+    var termsAccepted by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
+    var termsError by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
 
@@ -157,8 +168,8 @@ fun AdminLoginScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SheButton(
-                        text = "Tunnel",
-                        onClick = { serverUrl = "https://grove-aerial-border-appreciation.trycloudflare.com" },
+                        text = "Railway",
+                        onClick = { serverUrl = "https://she.up.railway.app" },
                         variant = SheButtonVariant.TONAL,
                         height = 36.dp,
                         cornerRadius = 10.dp,
@@ -256,12 +267,73 @@ fun AdminLoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Terms of Service & Privacy Agreement Checkbox
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        termsAccepted = !termsAccepted
+                        termsError = null
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = termsAccepted,
+                    onCheckedChange = {
+                        termsAccepted = it
+                        termsError = null
+                    },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = SheTheme.colors.accent,
+                        uncheckedColor = SheTheme.colors.textSecondary,
+                        checkmarkColor = SheTheme.colors.background
+                    )
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = buildAnnotatedString {
+                        append("I agree to the ")
+                        withStyle(SpanStyle(color = SheTheme.colors.accent, fontWeight = FontWeight.Bold)) {
+                            append("Terms of Service")
+                        }
+                        append(" & ")
+                        withStyle(SpanStyle(color = SheTheme.colors.accent, fontWeight = FontWeight.Bold)) {
+                            append("Privacy Policy")
+                        }
+                    },
+                    fontSize = 12.sp,
+                    color = SheTheme.colors.textSecondary,
+                    modifier = Modifier.clickable { showTermsDialog = true }
+                )
+            }
+
+            if (termsError != null) {
+                Text(
+                    text = termsError!!,
+                    color = SheTheme.colors.danger,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Action Buttons
             SheButton(
                 text = if (isRegisterMode) "Create Owner Account" else "Sign In to Admin Center",
                 onClick = {
+                    if (!termsAccepted) {
+                        termsError = "You must agree to the Terms of Service & Privacy Policy."
+                        return@SheButton
+                    }
+                    termsError = null
                     if (isRegisterMode) {
                         onRegisterClick(username, password, serverUrl)
                     } else {
@@ -306,6 +378,61 @@ fun AdminLoginScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             SheThemeSelector(modifier = Modifier.fillMaxWidth())
+        }
+
+        // Terms of Service & Privacy Policy Dialog
+        if (showTermsDialog) {
+            AlertDialog(
+                onDismissRequest = { showTermsDialog = false },
+                title = {
+                    Text(
+                        text = "Terms of Service & Privacy Policy",
+                        color = SheTheme.colors.textPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = "SHE Sentinel Anti-Theft Handset Agreement:\n\n" +
+                                "1. Authorized Personal Use: SHE is licensed exclusively for personal anti-theft defense, emergency device tracking, and data protection on handsets you own or legally manage. Stalking or unauthorized surveillance on third parties is strictly prohibited.\n\n" +
+                                "2. Single-Device Limit: Each account is strictly restricted to 1 active protected phone to maintain cryptographic chain-of-custody.\n\n" +
+                                "3. Permanent Remote Commands: Executing WIPE permanently erases device storage. The owner bears sole responsibility for dispatching remote commands.\n\n" +
+                                "4. Zero Commercial Telemetry & 30-Day Purge: Location records older than 30 days are automatically purged. Vault secrets are protected with zero-knowledge AES-256-GCM encryption.\n\n" +
+                                "5. Open-Source Software: Distributed under the Apache 2.0 License without warranties of any kind.\n\n" +
+                                "Full policies available at:\n" +
+                                "• Terms: https://she.up.railway.app/terms\n" +
+                                "• Privacy: https://she.up.railway.app/privacy",
+                            color = SheTheme.colors.textSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            termsAccepted = true
+                            termsError = null
+                            showTermsDialog = false
+                        }
+                    ) {
+                        Text("Accept & Close", color = SheTheme.colors.accent, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTermsDialog = false }) {
+                        Text("Close", color = SheTheme.colors.textSecondary)
+                    }
+                },
+                containerColor = SheTheme.colors.surface,
+                shape = RoundedCornerShape(20.dp)
+            )
         }
     }
 }

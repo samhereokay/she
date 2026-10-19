@@ -8,11 +8,27 @@ from app.db.models import ProtectedDevice, LocationEvent
 router = APIRouter(tags=["Web & Portal"])
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-GUARDIAN_APK_PATH = os.path.join(REPO_ROOT, "android/app-guardian/build/outputs/apk/direct/debug/app-guardian-direct-debug.apk")
-ADMIN_APK_PATH = os.path.join(REPO_ROOT, "android/app-admin/build/outputs/apk/debug/app-admin-debug.apk")
-LOGO_PATH = os.path.join(REPO_ROOT, "backend/static/logo.png")
-STATIC_GUARDIAN_PATH = os.path.join(REPO_ROOT, "backend/static/she-guardian.apk")
-STATIC_ADMIN_PATH = os.path.join(REPO_ROOT, "backend/static/she-admin.apk")
+
+
+def find_asset_path(relative_path: str) -> str:
+    """Resolve file path across local development repo and containerized production layout."""
+    candidates = [
+        os.path.join(REPO_ROOT, relative_path),
+        os.path.join(REPO_ROOT, "backend", relative_path),
+        os.path.join(os.path.dirname(__file__), "..", "..", relative_path.replace("backend/", "")),
+        os.path.join("/app", relative_path.replace("backend/", "")),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return os.path.abspath(c)
+    return os.path.join(REPO_ROOT, relative_path)
+
+
+GUARDIAN_APK_PATH = find_asset_path("android/app-guardian/build/outputs/apk/direct/debug/app-guardian-direct-debug.apk")
+ADMIN_APK_PATH = find_asset_path("android/app-admin/build/outputs/apk/debug/app-admin-debug.apk")
+LOGO_PATH = find_asset_path("backend/static/logo.png")
+STATIC_GUARDIAN_PATH = find_asset_path("backend/static/she-guardian.apk")
+STATIC_ADMIN_PATH = find_asset_path("backend/static/she-admin.apk")
 
 
 def get_latest_telemetry_snapshot():
@@ -667,9 +683,9 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
         ("/releases", "Releases & Download", "releases"),
         ("/emergency", "Emergency Console", "emergency"),
         ("/docs/2fa-and-recovery", "2FA & Recovery Guide", "2fa-recovery"),
-        ("/docs/user-guide", "User Guide", "user-guide"),
-        ("/docs/setup-order", "Setup Runbook", "setup-order"),
+        ("/terms", "Terms of Service", "terms"),
         ("/privacy", "Data Privacy", "privacy"),
+        ("/docs/user-guide", "User Guide", "user-guide"),
     ]
     nav_items_html = "".join([
         f'<a href="{url}" class="{"active" if active_tab == tab_id else ""}">{label}</a>'
@@ -722,9 +738,10 @@ def render_html_shell(title: str, content: str, active_tab: str = "") -> str:
             <a href="/releases">Releases &amp; APKs</a>
             <a href="/emergency">Emergency Console</a>
             <a href="/docs/2fa-and-recovery">2FA &amp; Recovery Blog</a>
+            <a href="/terms">Terms of Service</a>
+            <a href="/privacy">Privacy Policy</a>
             <a href="/docs/user-guide">User Guide</a>
             <a href="/docs/setup-order">Setup Runbook</a>
-            <a href="/privacy">Data Privacy &amp; Security</a>
         </div>
         <p>&copy; 2026 SHE (Sentinel for Handheld Equipment). Free & Open-Source Software under Apache 2.0.</p>
         <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-subtle);">
@@ -1879,6 +1896,87 @@ def render_privacy_page():
     </div>
     """
     return HTMLResponse(content=render_html_shell("SHE Data Privacy & Security Architecture", body, "privacy"))
+
+
+# -----------------------------------------------------------------------------
+# Terms of Service & Handset Defense Agreement Route
+# -----------------------------------------------------------------------------
+@router.get("/terms", response_class=HTMLResponse)
+def render_terms_of_service():
+    body = f"""
+    <div class="container">
+        <div class="doc-page">
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+                <span class="card-badge badge-info">{SVG_SHIELD} User Agreement</span>
+                <span style="font-size: 0.85rem; color: var(--text-muted); font-family: var(--font-mono);">Effective: October 2026</span>
+            </div>
+
+            <h1>Terms of Service &amp; Handset Defense Agreement</h1>
+            <p style="font-size: 1.15rem; color: var(--text-muted); margin-bottom: 2rem;">
+                Please read this agreement carefully. By creating an account, pairing a handset, or logging into the SHE Sentinel platform, you agree to these terms.
+            </p>
+
+            <div class="card" style="border-left: 4px solid var(--accent); margin-bottom: 2.5rem; background: var(--bg-card);">
+                <h3 style="margin-bottom: 0.5rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+                    {SVG_SHIELD} Summary for Handset Owners
+                </h3>
+                <ul style="margin-left: 1.25rem; color: var(--text-muted); font-size: 0.95rem;">
+                    <li><strong>Personal Protection Only:</strong> SHE may only be installed on devices you personally own or have explicit legal authority to manage.</li>
+                    <li><strong>Zero Surveillance:</strong> Stalking, spying, or secret surveillance on third parties is strictly prohibited.</li>
+                    <li><strong>Permanent Remote Commands:</strong> Remote wipe actions permanently erase all data. Use with caution.</li>
+                    <li><strong>Zero Telemetry:</strong> We do not sell, monetize, or inspect your location coordinates or vault data.</li>
+                </ul>
+            </div>
+
+            <h2>1. Permitted Anti-Theft &amp; Recovery Use</h2>
+            <p>
+                The SHE ecosystem (including the Guardian service, Admin Companion, and backend) is licensed exclusively for personal device recovery, theft defense, and emergency tracking:
+            </p>
+            <ul>
+                <li><strong>Ownership Requirement:</strong> You warrant that you are the lawful owner or registered enterprise custodian of any device paired to your account.</li>
+                <li><strong>Prohibited Surveillance:</strong> Installing SHE on a third party's handset without their informed, written consent violates local telecommunications and privacy laws (including Indian Information Technology Act 2000, Section 43/66E, and international anti-stalking statutes). Accounts engaging in unauthorized tracking will be permanently terminated.</li>
+            </ul>
+
+            <h2>2. Handset Device Owner Controls &amp; Data Wipe</h2>
+            <p>
+                SHE leverages Android Device Owner and Direct Boot capabilities to protect your data during theft:
+            </p>
+            <ul>
+                <li><strong>Irreversible Data Erasure:</strong> Executing an emergency <code>WIPE</code> or factory reset command permanently erases all internal storage. The SHE project and its developers bear zero liability for data loss resulting from user-dispatched wipe actions.</li>
+                <li><strong>Max-Volume Siren Alarms:</strong> The emergency siren alarm overrides device volume to 100% to assist physical retrieval. You agree not to trigger siren alarms in situations that could cause physical distress or harm.</li>
+            </ul>
+
+            <h2>3. Account Security, Gating &amp; Recovery Keys</h2>
+            <ul>
+                <li><strong>Master Password Responsibility:</strong> You are solely responsible for creating and maintaining a strong master password protected by Argon2id.</li>
+                <li><strong>2FA &amp; Backup Codes:</strong> Two-Factor Authentication is strongly recommended. You must store your 8 emergency recovery keys in a safe, offline location. If your phone is stolen, your recovery keys are required to authenticate from a borrowed device.</li>
+                <li><strong>1 Protected Device Limit:</strong> Each user account is strictly bound to 1 active protected phone to preserve cryptographic chain-of-custody.</li>
+            </ul>
+
+            <h2>4. Data Privacy &amp; Zero Telemetry</h2>
+            <p>
+                Your privacy rights are defined in full in our <a href="/privacy" style="color: var(--primary); font-weight: 600;">Data Privacy Architecture</a>:
+            </p>
+            <ul>
+                <li><strong>30-Day Automated Purge:</strong> Location records older than 30 days are automatically deleted from the database.</li>
+                <li><strong>Zero-Knowledge Vault:</strong> Encrypted recovery records are encrypted with AES-256-GCM using client-derived keys. The server never possesses your vault passphrase.</li>
+                <li><strong>Zero Third-Party SDKs:</strong> No advertising libraries, tracking beacons, or commercial analytics SDKs are embedded in the software.</li>
+            </ul>
+
+            <h2>5. Open-Source Licensing &amp; Limitation of Liability</h2>
+            <p>
+                SHE is free and open-source software distributed under the <strong>Apache License, Version 2.0</strong>. The software is provided "AS IS", without warranties or conditions of any kind, either express or implied, including, without limitation, any warranties or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE.
+            </p>
+
+            <div style="margin-top: 2.5rem; text-align: center; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <a href="/privacy" class="btn btn-primary">Read Privacy Policy &rarr;</a>
+                <a href="/docs/2fa-and-recovery" class="btn btn-secondary">2FA &amp; Recovery Guide</a>
+                <a href="/" class="btn btn-secondary">Return to Homepage</a>
+            </div>
+        </div>
+    </div>
+    """
+    return HTMLResponse(content=render_html_shell("SHE Terms of Service & Handset Defense Agreement", body, "terms"))
 
 
 # -----------------------------------------------------------------------------
