@@ -114,7 +114,7 @@ app.include_router(web_router)
 
 
 @app.get("/health", tags=["Health"])
-def health_check():
+async def health_check():
     """Healthcheck endpoint for Docker Compose and monitoring."""
     return {
         "status": "HEALTHY",

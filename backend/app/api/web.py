@@ -1,5 +1,6 @@
 import os
 import hashlib
+import functools
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse, Response
 from app.db.session import SessionLocal
@@ -43,15 +44,39 @@ def get_latest_telemetry_snapshot():
     return None, None
 
 
-
-def get_file_sha256(filepath: str) -> str:
-    if not os.path.exists(filepath):
-        return "LOCAL BUILD PENDING (Run Gradle to compile)"
+@functools.lru_cache(maxsize=32)
+def _calc_sha256(filepath: str, mtime: float) -> str:
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
+
+
+def get_file_sha256(filepath: str) -> str:
+    if not filepath or not os.path.exists(filepath):
+        return "LOCAL BUILD PENDING (Run Gradle to compile)"
+    try:
+        mtime = os.path.getmtime(filepath)
+        return _calc_sha256(filepath, mtime)
+    except Exception:
+        return "LOCAL BUILD PENDING (Run Gradle to compile)"
+
+
+def get_effective_guardian_apk() -> str:
+    if os.path.exists(GUARDIAN_APK_PATH):
+        return GUARDIAN_APK_PATH
+    if os.path.exists(STATIC_GUARDIAN_PATH):
+        return STATIC_GUARDIAN_PATH
+    return GUARDIAN_APK_PATH
+
+
+def get_effective_admin_apk() -> str:
+    if os.path.exists(ADMIN_APK_PATH):
+        return ADMIN_APK_PATH
+    if os.path.exists(STATIC_ADMIN_PATH):
+        return STATIC_ADMIN_PATH
+    return ADMIN_APK_PATH
 
 
 # -----------------------------------------------------------------------------
@@ -903,7 +928,7 @@ def render_html_shell(
 # Asset & Binary Download Routes (503 Gated)
 # -----------------------------------------------------------------------------
 @router.api_route("/logo.png", methods=["GET", "HEAD"])
-def get_logo():
+async def get_logo():
     """Serve official SHE logo asset."""
     if not os.path.exists(LOGO_PATH):
         raise HTTPException(status_code=404, detail="Logo asset not found on server.")
@@ -911,7 +936,7 @@ def get_logo():
 
 
 @router.api_route("/favicon.ico", methods=["GET", "HEAD"])
-def get_favicon():
+async def get_favicon():
     """Serve official multi-resolution favicon.ico."""
     if os.path.exists(FAVICON_PATH):
         return FileResponse(FAVICON_PATH, media_type="image/x-icon")
@@ -921,7 +946,7 @@ def get_favicon():
 
 
 @router.get("/robots.txt", response_class=PlainTextResponse)
-def get_robots_txt():
+async def get_robots_txt():
     """Serve search engine crawler directives for Google, Bing, and web spiders."""
     return PlainTextResponse(
         content="""User-agent: *
@@ -941,7 +966,7 @@ Sitemap: https://she.up.railway.app/sitemap.xml
 
 
 @router.get("/sitemap.xml")
-def get_sitemap_xml():
+async def get_sitemap_xml():
     """Serve dynamic XML sitemap for Google Search Console and Bing Webmaster Tools."""
     xml_content = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -990,7 +1015,7 @@ def get_sitemap_xml():
 
 
 @router.get("/download/guardian")
-def download_guardian_apk():
+async def download_guardian_apk():
     """Disabled for pre-release builds to prevent distribution of debuggable binaries."""
     raise HTTPException(
         status_code=503,
@@ -999,7 +1024,7 @@ def download_guardian_apk():
 
 
 @router.get("/download/admin")
-def download_admin_apk():
+async def download_admin_apk():
     """Disabled for pre-release builds to prevent distribution of debuggable binaries."""
     raise HTTPException(
         status_code=503,
@@ -1008,33 +1033,35 @@ def download_admin_apk():
 
 
 @router.get("/releases/download/she-guardian.apk")
-def download_release_guardian():
+async def download_release_guardian():
     """Serve verified signed SHE Guardian APK binary."""
-    if not os.path.exists(STATIC_GUARDIAN_PATH):
+    apk_path = get_effective_guardian_apk()
+    if not os.path.exists(apk_path):
         raise HTTPException(status_code=404, detail="Release APK binary not found on server.")
     return FileResponse(
-        STATIC_GUARDIAN_PATH,
+        apk_path,
         media_type="application/vnd.android.package-archive",
         filename="she-guardian-v0.3.0.apk"
     )
 
 
 @router.get("/releases/download/she-admin.apk")
-def download_release_admin():
+async def download_release_admin():
     """Serve verified signed SHE Admin Companion APK binary."""
-    if not os.path.exists(STATIC_ADMIN_PATH):
+    apk_path = get_effective_admin_apk()
+    if not os.path.exists(apk_path):
         raise HTTPException(status_code=404, detail="Release APK binary not found on server.")
     return FileResponse(
-        STATIC_ADMIN_PATH,
+        apk_path,
         media_type="application/vnd.android.package-archive",
         filename="she-admin-v0.3.0.apk"
     )
 
 
 @router.get("/releases", response_class=HTMLResponse)
-def render_releases_page():
-    guardian_sha = get_file_sha256(GUARDIAN_APK_PATH if os.path.exists(GUARDIAN_APK_PATH) else STATIC_GUARDIAN_PATH)
-    admin_sha = get_file_sha256(ADMIN_APK_PATH if os.path.exists(ADMIN_APK_PATH) else STATIC_ADMIN_PATH)
+async def render_releases_page():
+    guardian_sha = get_file_sha256(get_effective_guardian_apk())
+    admin_sha = get_file_sha256(get_effective_admin_apk())
 
     content = f"""
     <header class="hero">
@@ -1194,9 +1221,9 @@ def render_releases_page():
 # Landing Page Route
 # -----------------------------------------------------------------------------
 @router.get("/", response_class=HTMLResponse)
-def render_landing_page():
-    guardian_sha = get_file_sha256(GUARDIAN_APK_PATH)
-    admin_sha = get_file_sha256(ADMIN_APK_PATH)
+async def render_landing_page():
+    guardian_sha = get_file_sha256(get_effective_guardian_apk())
+    admin_sha = get_file_sha256(get_effective_admin_apk())
 
     lat = "28.61393"
     lng = "77.22950"
@@ -1782,7 +1809,7 @@ def render_landing_page():
 # User Guide Documentation Route
 # -----------------------------------------------------------------------------
 @router.get("/docs/user-guide", response_class=HTMLResponse)
-def render_user_guide():
+async def render_user_guide():
     body = """
     <div class="container">
         <div class="doc-page">
@@ -1921,7 +1948,7 @@ def render_user_guide():
 # Setup Order Documentation Route
 # -----------------------------------------------------------------------------
 @router.get("/docs/setup-order", response_class=HTMLResponse)
-def render_setup_order():
+async def render_setup_order():
     body = """
     <div class="container">
         <div class="doc-page">
@@ -2020,7 +2047,7 @@ done</div>
 # Data Privacy & Security Route
 # -----------------------------------------------------------------------------
 @router.get("/privacy", response_class=HTMLResponse)
-def render_privacy_page():
+async def render_privacy_page():
     body = """
     <div class="container">
         <div class="doc-page">
@@ -2105,7 +2132,7 @@ def render_privacy_page():
 # Terms of Service & Handset Defense Agreement Route
 # -----------------------------------------------------------------------------
 @router.get("/terms", response_class=HTMLResponse)
-def render_terms_of_service():
+async def render_terms_of_service():
     body = f"""
     <div class="container">
         <div class="doc-page">
@@ -2187,7 +2214,7 @@ def render_terms_of_service():
 # -----------------------------------------------------------------------------
 @router.get("/docs/2fa-and-recovery", response_class=HTMLResponse)
 @router.get("/blog/setup-2fa-recovery", response_class=HTMLResponse)
-def render_2fa_and_recovery_guide():
+async def render_2fa_and_recovery_guide():
     body = f"""
     <div class="container">
         <div class="doc-page">
@@ -2328,7 +2355,7 @@ def render_2fa_and_recovery_guide():
 # Emergency Web Recovery Console Route (Access from any phone or computer)
 # -----------------------------------------------------------------------------
 @router.get("/emergency", response_class=HTMLResponse)
-def render_emergency_console():
+async def render_emergency_console():
     body = f"""
     <div class="container" style="max-width: 900px; padding: 2rem 1rem;">
         <div style="text-align: center; margin-bottom: 2rem;">
@@ -2548,6 +2575,14 @@ def render_emergency_console():
                 var resp = await fetch('/api/v1/devices', {{
                     headers: {{ 'Authorization': 'Bearer ' + currentToken }}
                 }});
+                if (resp.status === 401) {{
+                    sessionStorage.removeItem('she_emergency_token');
+                    currentToken = null;
+                    document.getElementById('authCard').style.display = 'block';
+                    document.getElementById('dashboardCard').style.display = 'none';
+                    showAlert('Session expired or revoked. Please sign in again.', true);
+                    return;
+                }}
                 var data = await resp.json();
                 if (!resp.ok) throw new Error(data.detail || 'Failed to load protected device');
 
@@ -2576,6 +2611,14 @@ def render_emergency_console():
                 var resp = await fetch('/api/v1/devices/' + currentDeviceId + '/location', {{
                     headers: {{ 'Authorization': 'Bearer ' + currentToken }}
                 }});
+                if (resp.status === 401) {{
+                    sessionStorage.removeItem('she_emergency_token');
+                    currentToken = null;
+                    document.getElementById('authCard').style.display = 'block';
+                    document.getElementById('dashboardCard').style.display = 'none';
+                    showAlert('Session expired or revoked. Please sign in again.', true);
+                    return;
+                }}
                 var loc = await resp.json();
                 if (!resp.ok || !loc.latitude) {{
                     document.getElementById('deviceCoordsVal').textContent = 'Awaiting GPS Fix';
