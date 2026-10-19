@@ -51,7 +51,7 @@ android {
 
     val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
     val keystoreFile = file(keystorePath)
-    val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+    val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "sheantitheft2026"
 
     signingConfigs {
         create("release") {
@@ -60,6 +60,10 @@ android {
                 storePassword = releasePassword
                 keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "antitheft_release"
                 keyPassword = releasePassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
             }
         }
     }

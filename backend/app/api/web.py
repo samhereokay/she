@@ -24,8 +24,14 @@ def find_asset_path(relative_path: str) -> str:
     return os.path.join(REPO_ROOT, relative_path)
 
 
-GUARDIAN_APK_PATH = find_asset_path("android/app-guardian/build/outputs/apk/direct/debug/app-guardian-direct-debug.apk")
-ADMIN_APK_PATH = find_asset_path("android/app-admin/build/outputs/apk/debug/app-admin-debug.apk")
+GUARDIAN_RELEASE_APK = find_asset_path("android/app-guardian/build/outputs/apk/direct/release/app-guardian-direct-release.apk")
+GUARDIAN_DEBUG_APK = find_asset_path("android/app-guardian/build/outputs/apk/direct/debug/app-guardian-direct-debug.apk")
+GUARDIAN_APK_PATH = GUARDIAN_RELEASE_APK if os.path.exists(GUARDIAN_RELEASE_APK) else GUARDIAN_DEBUG_APK
+
+ADMIN_RELEASE_APK = find_asset_path("android/app-admin/build/outputs/apk/release/app-admin-release.apk")
+ADMIN_DEBUG_APK = find_asset_path("android/app-admin/build/outputs/apk/debug/app-admin-debug.apk")
+ADMIN_APK_PATH = ADMIN_RELEASE_APK if os.path.exists(ADMIN_RELEASE_APK) else ADMIN_DEBUG_APK
+
 LOGO_PATH = find_asset_path("backend/static/logo.png")
 FAVICON_PATH = find_asset_path("backend/static/favicon.ico")
 STATIC_GUARDIAN_PATH = find_asset_path("backend/static/she-guardian.apk")
