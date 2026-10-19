@@ -108,9 +108,9 @@ def test_releases_page_and_binary_downloads():
     assert "text/html" in resp_r.headers["content-type"]
     assert "Release Binaries (v0.3.0)" in resp_r.text
     assert "she-guardian.apk" in resp_r.text
-    from app.api.web import get_file_sha256, GUARDIAN_APK_PATH, ADMIN_APK_PATH
-    assert get_file_sha256(GUARDIAN_APK_PATH) in resp_r.text
-    assert get_file_sha256(ADMIN_APK_PATH) in resp_r.text
+    from app.api.web import get_file_sha256, get_effective_guardian_apk, get_effective_admin_apk
+    assert get_file_sha256(get_effective_guardian_apk()) in resp_r.text
+    assert get_file_sha256(get_effective_admin_apk()) in resp_r.text
 
     # Binary release downloads
     resp_g = client.get("/releases/download/she-guardian.apk")
