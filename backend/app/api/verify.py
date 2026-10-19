@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_verified_user
 from app.core.kyc_validator import validate_email_kyc, validate_phone_kyc, normalize_phone_number
-from app.core.security import create_canonical_command_bytes, compute_truncated_hmac
+from app.core.security import create_canonical_command_bytes, compute_truncated_hmac, decrypt_pairing_secret
 from app.db.session import get_db
 from app.db.models import User, ProtectedDevice, DeviceCommand, VerificationChallenge, AuditEvent, utc_now, generate_uuid
 from app.schemas.auth import (
@@ -232,7 +232,8 @@ def start_phone_verification(
             status_code=status.HTTP_409_CONFLICT,
             detail="no_pairing_secret: Guardian device must be re-paired to enable phone verification. Please unpair and re-pair your Guardian handset."
         )
-    pairing_secret_bytes = guardian_device.pairing_secret.encode("utf-8")
+    raw_pairing_secret = decrypt_pairing_secret(guardian_device.pairing_secret)
+    pairing_secret_bytes = raw_pairing_secret.encode("utf-8")
     server_sig = compute_truncated_hmac(pairing_secret_bytes, canonical_bytes, hex_length=12)
 
     cmd = DeviceCommand(

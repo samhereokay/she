@@ -23,7 +23,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         'protected_devices',
-        sa.Column('pairing_secret', sa.String(length=128), nullable=True)
+        sa.Column('pairing_secret', sa.String(length=256), nullable=True)
     )
 
 

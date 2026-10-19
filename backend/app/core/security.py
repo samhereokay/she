@@ -57,6 +57,44 @@ def get_totp_encryption_key() -> bytes:
     return hashlib.sha256(f"totp-at-rest-secret-v1:{settings.SECRET_KEY}".encode("utf-8")).digest()
 
 
+def get_pairing_secret_encryption_key() -> bytes:
+    """Derive or load deterministic 256-bit key for encrypting pairing secrets at rest.
+    Mandates PAIRING_SECRET_ENCRYPTION_KEY or SECRET_KEY from environment."""
+    key_env = settings.PAIRING_SECRET_ENCRYPTION_KEY or os.getenv("PAIRING_SECRET_ENCRYPTION_KEY")
+    if key_env:
+        return hashlib.sha256(key_env.encode("utf-8")).digest()
+    if not settings.SECRET_KEY:
+        raise RuntimeError("CRITICAL SECURITY ERROR: No PAIRING_SECRET_ENCRYPTION_KEY or SECRET_KEY configured in environment.")
+    return hashlib.sha256(f"pairing-secret-at-rest-v1:{settings.SECRET_KEY}".encode("utf-8")).digest()
+
+
+def encrypt_pairing_secret(plain_secret: str) -> str:
+    """Encrypt raw pairing secret using AES-256-GCM before saving to database."""
+    if not plain_secret:
+        return ""
+    key = get_pairing_secret_encryption_key()
+    iv = os.urandom(12)
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(iv, plain_secret.encode("utf-8"), None)
+    return base64.b64encode(iv + ciphertext).decode("utf-8")
+
+
+def decrypt_pairing_secret(encrypted_secret: str) -> str:
+    """Decrypt pairing secret using AES-256-GCM with backward compatibility for legacy plaintext."""
+    if not encrypted_secret:
+        return ""
+    try:
+        combined = base64.b64decode(encrypted_secret)
+        if len(combined) < 28:
+            return encrypted_secret
+        iv = combined[:12]
+        ciphertext = combined[12:]
+        aesgcm = AESGCM(get_pairing_secret_encryption_key())
+        return aesgcm.decrypt(iv, ciphertext, None).decode("utf-8")
+    except Exception:
+        return encrypted_secret
+
+
 def encrypt_totp_secret(plain_secret: str) -> str:
     """Encrypt TOTP secret using AES-256-GCM before saving to database."""
     if not plain_secret:

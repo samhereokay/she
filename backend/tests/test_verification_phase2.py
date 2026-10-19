@@ -489,9 +489,10 @@ def test_startup_fails_when_debug_false_and_verify_secret_disallowed():
     from app.main import validate_production_security_config
 
     class MockConfig:
-        def __init__(self, debug: bool, verify_secret: str):
+        def __init__(self, debug: bool, verify_secret: str, pairing_key: str = "valid-prod-pairing-secret-key-32b"):
             self.DEBUG = debug
             self.VERIFY_SECRET = verify_secret
+            self.PAIRING_SECRET_ENCRYPTION_KEY = pairing_key
 
     # DEBUG=True permits development default
     validate_production_security_config(MockConfig(debug=True, verify_secret="default-verification-hmac-secret-32b"))
@@ -506,7 +507,12 @@ def test_startup_fails_when_debug_false_and_verify_secret_disallowed():
         validate_production_security_config(MockConfig(debug=False, verify_secret="default-verification-hmac-secret-32b"))
     assert "VERIFY_SECRET must be set" in str(exc_example.value)
 
-    # DEBUG=False succeeds with genuine production secret
+    # DEBUG=False rejects empty or example pairing encryption keys
+    with pytest.raises(RuntimeError) as exc_pairing:
+        validate_production_security_config(MockConfig(debug=False, verify_secret="prod-entropy-strong-unique-secret-32b-length", pairing_key=""))
+    assert "PAIRING_SECRET_ENCRYPTION_KEY must be configured" in str(exc_pairing.value)
+
+    # DEBUG=False succeeds with genuine production secrets
     validate_production_security_config(
-        MockConfig(debug=False, verify_secret="prod-entropy-strong-unique-secret-32b-length")
+        MockConfig(debug=False, verify_secret="prod-entropy-strong-unique-secret-32b-length", pairing_key="prod-pairing-entropy-strong-32b")
     )

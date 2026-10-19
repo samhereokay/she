@@ -29,7 +29,8 @@ from app.core.security import (
     verify_ecdsa_p256_signature,
     create_canonical_command_bytes,
     decrypt_totp_secret,
-    verify_totp_code
+    verify_totp_code,
+    encrypt_pairing_secret
 )
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
@@ -98,7 +99,7 @@ def pair_device(
             existing.public_key_pem = pair_in.public_key_pem
             existing.trusted_phone_number = pair_in.trusted_phone_number
             existing.pairing_secret_hash = pairing_hash
-            existing.pairing_secret = pair_in.pairing_secret
+            existing.pairing_secret = encrypt_pairing_secret(pair_in.pairing_secret)
             existing.pairing_id = pairing_id
             existing.confirmation_code = confirmation_code
             existing.status = "PENDING_CONFIRMATION"
@@ -113,7 +114,7 @@ def pair_device(
                 public_key_pem=pair_in.public_key_pem,
                 trusted_phone_number=pair_in.trusted_phone_number,
                 pairing_secret_hash=pairing_hash,
-                pairing_secret=pair_in.pairing_secret,
+                pairing_secret=encrypt_pairing_secret(pair_in.pairing_secret),
                 pairing_id=pairing_id,
                 confirmation_code=confirmation_code,
                 status="PENDING_CONFIRMATION"
@@ -128,7 +129,7 @@ def pair_device(
             public_key_pem=pair_in.public_key_pem,
             trusted_phone_number=pair_in.trusted_phone_number,
             pairing_secret_hash=pairing_hash,
-            pairing_secret=pair_in.pairing_secret,
+            pairing_secret=encrypt_pairing_secret(pair_in.pairing_secret),
             pairing_id=pairing_id,
             confirmation_code=confirmation_code,
             status="PENDING_CONFIRMATION"
@@ -621,6 +622,9 @@ def get_pending_commands(
     if expired_cmds:
         for exp in expired_cmds:
             exp.status = "EXPIRED"
+            # Purge sensitive verification challenge payload on expiration
+            if exp.command_type == "SEND_VERIFY_SMS":
+                exp.parameters_json = "{}"
         db.commit()
 
     commands = db.query(DeviceCommand).filter(
@@ -649,6 +653,10 @@ def acknowledge_command(
     new_status = ack_in.status if ack_in else "EXECUTED"
     command.status = new_status
     command.executed_at = datetime.now(timezone.utc)
+
+    # Immediately purge OTP challenge payload once acknowledged/executed/rejected
+    if command.command_type == "SEND_VERIFY_SMS":
+        command.parameters_json = "{}"
     db.commit()
 
     if new_status == "REJECTED":

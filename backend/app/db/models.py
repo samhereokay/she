@@ -89,7 +89,7 @@ class ProtectedDevice(Base):
     public_key_pem = Column(Text, nullable=False)
     trusted_phone_number = Column(String(32), nullable=False)
     pairing_secret_hash = Column(String(128), nullable=False)
-    pairing_secret = Column(String(128), nullable=True)  # Raw secret for server-originated HMAC (SEND_VERIFY_SMS)
+    pairing_secret = Column(String(256), nullable=True)  # AES-256-GCM encrypted pairing secret at rest
     pairing_id = Column(String(36), default=generate_uuid, nullable=False)
     confirmation_code = Column(String(16), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)

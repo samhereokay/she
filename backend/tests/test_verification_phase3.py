@@ -150,11 +150,12 @@ def test_phone_start_requires_active_guardian_device(client, verified_owner_user
 # 3. Full phone verification E2E flow
 # ===========================================================================
 
-def _make_active_guardian(db_session, user_id: str) -> ProtectedDevice:
-    """Helper: create a fully paired, ACTIVE Guardian device with pairing_secret stored."""
-    raw_secret = "TestPairingSecret12345678901234"  # 30 chars, no sequential runs
+def _make_active_guardian(db_session, user_id: str, raw_secret: str = "TestPairingSecret12345678901234") -> ProtectedDevice:
+    """Helper: create a fully paired, ACTIVE Guardian device with pairing_secret encrypted at rest."""
     import hashlib
+    from app.core.security import encrypt_pairing_secret
     secret_hash = hashlib.sha256(raw_secret.encode("utf-8")).hexdigest()
+    encrypted_secret = encrypt_pairing_secret(raw_secret)
     device = ProtectedDevice(
         id=generate_uuid(),
         user_id=user_id,
@@ -162,13 +163,15 @@ def _make_active_guardian(db_session, user_id: str) -> ProtectedDevice:
         public_key_pem="-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtest==\n-----END PUBLIC KEY-----",
         trusted_phone_number=VALID_IN_PHONE,
         pairing_secret_hash=secret_hash,
-        pairing_secret=raw_secret,
+        pairing_secret=encrypted_secret,
         pairing_id=generate_uuid(),
         status="ACTIVE"
     )
     db_session.add(device)
     db_session.commit()
     db_session.refresh(device)
+    # Stash raw secret on Python object for test HMAC assertions
+    device._raw_secret = raw_secret
     return device
 
 
@@ -225,7 +228,7 @@ def test_phone_verification_e2e_flow(client, verified_owner_user, db_session):
         parameters_json=cmd.parameters_json
     )
     expected_hmac = compute_truncated_hmac(
-        guardian.pairing_secret.encode("utf-8"),
+        guardian._raw_secret.encode("utf-8"),
         canonical_bytes,
         hex_length=12
     )
@@ -367,3 +370,63 @@ def test_phone_confirm_without_active_challenge_returns_400(client, verified_own
     )
     assert resp.status_code == 400
     assert "challenge_invalid_or_consumed" in resp.json()["detail"]
+
+
+def test_pairing_secret_encrypted_at_rest_in_db(client, verified_owner_user, db_session):
+    """
+    SECURITY INVARIANT:
+    ProtectedDevice.pairing_secret must NEVER be stored as plaintext in the database.
+    It must be encrypted using AES-256-GCM before saving, and the stored column
+    must differ completely from the raw secret.
+    """
+    token, user = verified_owner_user
+    raw_secret = "UltraSecretPairingString456789012"
+
+    guardian = _make_active_guardian(db_session, user.id, raw_secret=raw_secret)
+    db_session.refresh(guardian)
+
+    # 1. Assert DB column does NOT contain the raw secret
+    assert guardian.pairing_secret != raw_secret
+    assert raw_secret not in guardian.pairing_secret
+
+    # 2. Assert raw secret can be decrypted with the encryption key
+    from app.core.security import decrypt_pairing_secret
+    decrypted = decrypt_pairing_secret(guardian.pairing_secret)
+    assert decrypted == raw_secret
+
+
+def test_send_verify_sms_payload_purged_after_ack_and_expiry(client, verified_owner_user, db_session):
+    """
+    SECURITY INVARIANT:
+    The 6-digit OTP in SEND_VERIFY_SMS parameters_json must be purged to '{}'
+    as soon as the command is executed/acknowledged or expires, preventing replay
+    or retrospective inspection.
+    """
+    token, user = verified_owner_user
+    guardian = _make_active_guardian(db_session, user.id)
+
+    # 1. Issue phone verification challenge
+    resp = client.post(
+        "/verify/phone/start",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"phone_number": VALID_IN_PHONE}
+    )
+    assert resp.status_code == 202
+    cmd_id = resp.json()["command_id"]
+
+    cmd = db_session.query(DeviceCommand).filter(DeviceCommand.id == cmd_id).first()
+    assert "SHE verification code:" in cmd.parameters_json
+
+    # 2. Guardian acknowledges the command
+    ack_resp = client.post(
+        f"/api/v1/devices/{guardian.id}/commands/{cmd_id}/ack",
+        json={"status": "EXECUTED"}
+    )
+    assert ack_resp.status_code == 200
+
+    # 3. Verify parameters_json is purged immediately
+    db_session.refresh(cmd)
+    assert cmd.status == "EXECUTED"
+    assert cmd.parameters_json == "{}"
+    assert "code" not in cmd.parameters_json.lower()
+

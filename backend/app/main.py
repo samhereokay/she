@@ -19,14 +19,26 @@ DISALLOWED_VERIFY_SECRETS = {
     "change-me",
 }
 
+DISALLOWED_ENCRYPTION_KEYS = {
+    "",
+    "change-me",
+    "default",
+    "example",
+}
+
 def validate_production_security_config(cfg=None):
-    """Enforces non-empty, non-example VERIFY_SECRET when DEBUG is False."""
+    """Enforces non-empty, non-example VERIFY_SECRET and PAIRING_SECRET_ENCRYPTION_KEY when DEBUG is False."""
     conf = cfg or settings
     if not conf.DEBUG:
         sec = (conf.VERIFY_SECRET or "").strip()
         if not sec or sec in DISALLOWED_VERIFY_SECRETS:
             raise RuntimeError(
                 "CRITICAL SECURITY CONFIGURATION ERROR: VERIFY_SECRET must be set to a secure, unique, non-default value when DEBUG=false."
+            )
+        pairing_key = (getattr(conf, "PAIRING_SECRET_ENCRYPTION_KEY", None) or "").strip()
+        if not pairing_key or pairing_key in DISALLOWED_ENCRYPTION_KEYS:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR: PAIRING_SECRET_ENCRYPTION_KEY must be configured in environment when DEBUG=false."
             )
 
 validate_production_security_config()
