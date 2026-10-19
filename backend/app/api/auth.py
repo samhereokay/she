@@ -22,7 +22,7 @@ from app.core.security import (
 from app.core.rate_limit import auth_limiter, totp_limiter
 from app.core.kyc_validator import validate_email_kyc, validate_phone_kyc, validate_hardware_kyc
 from app.db.session import get_db
-from app.db.models import User, TrustedDevice, AuditEvent, utc_now
+from app.db.models import User, TrustedDevice, AuditEvent, utc_now, UserSession
 from app.schemas.auth import (
     UserCreate,
     UserResponse,
@@ -30,11 +30,13 @@ from app.schemas.auth import (
     UserLogin,
     TotpSetupResponse,
     TotpVerifyRequest,
-    TotpStatusResponse
+    TotpStatusResponse,
+    UserSessionResponse,
+    SessionRevokeResponse
 )
 from app.schemas.device import PairingTokenCreateRequest, PairingTokenResponse
 from app.api.deps import get_current_user, get_current_user_2fa
-from app.core.security import create_pairing_token
+from app.core.security import create_pairing_token, verify_access_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -150,6 +152,54 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
 _DUMMY_ARGON2_HASH = hash_password("dummy-entropy-for-constant-time-auth")
 
 
+def create_user_session(
+    db: Session,
+    user: User,
+    request: Request,
+    device_info: str | None = None
+) -> tuple[UserSession, str]:
+    """
+    Record an active login session.
+    Detects whether this session corresponds to the primary registered device.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    clean_device_info = (device_info or request.headers.get("X-Device-Info") or user_agent).strip()
+
+    # Determine if this login is from the primary registered device
+    is_registered = False
+    if user.device_info and clean_device_info:
+        u_dev = user.device_info.strip().lower()
+        c_dev = clean_device_info.lower()
+        if u_dev == c_dev or (u_dev in c_dev) or (c_dev in u_dev):
+            is_registered = True
+        elif "[id:" in u_dev and "[id:" in c_dev:
+            id_u = u_dev.split("[id:")[1].split("]")[0].strip()
+            id_c = c_dev.split("[id:")[1].split("]")[0].strip()
+            if id_u and id_u == id_c:
+                is_registered = True
+    elif not user.device_info:
+        if "SHE-Admin" in user_agent or request.headers.get("X-App-Client") == "SHE-Admin-Android":
+            is_registered = True
+
+    session_jti = secrets.token_hex(16)
+    sess = UserSession(
+        user_id=user.id,
+        session_token_jti=session_jti,
+        device_info=clean_device_info,
+        ip_address=client_ip,
+        user_agent=user_agent[:255] if user_agent else None,
+        is_registered_device=is_registered,
+        created_at=utc_now(),
+        last_active_at=utc_now(),
+        revoked_at=None
+    )
+    db.add(sess)
+    db.commit()
+    db.refresh(sess)
+    return sess, session_jti
+
+
 @router.post("/login", response_model=Token)
 def login(
     request: Request,
@@ -192,13 +242,13 @@ def login(
     db.add(audit)
     db.commit()
 
+    sess, session_jti = create_user_session(db, user, request, form_data.client_id)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    # Password authentication ALWAYS issues a 1FA token (is_2fa=False).
-    # Two-factor authentication (TOTP) is mandatory for privileged commands/vault/pairing.
     token = create_access_token(
         subject=user.id,
         is_2fa=False,
-        expires_delta=access_token_expires
+        expires_delta=access_token_expires,
+        jti=session_jti
     )
     return {
         "access_token": token,
@@ -251,12 +301,13 @@ def login_json(
     db.add(audit)
     db.commit()
 
+    sess, session_jti = create_user_session(db, user, request, login_data.device_info)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    # Password authentication ALWAYS issues a 1FA token (is_2fa=False).
     token = create_access_token(
         subject=user.id,
         is_2fa=False,
-        expires_delta=access_token_expires
+        expires_delta=access_token_expires,
+        jti=session_jti
     )
     return {
         "access_token": token,
@@ -507,4 +558,117 @@ def revoke_trusted_device(
         "trusted_device_id": trusted.id,
         "device_name": trusted.device_name,
         "revoked_at": trusted.revoked_at
+    }
+
+
+# -----------------------------------------------------------------------------
+# Active Login Sessions Management
+# -----------------------------------------------------------------------------
+
+@router.get("/sessions", response_model=list[UserSessionResponse])
+def list_user_sessions(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    List all active and recent login sessions for the current user.
+    Identifies the primary registered device and marks the current session.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    current_jti = None
+    if auth_header.startswith("Bearer "):
+        token_str = auth_header[7:].strip()
+        payload = verify_access_token(token_str)
+        if payload:
+            current_jti = payload.get("jti")
+
+    sessions = db.query(UserSession).filter(
+        UserSession.user_id == current_user.id
+    ).order_by(UserSession.last_active_at.desc()).all()
+
+    resp = []
+    for s in sessions:
+        resp.append(UserSessionResponse(
+            id=s.id,
+            device_info=s.device_info,
+            ip_address=s.ip_address,
+            user_agent=s.user_agent,
+            is_registered_device=bool(s.is_registered_device),
+            is_current=bool(current_jti and s.session_token_jti == current_jti),
+            created_at=s.created_at,
+            last_active_at=s.last_active_at,
+            is_revoked=bool(s.revoked_at is not None)
+        ))
+    return resp
+
+
+@router.post("/sessions/{session_id}/revoke", response_model=SessionRevokeResponse)
+def revoke_user_session(
+    session_id: str,
+    force: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Revoke/terminate a specific login session.
+    Protects the primary registered device from accidental revocation unless force=True.
+    """
+    session = db.query(UserSession).filter(
+        UserSession.id == session_id,
+        UserSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    if session.is_registered_device and not force:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot terminate the primary registered device session unless force=true is specified."
+        )
+
+    session.revoked_at = utc_now()
+    db.commit()
+
+    return {
+        "status": "revoked",
+        "revoked_count": 1,
+        "message": f"Session '{session.id}' has been terminated."
+    }
+
+
+@router.post("/sessions/revoke-others", response_model=SessionRevokeResponse)
+def revoke_other_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Terminates all active login sessions (e.g. web emergency console, borrowed devices,
+    remote browsers) EXCEPT the primary device recorded during registration.
+    """
+    query = db.query(UserSession).filter(
+        UserSession.user_id == current_user.id,
+        UserSession.is_registered_device == False,
+        UserSession.revoked_at.is_(None)
+    )
+    count = query.count()
+    query.update({UserSession.revoked_at: utc_now()}, synchronize_session=False)
+    db.commit()
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        event_type="REMOTE_SESSIONS_REVOKED",
+        details=f"Revoked {count} remote session(s). Primary registered device preserved."
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "status": "revoked",
+        "revoked_count": count,
+        "message": f"Successfully revoked {count} remote session(s). Primary registered device remains active."
     }

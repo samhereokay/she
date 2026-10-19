@@ -314,7 +314,13 @@ class AdminLoginActivity : BaseSecureActivity() {
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val tokenResp = api.login(LoginRequest(username.trim(), password))
+                val androidId = android.provider.Settings.Secure.getString(
+                    contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID
+                ) ?: "device"
+                val deviceInfo = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}) [ID: ${androidId.take(8)}]"
+
+                val tokenResp = api.login(LoginRequest(username = username.trim(), password = password, device_info = deviceInfo))
                 sessionManager.saveToken(tokenResp.access_token)
                 isLoading = false
 

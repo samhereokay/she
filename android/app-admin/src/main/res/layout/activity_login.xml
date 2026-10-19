@@ -60,7 +60,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🔒 100% Self-Hosted • Zero Commercial API Keys"
+                    android:text="100% Self-Hosted • Zero Commercial API Keys"
                     android:textColor="#38BDF8"
                     android:textSize="13sp"
                     android:textStyle="bold" />
@@ -106,7 +106,7 @@
                     android:layout_height="36dp"
                     android:paddingHorizontal="12dp"
                     android:textSize="11sp"
-                    android:text="🌐 Cloudflare Tunnel" />
+                    android:text="Cloudflare Tunnel" />
 
                 <Button
                     android:id="@+id/btnPresetLocal"
@@ -116,7 +116,7 @@
                     android:layout_marginStart="8dp"
                     android:paddingHorizontal="12dp"
                     android:textSize="11sp"
-                    android:text="⚡ USB / Localhost (127.0.0.1)" />
+                    android:text="USB / Localhost (127.0.0.1)" />
 
                 <Button
                     android:id="@+id/btnPresetEmulator"
@@ -126,7 +126,7 @@
                     android:layout_marginStart="8dp"
                     android:paddingHorizontal="12dp"
                     android:textSize="11sp"
-                    android:text="🏠 Emulator (10.0.2.2)" />
+                    android:text="Emulator (10.0.2.2)" />
 
             </LinearLayout>
         </HorizontalScrollView>

@@ -158,7 +158,7 @@ class AdminVaultActivity : BaseSecureActivity() {
                 }
                 // Device without screen lock configured: show prominent security warning dialog
                 isVaultUnlocked = true
-                tvStatus.text = "⚠️ Vault Unlocked (UNSECURED: No device screen lock enrolled)"
+                tvStatus.text = "Vault Unlocked (UNSECURED: No device screen lock enrolled)"
                 showNoScreenLockWarning()
                 loadVaultItems()
             }
@@ -167,7 +167,7 @@ class AdminVaultActivity : BaseSecureActivity() {
 
     private fun showNoScreenLockWarning() {
         AlertDialog.Builder(this)
-            .setTitle("⚠️ SECURITY WARNING: NO SCREEN LOCK")
+            .setTitle("SECURITY WARNING: NO SCREEN LOCK")
             .setMessage("This device has no screen lock PIN, pattern, or biometric password enrolled.\n\nThe hardware-backed Android Keystore key is running in unauthenticated mode. Anyone holding this device can view decrypted vault secrets.\n\nPlease enroll a secure screen lock in Android Settings immediately.")
             .setPositiveButton("I Understand", null)
             .show()
@@ -777,7 +777,7 @@ class AdminVaultActivity : BaseSecureActivity() {
 
     private fun confirmEmergencyShred() {
         AlertDialog.Builder(this)
-            .setTitle("⚠️ EMERGENCY VAULT SHRED")
+            .setTitle("EMERGENCY VAULT SHRED")
             .setMessage("This will permanently delete all encrypted vault items from the server and SHRED the master encryption key from this device's Android Keystore.\n\nAll recovery codes and documents will be permanently lost. Proceed?")
             .setPositiveButton("SHRED EVERYTHING") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {

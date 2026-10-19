@@ -87,6 +87,7 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.SimCard
 import androidx.compose.material3.AlertDialog
 import com.antitheft.admin.network.UserProfileDto
+import com.antitheft.admin.network.UserSessionDto
 import com.antitheft.admin.ui.components.SheTextField
 import java.util.Locale
 
@@ -125,7 +126,14 @@ fun AdminDashboardScreen(
     onDismissCommandDispatch: () -> Unit = {},
     onConfirmCommandDispatch: (totpCode: String, friendPhone: String) -> Unit = { _, _ -> },
     showGuideDialog: Boolean = false,
-    onDismissGuideDialog: () -> Unit = {}
+    onDismissGuideDialog: () -> Unit = {},
+    showSessionsDialog: Boolean = false,
+    onOpenSessions: () -> Unit = {},
+    onDismissSessionsDialog: () -> Unit = {},
+    sessionsList: List<UserSessionDto> = emptyList(),
+    isSessionsLoading: Boolean = false,
+    onRevokeOtherSessions: () -> Unit = {},
+    onRevokeSession: (String, Boolean) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     var showThemeSheet by remember { mutableStateOf(false) }
@@ -172,6 +180,7 @@ fun AdminDashboardScreen(
                 DashboardHeader(
                     onThemeClick = { showThemeSheet = true },
                     onOpenVault = onOpenVault,
+                    onOpenSessions = onOpenSessions,
                     onShareApp = {
                         ApkShareHelper.showShareOptions(
                             context,
@@ -467,7 +476,7 @@ fun AdminDashboardScreen(
                     )
                     IosGroupedCard {
                         IosActionSheetRow(
-                            title = "🚨 Real Stolen Lockdown",
+                            title = "Real Stolen Lockdown",
                             subtitle = "Full lockdown: continuous siren, kiosk, & SMS beacon.",
                             icon = Icons.Outlined.WarningAmber,
                             iconBg = Color(0xFFEF4444),
@@ -547,12 +556,23 @@ fun AdminDashboardScreen(
             onDismiss = onDismissGuideDialog
         )
     }
+
+    if (showSessionsDialog) {
+        ActiveSessionsSheet(
+            sessions = sessionsList,
+            isLoading = isSessionsLoading,
+            onDismiss = onDismissSessionsDialog,
+            onRevokeOtherSessions = onRevokeOtherSessions,
+            onRevokeSession = onRevokeSession
+        )
+    }
 }
 
 @Composable
 private fun DashboardHeader(
     onThemeClick: () -> Unit,
     onOpenVault: () -> Unit,
+    onOpenSessions: () -> Unit,
     onShareApp: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -606,6 +626,17 @@ private fun DashboardHeader(
                         )
                     },
                     onClick = onOpenVault
+                )
+                HeaderIconButton(
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Security,
+                            contentDescription = "Active Sessions",
+                            tint = SheTheme.colors.textPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = onOpenSessions
                 )
                 HeaderIconButton(
                     icon = {
@@ -1443,8 +1474,8 @@ private fun IosCommandDispatchDialog(
                     Text(
                         text = when (cmd) {
                             "TEST_MODE" -> "Simulated Drill (Test Mode)"
-                            "STOLEN_MODE" -> "🚨 Real Stolen Lockdown"
-                            "CLEAR_DEVICE_OWNER" -> "⚠️ Clear Device Owner"
+                            "STOLEN_MODE" -> "Real Stolen Lockdown"
+                            "CLEAR_DEVICE_OWNER" -> "Clear Device Owner"
                             else -> "Confirm: $cmd"
                         },
                         color = if (isDestructive) SheTheme.colors.danger else SheTheme.colors.textPrimary,
@@ -1474,7 +1505,7 @@ private fun IosCommandDispatchDialog(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "🛡️ NON-DESTRUCTIVE SECURITY DRILL",
+                                    text = "NON-DESTRUCTIVE SECURITY DRILL",
                                     color = Color(0xFF8B5CF6),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -1510,7 +1541,7 @@ private fun IosCommandDispatchDialog(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "🚨 LIVE THEFT RECOVERY MODE",
+                                    text = "LIVE THEFT RECOVERY MODE",
                                     color = SheTheme.colors.danger,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -1534,7 +1565,7 @@ private fun IosCommandDispatchDialog(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "⚠️ PERMANENT DEPROVISIONING",
+                                    text = "PERMANENT DEPROVISIONING",
                                     color = SheTheme.colors.danger,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -1583,7 +1614,7 @@ private fun IosCommandDispatchDialog(
             SheButton(
                 text = when {
                     isTestMode -> "Run Drill Simulation"
-                    isStolenMode -> "🚨 Arm Stolen Lockdown"
+                    isStolenMode -> "Arm Stolen Lockdown"
                     isClearOwner -> "Deprovision Device"
                     else -> "Dispatch Command"
                 },
@@ -1644,7 +1675,7 @@ private fun IosCommandGuideDialog(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            text = "💡 TEST MODE VS REAL MODE",
+                            text = "TEST MODE VS REAL MODE",
                             color = SheTheme.colors.accent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -1726,6 +1757,251 @@ private fun IosCommandGuideDialog(
             )
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ActiveSessionsSheet(
+    sessions: List<UserSessionDto>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onRevokeOtherSessions: () -> Unit,
+    onRevokeSession: (String, Boolean) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = SheTheme.colors.surface,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // iOS Handle & Title
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(5.dp)
+                        .clip(CircleShape)
+                        .background(SheTheme.colors.border)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Security,
+                        contentDescription = null,
+                        tint = SheTheme.colors.accent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Active Login Sessions",
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Manage logged-in devices. Registered phone is protected.",
+                    color = SheTheme.colors.textSecondary,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            // Quick Revoke Others Card
+            SheCard(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = SheTheme.colors.surfaceVariant,
+                cornerRadius = 16.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = null,
+                            tint = SheTheme.colors.accent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "PRIMARY PHONE PROTECTION",
+                            color = SheTheme.colors.accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                    Text(
+                        text = "Terminating other sessions logs out web emergency consoles and borrowed devices immediately, but will NEVER log out your primary registered phone.",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                    SheButton(
+                        text = if (isLoading) "Processing..." else "Log Out All Other Sessions",
+                        onClick = onRevokeOtherSessions,
+                        variant = SheButtonVariant.DANGER,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
+                    )
+                }
+            }
+
+            // Sessions List
+            Text(
+                text = "CURRENT SESSIONS (${sessions.size})",
+                color = SheTheme.colors.textTertiary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+
+            if (isLoading && sessions.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = SheTheme.colors.accent)
+                }
+            } else if (sessions.isEmpty()) {
+                Text(
+                    text = "No active sessions found.",
+                    color = SheTheme.colors.textSecondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                sessions.forEach { s ->
+                    SessionRowCard(
+                        session = s,
+                        onRevoke = { onRevokeSession(s.id, false) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            SheButton(
+                text = "Close",
+                onClick = onDismiss,
+                variant = SheButtonVariant.PRIMARY,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun SessionRowCard(
+    session: UserSessionDto,
+    onRevoke: () -> Unit
+) {
+    SheCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = if (session.is_current) SheTheme.colors.surfaceVariant.copy(alpha = 0.8f) else SheTheme.colors.surface,
+        borderColor = if (session.is_current) SheTheme.colors.accent.copy(alpha = 0.5f) else SheTheme.colors.border,
+        cornerRadius = 14.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = if (session.is_registered_device) Icons.Outlined.Smartphone else Icons.Outlined.Security,
+                        contentDescription = null,
+                        tint = if (session.is_registered_device) SheTheme.colors.success else SheTheme.colors.accent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = when {
+                            session.is_registered_device -> "Registered Phone"
+                            session.user_agent?.contains("SHE-Admin", ignoreCase = true) == true -> "Admin Handset"
+                            else -> "Web / Emergency Console"
+                        },
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (session.is_registered_device) {
+                        SheStatusChip(text = "REGISTERED", level = StatusLevel.SUCCESS)
+                    }
+                    if (session.is_current) {
+                        SheStatusChip(text = "THIS PHONE", level = StatusLevel.NEUTRAL)
+                    }
+                }
+            }
+
+            if (!session.device_info.isNullOrBlank()) {
+                Text(
+                    text = session.device_info,
+                    color = SheTheme.colors.textSecondary,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "IP: ${session.ip_address ?: "Unknown"}",
+                    color = SheTheme.colors.textTertiary,
+                    fontSize = 11.sp
+                )
+                Text(
+                    text = "Active: ${session.last_active_at.take(19).replace('T', ' ')}",
+                    color = SheTheme.colors.textTertiary,
+                    fontSize = 11.sp
+                )
+            }
+
+            if (!session.is_current) {
+                Spacer(modifier = Modifier.height(4.dp))
+                SheButton(
+                    text = if (session.is_registered_device) "Revoke (Registered Phone)" else "Log Out This Session",
+                    onClick = onRevoke,
+                    variant = SheButtonVariant.OUTLINED,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
 }
 
 

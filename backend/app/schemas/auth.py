@@ -15,6 +15,25 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+    device_info: Optional[str] = Field(None, description="Client hardware model and OS details")
+
+
+class UserSessionResponse(BaseModel):
+    id: str
+    device_info: Optional[str] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    is_registered_device: bool
+    is_current: bool = False
+    created_at: datetime
+    last_active_at: datetime
+    is_revoked: bool
+
+
+class SessionRevokeResponse(BaseModel):
+    status: str
+    revoked_count: int
+    message: str
 
 
 class UserResponse(BaseModel):

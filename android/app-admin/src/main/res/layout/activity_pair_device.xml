@@ -195,7 +195,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="46dp"
                     android:layout_marginTop="12dp"
-                    android:text="📱 Pair on This Handset (Single Device)"
+                    android:text="Pair on This Handset (Single Device)"
                     android:backgroundTint="#10B981"
                     android:textColor="#FFFFFF"
                     android:visibility="gone"

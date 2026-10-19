@@ -45,6 +45,7 @@ class User(Base):
     commands = relationship("DeviceCommand", back_populates="user", cascade="all, delete-orphan")
     vault_items = relationship("VaultItem", back_populates="user", cascade="all, delete-orphan")
     verification_challenges = relationship("VerificationChallenge", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class VerificationChallenge(Base):
@@ -195,4 +196,22 @@ class BugReport(Base):
     description = Column(Text, nullable=False)
     status = Column(String(32), default="NEW", nullable=False)  # NEW, TRIAGED, RESOLVED, DISMISSED
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class UserSession(Base):
+    """Active user login sessions across devices and web consoles."""
+    __tablename__ = "user_sessions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_token_jti = Column(String(64), unique=True, index=True, nullable=False)
+    device_info = Column(Text, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(256), nullable=True)
+    is_registered_device = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    last_active_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="sessions")
 

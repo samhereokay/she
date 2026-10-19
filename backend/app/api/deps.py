@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import logging
 from app.db.session import get_db
-from app.db.models import User
+from app.db.models import User, UserSession, utc_now
 from app.core.security import verify_access_token, verify_pairing_token, claim_pairing_token_jti
 
 logger = logging.getLogger("uvicorn.error")
@@ -29,6 +29,19 @@ def get_current_user(
             detail="Single-use device pairing token cannot be used for user or admin operations"
         )
     
+    jti = payload.get("jti")
+    if jti:
+        user_sess = db.query(UserSession).filter(UserSession.session_token_jti == jti).first()
+        if user_sess and user_sess.revoked_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="session_revoked: Login session has been terminated.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if user_sess:
+            user_sess.last_active_at = utc_now()
+            db.commit()
+
     user = db.query(User).filter(User.id == payload["sub"]).first()
     if user is None:
         raise credentials_exception

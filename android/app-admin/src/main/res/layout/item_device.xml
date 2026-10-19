@@ -88,7 +88,7 @@
                 android:textColor="#04151F"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                android:text="🛰️ Live Radar (WS)"
+                android:text="Live Radar"
                 app:cornerRadius="10dp" />
 
             <Button
@@ -97,7 +97,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="42dp"
                 android:layout_marginEnd="6dp"
-                android:text="🗺️ Maps"
+                android:text="Maps"
                 android:textSize="12sp"
                 app:cornerRadius="10dp" />
 
@@ -106,7 +106,7 @@
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="42dp"
-                android:text="ℹ️"
+                android:text="Details"
                 android:textSize="12sp"
                 app:strokeColor="#334155"
                 app:cornerRadius="10dp" />
@@ -118,7 +118,7 @@
             android:layout_width="match_parent"
             android:layout_height="42dp"
             android:layout_marginTop="8dp"
-            android:text="⚡ Dispatch Remote Command"
+            android:text="Dispatch Remote Command"
             android:textStyle="bold"
             android:textSize="12sp"
             app:cornerRadius="10dp" />

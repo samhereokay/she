@@ -49,7 +49,7 @@ If you did not request this code, no further action is required.
 </head>
 <body>
   <div class="container">
-    <div class="logo">🛡️ SHE Anti-Theft & Recovery</div>
+    <div class="logo">SHE Anti-Theft & Recovery</div>
     <p>Please enter the following 6-digit code to verify your account email address:</p>
     <div class="code-box">
       <span class="code">{code}</span>

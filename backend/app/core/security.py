@@ -2,6 +2,7 @@ import time
 import hmac
 import hashlib
 import uuid
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, Any
 
@@ -171,10 +172,11 @@ def create_access_token(
     subject: Union[str, Any],
     is_2fa: bool = False,
     expires_delta: Optional[timedelta] = None,
-    totp_verified_at: Optional[int] = None
+    totp_verified_at: Optional[int] = None,
+    jti: Optional[str] = None
 ) -> str:
     """
-    Generate JWT Bearer token with 2FA status claim.
+    Generate JWT Bearer token with 2FA status claim and unique session JTI.
     Phase 3 commands strictly require is_2fa=True.
     """
     now = datetime.now(timezone.utc)
@@ -183,11 +185,13 @@ def create_access_token(
     else:
         expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
+    session_jti = jti or secrets.token_hex(16)
     to_encode = {
         "exp": expire,
         "sub": str(subject),
         "is_2fa": is_2fa,
-        "iat": now
+        "iat": now,
+        "jti": session_jti
     }
     if is_2fa:
         to_encode["totp_verified_at"] = totp_verified_at if totp_verified_at is not None else int(time.time())

@@ -37,6 +37,7 @@ import com.antitheft.admin.network.EmailConfirmRequest
 import com.antitheft.admin.network.PhoneConfirmRequest
 import com.antitheft.admin.network.PhoneStartRequest
 import com.antitheft.admin.network.UserProfileDto
+import com.antitheft.admin.network.UserSessionDto
 import org.json.JSONObject
 
 class AdminDashboardActivity : BaseSecureActivity() {
@@ -58,6 +59,11 @@ class AdminDashboardActivity : BaseSecureActivity() {
 
     private var activeCommandDispatch by mutableStateOf<CommandDispatchDialogState?>(null)
     private var showGuideDialog by mutableStateOf(false)
+
+    // Session Management State
+    private var showSessionsDialog by mutableStateOf(false)
+    private var sessionsList by mutableStateOf<List<UserSessionDto>>(emptyList())
+    private var isSessionsLoading by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -161,7 +167,17 @@ class AdminDashboardActivity : BaseSecureActivity() {
                             }
                         },
                         showGuideDialog = showGuideDialog,
-                        onDismissGuideDialog = { showGuideDialog = false }
+                        onDismissGuideDialog = { showGuideDialog = false },
+                        showSessionsDialog = showSessionsDialog,
+                        onOpenSessions = {
+                            showSessionsDialog = true
+                            loadSessions()
+                        },
+                        onDismissSessionsDialog = { showSessionsDialog = false },
+                        sessionsList = sessionsList,
+                        isSessionsLoading = isSessionsLoading,
+                        onRevokeOtherSessions = { revokeOtherSessions() },
+                        onRevokeSession = { sessionId, force -> revokeSession(sessionId, force) }
                     )
                 }
             }
@@ -484,6 +500,54 @@ class AdminDashboardActivity : BaseSecureActivity() {
             val resp = api.registerTrustedDevice(req)
             sessionManager.saveTrustedDeviceId(resp.id)
             resp.id
+        }
+    }
+
+    private fun loadSessions() {
+        isSessionsLoading = true
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val list = api.getSessions()
+                sessionsList = list
+            } catch (e: Exception) {
+                android.util.Log.e("AdminDashboard", "Failed to load sessions", e)
+                Toast.makeText(this@AdminDashboardActivity, "Failed to load sessions: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                isSessionsLoading = false
+            }
+        }
+    }
+
+    private fun revokeOtherSessions() {
+        isSessionsLoading = true
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val res = api.revokeOtherSessions()
+                Toast.makeText(this@AdminDashboardActivity, res.message, Toast.LENGTH_LONG).show()
+                loadSessions()
+            } catch (e: Exception) {
+                android.util.Log.e("AdminDashboard", "Failed to revoke other sessions", e)
+                Toast.makeText(this@AdminDashboardActivity, "Failed to revoke other sessions: ${e.message}", Toast.LENGTH_SHORT).show()
+                isSessionsLoading = false
+            }
+        }
+    }
+
+    private fun revokeSession(sessionId: String, force: Boolean = false) {
+        isSessionsLoading = true
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val res = api.revokeSession(sessionId, force)
+                Toast.makeText(this@AdminDashboardActivity, res.message, Toast.LENGTH_SHORT).show()
+                loadSessions()
+            } catch (e: Exception) {
+                android.util.Log.e("AdminDashboard", "Failed to revoke session", e)
+                Toast.makeText(this@AdminDashboardActivity, "Failed to revoke session: ${e.message}", Toast.LENGTH_SHORT).show()
+                isSessionsLoading = false
+            }
         }
     }
 }

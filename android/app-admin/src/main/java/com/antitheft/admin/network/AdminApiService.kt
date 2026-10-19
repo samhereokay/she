@@ -28,7 +28,28 @@ data class UserResponseDto(
     val device_info: String? = null
 )
 
-data class LoginRequest(val username: String, val password: String)
+data class LoginRequest(
+    val username: String,
+    val password: String,
+    val device_info: String? = null
+)
+data class UserSessionDto(
+    val id: String,
+    val device_info: String? = null,
+    val ip_address: String? = null,
+    val user_agent: String? = null,
+    val is_registered_device: Boolean = false,
+    val is_current: Boolean = false,
+    val created_at: String,
+    val last_active_at: String
+)
+
+data class SessionRevokeResponse(
+    val status: String,
+    val revoked_session_id: String? = null,
+    val revoked_count: Int? = null,
+    val message: String
+)
 data class TokenResponse(
     val access_token: String,
     val token_type: String,
@@ -252,6 +273,18 @@ interface AdminApiService {
 
     @retrofit2.http.DELETE("api/v1/vault/purge")
     suspend fun purgeVault(): VaultPurgeResponse
+
+    @GET("auth/sessions")
+    suspend fun getSessions(): List<UserSessionDto>
+
+    @POST("auth/sessions/{id}/revoke")
+    suspend fun revokeSession(
+        @Path("id") id: String,
+        @retrofit2.http.Query("force") force: Boolean = false
+    ): SessionRevokeResponse
+
+    @POST("auth/sessions/revoke-others")
+    suspend fun revokeOtherSessions(): SessionRevokeResponse
 }
 
 object ApiClient {
