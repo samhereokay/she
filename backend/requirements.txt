@@ -18,6 +18,11 @@ PyJWT==2.15.1             # JSON Web Token implementation (patched against CVE /
 cryptography==50.0.2      # Production cryptographic primitives (patched against GHSA-537c-gmf6-5ccf / PYSEC-2026-35)
 python-multipart==0.0.32  # Required for OAuth2 password form parsing (patched against PYSEC-2026-1852)
 
+# Verification & KYC
+dnspython==2.9.0
+phonenumbers==9.0.41
+email-validator==2.3.0
+
 # Testing & Quality
 pytest==9.1.1             # Test runner for automated unit and integration tests (patched against PYSEC-2026-1845)
 httpx==0.28.1             # Async HTTP client used by FastAPI TestClient

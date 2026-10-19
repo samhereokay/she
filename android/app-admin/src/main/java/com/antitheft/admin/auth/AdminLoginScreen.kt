@@ -376,7 +376,7 @@ fun AdminLoginScreen(
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
-                            text = "Detected SIM: ${simOperatorName.ifBlank { "Active Carrier" }} (${simCountryIso.ifBlank { "Verified" }}, $detectedDialCode) • Hardware Telephony",
+                            text = "SIM country: ${simCountryIso.ifBlank { "Unknown" }} ($detectedDialCode)",
                             fontSize = 11.sp,
                             color = SheTheme.colors.accent,
                             fontWeight = FontWeight.Medium

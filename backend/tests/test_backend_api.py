@@ -591,6 +591,7 @@ def test_automated_kyc_approval_without_token(monkeypatch):
     """Verify that authentic SHE APK clients with verified KYC are automatically approved without a token."""
     from app.core.config import settings
     monkeypatch.setattr(settings, "REGISTRATION_TOKEN", "SECRET_INVITE_TOKEN_XYZ")
+    monkeypatch.setattr(settings, "ALLOW_PUBLIC_REGISTRATION", True)
 
     client = TestClient(app)
 
@@ -698,5 +699,68 @@ def test_automated_kyc_approval_without_token(monkeypatch):
         }
     )
     assert landline_resp.status_code == 422
-    assert "start with 6, 7, 8, or 9" in landline_resp.json()["detail"]
+    assert "Fixed-line landline" in landline_resp.json()["detail"] or "start with 6, 7, 8, or 9" in landline_resp.json()["detail"]
+
+    # 8. Android emulator registration in debug environment -> ACCEPTED (201)
+    emulator_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "emulator_owner",
+            "email": "emulator@example.com",
+            "phone_number": "+919845123489",
+            "device_info": "Google sdk_gphone64_arm64 (Android 14, API 34)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert emulator_resp.status_code == 201
+    assert emulator_resp.json()["username"] == "emulator_owner"
+
+
+def test_kyc_validator_direct_unit_tests():
+    """Direct unit tests for hardened kyc_validator.py functions."""
+    from app.core.kyc_validator import (
+        validate_email_kyc,
+        validate_phone_kyc,
+        validate_hardware_kyc,
+        normalize_phone_number
+    )
+
+    # 1. Disposable email with subdomains loaded from file
+    ok, err = validate_email_kyc("user@sub.mailinator.com")
+    assert not ok
+    assert "Disposable or temporary" in err
+
+    ok, err = validate_email_kyc("user@dispostable.com")
+    assert not ok
+    assert "Disposable or temporary" in err
+
+    # 2. Valid email passes
+    ok, err = validate_email_kyc("user@example.com")
+    assert ok and err is None
+
+    # 3. Phonenumbers fixed-line landline detection
+    ok, err = validate_phone_kyc("+911123456789")  # Delhi fixed line (011)
+    assert not ok
+    assert "Fixed-line landline" in err
+
+    # 4. Valid mobile and normalization
+    ok, err = validate_phone_kyc("+91 98451 23489")
+    assert ok and err is None
+    normalized = normalize_phone_number("+91 98451 23489")
+    assert normalized == "+919845123489"
+
+    # 5. Dummy number includes support contact message
+    ok, err = validate_phone_kyc("+919999999999")
+    assert not ok
+    assert "support@she.security" in err
+
+    # 6. Hardware verification: Android emulator allowed in test/debug
+    ok, err = validate_hardware_kyc("Google sdk_gphone64_x86_64 (Android 14)")
+    assert ok and err is None
+
+    # 7. Hardware verification: dummy string rejected
+    ok, err = validate_hardware_kyc("fake")
+    assert not ok
+    assert "missing or incomplete" in err or "authentic physical Android handset" in err
 
