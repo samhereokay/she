@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_REGISTRATION: bool = os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").lower() == "true"
     REGISTRATION_TOKEN: str = os.getenv("REGISTRATION_TOKEN", "")
     ADMIN_SETUP_TOKEN: str = os.getenv("ADMIN_SETUP_TOKEN", "")
+    SUPPORT_CONTACT: str = os.getenv("SUPPORT_CONTACT", "")
     CORS_ORIGINS: list[str] = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,https://samhereokay.github.io").split(",") if o.strip()]
     
     # Environment-Mandated Secrets (NO committed fallback defaults)

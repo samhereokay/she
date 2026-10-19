@@ -2,16 +2,16 @@
 
 Enforces zero-trust validation for registration:
 1. Disposable & Burner Email Blocking (loaded from disposable_domains.txt, matches subdomains)
-2. Live DNS MX Resolution (with A/AAAA fallback, 5s timeout, fail-open on transient resolver errors)
+2. Live DNS MX Resolution (with RFC 7505 Null MX detection, A/AAAA fallback, 5s timeout, fail-open on transient resolver errors)
 3. Typo Protection for Major Mail Providers (blocks gmial.com, yaho.com, etc.)
 4. Phone Anti-Spoofing using phonenumbers library as the base:
    - Enforces international E.164 normalization and validity
    - Rejects FIXED_LINE landlines
    - Extra layer for country-specific mobile ranges (IN, US, UK)
-   - Extra layer for sequential and low-entropy dummy numbers with support guidance
+   - Extra layer for sequential and low-entropy dummy numbers with configurable support guidance
 5. Authentic Hardware Telemetry Verification:
    - Rejects dummy placeholders in production
-   - Explicitly accepts Android emulator models (sdk_gphone64_*) in debug builds
+   - Permitted Android emulator models (sdk_gphone64_*) only when settings.DEBUG is enabled
 """
 
 import logging
@@ -19,6 +19,7 @@ import os
 import re
 from typing import Tuple
 
+import dns.exception
 import dns.resolver
 import phonenumbers
 from phonenumbers import PhoneNumberType
@@ -59,7 +60,58 @@ def _load_disposable_domains() -> set[str]:
 DISPOSABLE_EMAIL_DOMAINS = _load_disposable_domains()
 
 
-def validate_email_kyc(email: str) -> Tuple[bool, str | None]:
+def check_domain_dns_mx(domain_part: str, resolver: dns.resolver.Resolver | None = None) -> Tuple[bool, str | None]:
+    """Perform DNS MX record resolution with A/AAAA fallback, checking for RFC 7505 Null MX and failing open on transient errors."""
+    if resolver is None:
+        resolver = dns.resolver.Resolver()
+        resolver.lifetime = 5.0  # 5-second timeout policy
+
+    try:
+        # 1. Query MX records
+        try:
+            mx_answers = resolver.resolve(domain_part, "MX")
+            # Check for RFC 7505 Null MX (single record with exchange "." or "")
+            for rdata in mx_answers:
+                exchange_str = str(rdata.exchange).strip().rstrip(".")
+                if exchange_str == "":
+                    return False, f"Email domain '@{domain_part}' explicitly does not accept email (Null MX)."
+            return True, None
+        except dns.resolver.NoAnswer:
+            pass  # Fall back to A / AAAA lookup
+        except dns.resolver.NXDOMAIN:
+            return False, f"Email domain '@{domain_part}' does not exist."
+        except dns.exception.DNSException as e:
+            logger.warning("DNS MX query encountered resolver error for '%s': %s. Failing open.", domain_part, e)
+            return True, None
+
+        # 2. Fallback to A / AAAA address records (RFC 5321 section 5.1)
+        has_a_record = False
+        for qtype in ("A", "AAAA"):
+            try:
+                resolver.resolve(domain_part, qtype)
+                has_a_record = True
+                break
+            except (dns.resolver.NoAnswer, dns.resolver.NoNameservers):
+                continue
+            except dns.resolver.NXDOMAIN:
+                return False, f"Email domain '@{domain_part}' does not exist."
+            except dns.exception.DNSException as e:
+                logger.warning("DNS A/AAAA fallback query encountered resolver error for '%s': %s. Failing open.", domain_part, e)
+                return True, None
+
+        if not has_a_record:
+            return False, f"Email domain '@{domain_part}' does not exist or has no active mail servers."
+
+        return True, None
+
+    except dns.resolver.NXDOMAIN:
+        return False, f"Email domain '@{domain_part}' does not exist."
+    except dns.exception.DNSException as e:
+        logger.warning("DNS lookup failed with resolver error for '%s': %s. Failing open.", domain_part, e)
+        return True, None
+
+
+def validate_email_kyc(email: str, resolver: dns.resolver.Resolver | None = None) -> Tuple[bool, str | None]:
     """Validate email format, reject disposable domains, check typos and perform live MX lookup with fail-open policy."""
     cleaned = (email or "").strip().lower()
     if not cleaned or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", cleaned):
@@ -78,32 +130,12 @@ def validate_email_kyc(email: str) -> Tuple[bool, str | None]:
 
     # 3. Live DNS MX resolution (with A/AAAA fallback, 5s timeout, fail-open policy)
     is_testing = os.getenv("PYTEST_CURRENT_TEST") is not None or domain_part in RFC_TEST_DOMAINS
-    if not is_testing:
-        resolver = dns.resolver.Resolver()
-        resolver.lifetime = 5.0  # 5-second timeout policy
+    if resolver is not None:
+        # Explicit resolver supplied (e.g. in test)
+        return check_domain_dns_mx(domain_part, resolver=resolver)
 
-        try:
-            # Query MX record first
-            try:
-                mx_answers = resolver.resolve(domain_part, "MX")
-                if not mx_answers:
-                    raise dns.resolver.NoAnswer()
-            except (dns.resolver.NoAnswer, dns.resolver.NoNameservers):
-                # Fallback to A / AAAA record per RFC 5321
-                try:
-                    resolver.resolve(domain_part, "A")
-                except (dns.resolver.NoAnswer, dns.resolver.NoNameservers):
-                    try:
-                        resolver.resolve(domain_part, "AAAA")
-                    except (dns.resolver.NoAnswer, dns.resolver.NoNameservers):
-                        return False, f"Email domain '@{domain_part}' does not exist or has no active mail servers."
-        except dns.resolver.NXDOMAIN:
-            # Definitive failure: domain does not exist
-            return False, f"Email domain '@{domain_part}' does not exist."
-        except (dns.resolver.Timeout, dns.resolver.LifetimeTimeout, dns.exception.DNSException) as exc:
-            # Fail-open policy on timeout or resolver errors
-            logger.warning("DNS lookup timed out or encountered resolver error for '%s': %s. Failing open.", domain_part, exc)
-            return True, None
+    if not is_testing:
+        return check_domain_dns_mx(domain_part)
 
     return True, None
 
@@ -177,9 +209,14 @@ def validate_phone_kyc(phone: str) -> Tuple[bool, str | None]:
 
     # 4. Anti-dummy entropy & sequence check on subscriber digits
     if is_dummy_number(subscriber):
+        from app.core.config import settings
+        if settings.SUPPORT_CONTACT:
+            contact_info = f" If this is your genuine personal number, please contact support at {settings.SUPPORT_CONTACT}."
+        else:
+            contact_info = " If this is your genuine personal number, please contact your system administrator."
         return False, (
-            "The phone number appears to be a sequential or dummy placeholder (e.g. 111111, 12345678). "
-            "If this is your genuine personal number, please contact support at support@she.security."
+            "The phone number appears to be a sequential or dummy placeholder (e.g. 111111, 12345678)."
+            f"{contact_info}"
         )
 
     return True, None
@@ -194,7 +231,7 @@ def normalize_phone_number(phone: str) -> str:
 
 
 def validate_hardware_kyc(device_info: str) -> Tuple[bool, str | None]:
-    """Verify authentic hardware telemetry from handset, rejecting dummy strings while permitting emulators in debug builds."""
+    """Verify authentic hardware telemetry from handset, rejecting dummy strings while permitting emulators only in debug builds."""
     cleaned = (device_info or "").strip()
     if len(cleaned) < 6:
         return False, "Handset hardware telemetry is missing or incomplete."
@@ -211,7 +248,7 @@ def validate_hardware_kyc(device_info: str) -> Tuple[bool, str | None]:
 
     from app.core.config import settings
     if is_emulator:
-        if settings.DEBUG or os.getenv("PYTEST_CURRENT_TEST") is not None:
+        if settings.DEBUG:
             return True, None
         return False, "Android emulators are not permitted for production owner registration."
 

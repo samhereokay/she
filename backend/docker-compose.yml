@@ -30,6 +30,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-antitheft_user}:${POSTGRES_PASSWORD:-antitheft_secure_password_dev}@db:5432/${POSTGRES_DB:-antitheft_db}
       SECRET_KEY: ${SECRET_KEY:-temporary-phase2-dev-secret-key-replace-in-production-64char-minimum-length-hash}
+      DEBUG: ${DEBUG:-false}
       ACCESS_TOKEN_EXPIRE_MINUTES: "30"
       LOCATION_RETENTION_DAYS: "30"
     ports:

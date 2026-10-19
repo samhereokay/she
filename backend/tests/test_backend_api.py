@@ -751,16 +751,78 @@ def test_kyc_validator_direct_unit_tests():
     assert normalized == "+919845123489"
 
     # 5. Dummy number includes support contact message
+    from app.core.config import settings
+    settings.SUPPORT_CONTACT = "support@example.com"
     ok, err = validate_phone_kyc("+919999999999")
     assert not ok
-    assert "support@she.security" in err
+    assert "support@example.com" in err
 
-    # 6. Hardware verification: Android emulator allowed in test/debug
+    settings.SUPPORT_CONTACT = ""
+    ok, err = validate_phone_kyc("+919999999999")
+    assert not ok
+    assert "please contact your system administrator" in err
+
+    # 6. Hardware verification: Android emulator allowed when DEBUG is True
+    settings.DEBUG = True
     ok, err = validate_hardware_kyc("Google sdk_gphone64_x86_64 (Android 14)")
     assert ok and err is None
 
-    # 7. Hardware verification: dummy string rejected
+    # 7. Hardware verification: Android emulator rejected when DEBUG is False
+    settings.DEBUG = False
+    ok, err = validate_hardware_kyc("Google sdk_gphone64_x86_64 (Android 14)")
+    assert not ok
+    assert "Android emulators are not permitted for production" in err
+    settings.DEBUG = True
+
+    # 8. Hardware verification: dummy string rejected
     ok, err = validate_hardware_kyc("fake")
     assert not ok
     assert "missing or incomplete" in err or "authentic physical Android handset" in err
+
+
+def test_dns_mx_mocked_resolver_and_fail_open():
+    """Verify DNS resolution policy without performing any live network calls."""
+    import dns.resolver
+    import dns.exception
+    from unittest.mock import MagicMock
+    from app.core.kyc_validator import check_domain_dns_mx
+
+    # 1. Null MX (RFC 7505 - exchange ".") -> Rejected
+    mock_null_mx = MagicMock()
+    mock_record = MagicMock()
+    mock_record.exchange = "."
+    mock_null_mx.resolve.return_value = [mock_record]
+    ok, err = check_domain_dns_mx("nullmx.example", resolver=mock_null_mx)
+    assert not ok
+    assert "Null MX" in err
+
+    # 2. NXDOMAIN (Definitive failure) -> Rejected
+    mock_nx = MagicMock()
+    mock_nx.resolve.side_effect = dns.resolver.NXDOMAIN()
+    ok, err = check_domain_dns_mx("nonexistent.example", resolver=mock_nx)
+    assert not ok
+    assert "does not exist" in err
+
+    # 3. Timeout error -> Fails open (returns True, None)
+    mock_timeout = MagicMock()
+    mock_timeout.resolve.side_effect = dns.resolver.Timeout()
+    ok, err = check_domain_dns_mx("slowdns.example", resolver=mock_timeout)
+    assert ok
+    assert err is None
+
+    # 4. Generic DNSException (e.g. NoNameservers / ServerFailure) -> Fails open
+    mock_dns_err = MagicMock()
+    mock_dns_err.resolve.side_effect = dns.exception.DNSException("Server Failure")
+    ok, err = check_domain_dns_mx("failuredns.example", resolver=mock_dns_err)
+    assert ok
+    assert err is None
+
+    # 5. Valid MX record -> Accepted
+    mock_valid_mx = MagicMock()
+    valid_record = MagicMock()
+    valid_record.exchange = "mail.example.com"
+    mock_valid_mx.resolve.return_value = [valid_record]
+    ok, err = check_domain_dns_mx("legitimate.example", resolver=mock_valid_mx)
+    assert ok
+    assert err is None
 

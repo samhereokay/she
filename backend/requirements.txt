@@ -21,7 +21,6 @@ python-multipart==0.0.32  # Required for OAuth2 password form parsing (patched a
 # Verification & KYC
 dnspython==2.9.0
 phonenumbers==9.0.41
-email-validator==2.3.0
 
 # Testing & Quality
 pytest==9.1.1             # Test runner for automated unit and integration tests (patched against PYSEC-2026-1845)
