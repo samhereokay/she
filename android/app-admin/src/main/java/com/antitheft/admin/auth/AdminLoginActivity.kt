@@ -27,8 +27,9 @@ class AdminLoginActivity : AppCompatActivity() {
 
     // 2FA & Recovery State
     private var totpSetupState by mutableStateOf<TotpSetupState?>(null)
-    private var recoveryKeysState by mutableStateOf<List<String>?>(null)
+    private var recoveryKitState by mutableStateOf<AccountRecoveryKitState?>(null)
     private var show2faLoginDialog by mutableStateOf(false)
+    private var registeredUser: com.antitheft.admin.network.UserResponseDto? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,24 +52,26 @@ class AdminLoginActivity : AppCompatActivity() {
                             performLogin(u, p, url)
                         }
                     },
-                    onRegisterClick = { u, email, phone, p, regToken, url ->
+                    onRegisterClick = { u, email, phone, p, url ->
                         errorMessage = null
                         when {
                             u.isBlank() -> errorMessage = "Please enter an account username"
                             email.isBlank() -> errorMessage = "Please enter your recovery email"
                             phone.isBlank() -> errorMessage = "Please enter your owner mobile number"
                             p.isBlank() -> errorMessage = "Please enter a master password"
-                            regToken.isBlank() -> errorMessage = "Please enter the server registration verification token"
-                            else -> performRegister(u, email, phone, p, regToken, url)
+                            else -> performRegister(u, email, phone, p, url)
                         }
                     },
                     totpSetupState = totpSetupState,
                     onVerifyTotpSetup = { code ->
                         verifyTotpSetup(code)
                     },
-                    recoveryKeysState = recoveryKeysState,
-                    onDismissRecoveryKeys = {
-                        recoveryKeysState = null
+                    recoveryKitState = recoveryKitState,
+                    onDownloadRecoveryKit = { state ->
+                        downloadRecoveryKit(state)
+                    },
+                    onDismissRecoveryKit = {
+                        recoveryKitState = null
                         openDashboard()
                     },
                     show2faLoginDialog = show2faLoginDialog,
@@ -136,7 +139,6 @@ class AdminLoginActivity : AppCompatActivity() {
         email: String,
         phone: String,
         password: String,
-        registrationToken: String,
         serverUrl: String
     ) {
         sessionManager.setServerUrl(serverUrl)
@@ -144,18 +146,24 @@ class AdminLoginActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val deviceInfo = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})"
-                api.register(
+                val androidId = android.provider.Settings.Secure.getString(
+                    contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID
+                ) ?: "device"
+                val deviceInfo = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}) [ID: ${androidId.take(8)}]"
+
+                val userResp = api.register(
                     RegisterRequest(
                         username = username.trim(),
                         email = email.trim(),
                         password = password,
-                        registration_token = registrationToken.trim(),
+                        registration_token = null,
                         phone_number = phone.trim(),
                         device_info = deviceInfo
                     )
                 )
-                android.util.Log.i("AdminLogin", "REGISTER_SUCCESSFUL user:$username")
+                registeredUser = userResp
+                android.util.Log.i("AdminLogin", "REGISTER_SUCCESSFUL user:${userResp.username} id:${userResp.id}")
                 sessionManager.setAdminPhoneNumber(phone.trim())
 
                 // Obtain 1FA session to initialize TOTP
@@ -188,7 +196,22 @@ class AdminLoginActivity : AppCompatActivity() {
                 sessionManager.saveToken(tokenResp.access_token)
                 totpSetupState = null
                 isLoading = false
-                recoveryKeysState = tokenResp.recovery_codes ?: emptyList()
+
+                val user = registeredUser
+                val androidId = android.provider.Settings.Secure.getString(
+                    contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID
+                ) ?: "device"
+                val fallbackDevice = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}) [ID: ${androidId.take(8)}]"
+
+                recoveryKitState = AccountRecoveryKitState(
+                    accountId = user?.id ?: "ACCT-${System.currentTimeMillis()}",
+                    username = user?.username ?: "owner",
+                    email = user?.email ?: "owner@device",
+                    phoneNumber = user?.phone_number?.ifBlank { null } ?: sessionManager.getAdminPhoneNumber().ifBlank { "Verified" },
+                    deviceInfo = user?.device_info ?: fallbackDevice,
+                    recoveryKeys = tokenResp.recovery_codes ?: emptyList()
+                )
             } catch (e: Exception) {
                 isLoading = false
                 android.util.Log.e("AdminLogin", "TOTP_VERIFY_FAILED", e)
@@ -196,6 +219,78 @@ class AdminLoginActivity : AppCompatActivity() {
                 errorMessage = formatted
                 Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    private fun downloadRecoveryKit(state: AccountRecoveryKitState) {
+        try {
+            val recoveryDir = java.io.File(cacheDir, "recovery_kits")
+            if (!recoveryDir.exists()) recoveryDir.mkdirs()
+
+            val fileName = "she-recovery-kit-${state.username}.txt"
+            val kitFile = java.io.File(recoveryDir, fileName)
+
+            val keysBlock = if (state.recoveryKeys.isNotEmpty()) {
+                state.recoveryKeys.chunked(2).mapIndexed { idx, pair ->
+                    val left = "[${idx * 2 + 1}]  ${pair[0]}"
+                    val right = if (pair.size > 1) "[${idx * 2 + 2}]  ${pair[1]}" else ""
+                    String.format("%-25s %-25s", left, right)
+                }.joinToString("\n")
+            } else {
+                "No recovery keys generated."
+            }
+
+            val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", java.util.Locale.US).format(java.util.Date())
+            val content = """
+                ============================================================
+                      SHE ANTI-THEFT SENTINEL • ACCOUNT RECOVERY KIT
+                ============================================================
+                Account ID:     ${state.accountId}
+                Owner Username: ${state.username}
+                Owner Email:    ${state.email}
+                Owner Mobile:   ${state.phoneNumber}
+                Registered HW:  ${state.deviceInfo}
+                Date Created:   $timestamp
+                ============================================================
+                CRITICAL INSTRUCTIONS:
+                If your phone is lost, stolen, or destroyed, your Google Authenticator
+                is also on that phone. Use ANY of the 8 single-use emergency recovery
+                keys below along with your Master Password to sign in to the
+                Emergency Web Console from any browser or borrowed device:
+
+                Emergency Web Console: https://she.up.railway.app/emergency
+                ============================================================
+                SINGLE-USE EMERGENCY RECOVERY KEYS:
+                $keysBlock
+                ============================================================
+                Store this document securely in a password manager, encrypted USB,
+                or printed paper copy. Each recovery key can only be used once.
+                ============================================================
+            """.trimIndent()
+
+            kitFile.writeText(content)
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                kitFile
+            )
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "SHE Anti-Theft Account Recovery Kit - ${state.username}")
+                putExtra(Intent.EXTRA_TEXT, "Account Recovery Kit for SHE Anti-Theft ($fileName)")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            val chooser = Intent.createChooser(shareIntent, "Save or Share Recovery Kit (.txt)").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(chooser)
+        } catch (e: Exception) {
+            android.util.Log.e("AdminLogin", "Failed to export recovery kit", e)
+            Toast.makeText(this, "Failed to export recovery kit: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 

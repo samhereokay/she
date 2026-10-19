@@ -225,6 +225,8 @@ object ApiClient {
             val original = chain.request()
             val token = sessionManager.getToken()
             val requestBuilder = original.newBuilder()
+                .header("X-App-Client", "SHE-Admin-Android")
+                .header("User-Agent", "SHE-Admin-Android/1.0")
             if (!token.isNullOrBlank()) {
                 requestBuilder.header("Authorization", "Bearer $token")
             }

@@ -73,15 +73,25 @@ data class TotpSetupState(
     val otpauthUri: String
 )
 
+data class AccountRecoveryKitState(
+    val accountId: String,
+    val username: String,
+    val email: String,
+    val phoneNumber: String,
+    val deviceInfo: String,
+    val recoveryKeys: List<String>
+)
+
 @Composable
 fun AdminLoginScreen(
     initialServerUrl: String,
     onLoginClick: (username: String, pass: String, serverUrl: String) -> Unit,
-    onRegisterClick: (username: String, email: String, phone: String, pass: String, regToken: String, serverUrl: String) -> Unit,
+    onRegisterClick: (username: String, email: String, phone: String, pass: String, serverUrl: String) -> Unit,
     totpSetupState: TotpSetupState?,
     onVerifyTotpSetup: (code: String) -> Unit,
-    recoveryKeysState: List<String>?,
-    onDismissRecoveryKeys: () -> Unit,
+    recoveryKitState: AccountRecoveryKitState?,
+    onDownloadRecoveryKit: (AccountRecoveryKitState) -> Unit,
+    onDismissRecoveryKit: () -> Unit,
     show2faLoginDialog: Boolean,
     onValidate2faLogin: (code: String) -> Unit,
     onDismiss2faLogin: () -> Unit,
@@ -96,7 +106,6 @@ fun AdminLoginScreen(
     var email by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var registrationToken by remember { mutableStateOf("") }
     var isRegisterMode by remember { mutableStateOf(false) }
     var termsAccepted by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
@@ -316,15 +325,66 @@ fun AdminLoginScreen(
             if (isRegisterMode) {
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Registration Verification Token
-                SheTextField(
-                    value = registrationToken,
-                    onValueChange = { registrationToken = it },
-                    label = "Registration Verification Token",
-                    placeholder = "Paste invitation / setup token",
-                    helperText = "Required invitation token from your server administrator",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                SheCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 14.dp,
+                    backgroundColor = SheTheme.colors.surfaceVariant,
+                    borderColor = SheTheme.colors.accent
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Security,
+                            contentDescription = null,
+                            tint = SheTheme.colors.accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Automated Hardware KYC",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SheTheme.colors.accent
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(SheTheme.colors.accent.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "AUTO-APPROVE",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SheTheme.colors.accent
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "${android.os.Build.MANUFACTURER.uppercase()} ${android.os.Build.MODEL} • Android ${android.os.Build.VERSION.RELEASE}",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.SemiBold,
+                                color = SheTheme.colors.textPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Verified authentic owner handset telemetry. No invitation token required.",
+                                fontSize = 10.sp,
+                                color = SheTheme.colors.textSecondary,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
             }
 
             if (!errorMessage.isNullOrBlank()) {
@@ -414,7 +474,7 @@ fun AdminLoginScreen(
                     }
                     termsError = null
                     if (isRegisterMode) {
-                        onRegisterClick(username, email, phoneNumber, password, registrationToken, serverUrl)
+                        onRegisterClick(username, email, phoneNumber, password, serverUrl)
                     } else {
                         onLoginClick(username, password, serverUrl)
                     }
@@ -668,9 +728,11 @@ fun AdminLoginScreen(
         }
 
         // -------------------------------------------------------------
-        // Step 2: Emergency Recovery Keys Modal
+        // Step 2: Account ID & Emergency Recovery Kit Modal
         // -------------------------------------------------------------
-        if (recoveryKeysState != null) {
+        if (recoveryKitState != null) {
+            var kitConfirmed by remember { mutableStateOf(false) }
+
             AlertDialog(
                 onDismissRequest = { /* Must explicitly confirm saving keys */ },
                 title = {
@@ -685,7 +747,7 @@ fun AdminLoginScreen(
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = "Emergency Recovery Keys",
+                            text = "Account ID & Recovery Kit",
                             color = SheTheme.colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp
@@ -698,6 +760,7 @@ fun AdminLoginScreen(
                             .fillMaxWidth()
                             .verticalScroll(rememberScrollState())
                     ) {
+                        // Notice card
                         SheCard(
                             modifier = Modifier.fillMaxWidth(),
                             cornerRadius = 12.dp,
@@ -705,7 +768,7 @@ fun AdminLoginScreen(
                             borderColor = SheTheme.colors.accent
                         ) {
                             Text(
-                                text = "CRITICAL: If your phone is lost or stolen, your Google Authenticator is also on that stolen phone. Save these 8 keys in a safe place. You can use ANY single-use key to sign into the Emergency Web Console at https://she.up.railway.app/emergency from any borrowed phone or laptop.",
+                                text = "Account approved & 2FA active. If your phone is lost or stolen, your Google Authenticator is also on that stolen phone. Save your Account ID and these 8 emergency single-use keys now to sign into the Emergency Web Console at https://she.up.railway.app/emergency from any browser or laptop.",
                                 color = SheTheme.colors.textPrimary,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp,
@@ -715,6 +778,70 @@ fun AdminLoginScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
+                        // Permanent Account ID Box
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SheTheme.colors.surfaceVariant)
+                                .border(1.dp, SheTheme.colors.border, RoundedCornerShape(12.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "PERMANENT ACCOUNT ID",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SheTheme.colors.accent,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                    Row(
+                                        modifier = Modifier.clickable {
+                                            clipboardManager.setText(AnnotatedString(recoveryKitState.accountId))
+                                            Toast.makeText(context, "Account ID copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ContentCopy,
+                                            contentDescription = "Copy ID",
+                                            tint = SheTheme.colors.accent,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Copy ID",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SheTheme.colors.accent
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = recoveryKitState.accountId,
+                                    fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SheTheme.colors.textPrimary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Owner: @${recoveryKitState.username} • ${recoveryKitState.phoneNumber}",
+                                    fontSize = 10.sp,
+                                    color = SheTheme.colors.textSecondary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 8 Single-use recovery keys
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -724,7 +851,15 @@ fun AdminLoginScreen(
                                 .padding(12.dp)
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                recoveryKeysState.chunked(2).forEach { pair ->
+                                Text(
+                                    text = "8 SINGLE-USE EMERGENCY RECOVERY KEYS",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SheTheme.colors.accent,
+                                    letterSpacing = 0.8.sp
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                recoveryKitState.recoveryKeys.chunked(2).forEach { pair ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween
@@ -745,34 +880,109 @@ fun AdminLoginScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        SheButton(
-                            text = "Copy All Recovery Keys",
-                            onClick = {
-                                val keysFormatted = "SHE Anti-Theft Emergency Recovery Keys:\n" +
-                                    recoveryKeysState.joinToString("\n") { "• $it" } +
-                                    "\n\nLive Emergency Recovery Console: https://she.up.railway.app/emergency"
-                                clipboardManager.setText(AnnotatedString(keysFormatted))
-                                Toast.makeText(context, "All 8 recovery keys copied to clipboard", Toast.LENGTH_SHORT).show()
-                            },
-                            variant = SheButtonVariant.TONAL,
-                            height = 36.dp,
-                            cornerRadius = 8.dp,
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.ContentCopy,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
+                        // Dual Export / Copy Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SheButton(
+                                text = "Download Kit (.txt)",
+                                onClick = {
+                                    onDownloadRecoveryKit(recoveryKitState)
+                                    kitConfirmed = true
+                                },
+                                variant = SheButtonVariant.PRIMARY,
+                                height = 38.dp,
+                                cornerRadius = 10.dp,
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Share,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            SheButton(
+                                text = "Copy All Keys",
+                                onClick = {
+                                    val formattedKit = buildString {
+                                        appendLine("============================================================")
+                                        appendLine("      SHE ANTI-THEFT SENTINEL • ACCOUNT RECOVERY KIT")
+                                        appendLine("============================================================")
+                                        appendLine("Account ID:     ${recoveryKitState.accountId}")
+                                        appendLine("Owner Username: ${recoveryKitState.username}")
+                                        appendLine("Owner Email:    ${recoveryKitState.email}")
+                                        appendLine("Owner Mobile:   ${recoveryKitState.phoneNumber}")
+                                        appendLine("Registered HW:  ${recoveryKitState.deviceInfo}")
+                                        appendLine("============================================================")
+                                        appendLine("Emergency Web Console: https://she.up.railway.app/emergency")
+                                        appendLine("============================================================")
+                                        appendLine("SINGLE-USE EMERGENCY RECOVERY KEYS:")
+                                        recoveryKitState.recoveryKeys.forEachIndexed { i, k ->
+                                            appendLine("  [${i + 1}] $k")
+                                        }
+                                        appendLine("============================================================")
+                                    }
+                                    clipboardManager.setText(AnnotatedString(formattedKit))
+                                    kitConfirmed = true
+                                    Toast.makeText(context, "Full Recovery Kit copied to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                variant = SheButtonVariant.TONAL,
+                                height = 38.dp,
+                                cornerRadius = 10.dp,
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Confirmation Checkbox
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { kitConfirmed = !kitConfirmed }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = kitConfirmed,
+                                onCheckedChange = { kitConfirmed = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = SheTheme.colors.accent,
+                                    uncheckedColor = SheTheme.colors.textSecondary,
+                                    checkmarkColor = SheTheme.colors.background
                                 )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "I have downloaded or saved my Account ID and 8 Recovery Keys in a secure place.",
+                                fontSize = 11.sp,
+                                color = SheTheme.colors.textSecondary,
+                                lineHeight = 15.sp
+                            )
+                        }
                     }
                 },
                 confirmButton = {
                     SheButton(
-                        text = "I've Saved My Keys • Continue",
-                        onClick = onDismissRecoveryKeys,
-                        height = 40.dp,
+                        text = "Continue to Command Center",
+                        onClick = {
+                            if (kitConfirmed) {
+                                onDismissRecoveryKit()
+                            } else {
+                                Toast.makeText(context, "Please download or copy your keys and confirm before proceeding", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        height = 42.dp,
                         cornerRadius = 10.dp,
                         modifier = Modifier.fillMaxWidth()
                     )

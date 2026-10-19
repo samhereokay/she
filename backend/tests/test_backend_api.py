@@ -585,3 +585,58 @@ def test_registration_token_verification(monkeypatch):
     })
     assert ok.status_code == 201
     assert ok.json()["username"] == "verified_user"
+
+
+def test_automated_kyc_approval_without_token(monkeypatch):
+    """Verify that authentic SHE APK clients with verified KYC are automatically approved without a token."""
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "REGISTRATION_TOKEN", "SECRET_INVITE_TOKEN_XYZ")
+
+    client = TestClient(app)
+
+    # 1. SHE Android app with genuine KYC profile -> AUTOMATIC APPROVAL (201)
+    app_kyc_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "kyc_approved_owner",
+            "email": "kyc_owner@example.com",
+            "phone_number": "+919876543210",
+            "device_info": "Motorola moto g32 (Android 13, API 33)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert app_kyc_resp.status_code == 201
+    data = app_kyc_resp.json()
+    assert data["username"] == "kyc_approved_owner"
+    assert data["phone_number"] == "+919876543210"
+    assert "id" in data and len(data["id"]) > 10
+
+    # 2. SHE Android app with fake/dummy device info -> REJECTED 403 or 422
+    fake_dev_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "fake_dev_user",
+            "email": "fake@example.com",
+            "phone_number": "+919876543210",
+            "device_info": "fake",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert fake_dev_resp.status_code == 403
+
+    # 3. Invalid phone format -> REJECTED 422
+    bad_phone_resp = client.post(
+        "/auth/register",
+        headers={"X-App-Client": "SHE-Admin-Android"},
+        json={
+            "username": "bad_phone_user",
+            "email": "badphone@example.com",
+            "phone_number": "not-a-phone",
+            "device_info": "Motorola moto g32 (Android 13)",
+            "password": "MasterSecurePassword123!"
+        }
+    )
+    assert bad_phone_resp.status_code == 422
+

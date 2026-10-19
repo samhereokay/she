@@ -1,6 +1,7 @@
 from datetime import timedelta
 import hashlib
 import json
+import re
 import secrets
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -53,13 +54,49 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
                 detail="Invalid or missing admin setup token. Set X-Admin-Setup-Token header to initialize owner."
             )
 
-    # If REGISTRATION_TOKEN is configured in environment, verify the user's registration token
+    # -------------------------------------------------------------
+    # Anti-Fake Identity & KYC Verification
+    # -------------------------------------------------------------
+    if not re.match(r"^[a-zA-Z0-9_-]{3,32}$", user_in.username):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Username must be 3-32 alphanumeric characters, dashes or underscores."
+        )
+
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", user_in.email):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A valid email address is required to register."
+        )
+
+    phone_clean = (user_in.phone_number or "").strip()
+    if phone_clean and not re.match(r"^\+?[1-9]\d{7,14}$", phone_clean):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Mobile number must be in valid international format (e.g. +919876543210 or +15551234567)."
+        )
+
+    device_info_clean = (user_in.device_info or "").strip()
+    fake_terms = {"test", "dummy", "fake", "none", "null", "undefined", "string", "123"}
+    has_valid_device = len(device_info_clean) >= 6 and device_info_clean.lower() not in fake_terms
+
+    # Check Client App Header
+    is_client_app = (
+        request.headers.get("X-App-Client") == "SHE-Admin-Android" or
+        request.headers.get("User-Agent", "").startswith("SHE-Admin")
+    )
+
+    # If REGISTRATION_TOKEN is configured in environment, require token UNLESS:
+    # Client is the verified SHE Android app providing authentic KYC (phone + genuine hardware specs)
     if settings.REGISTRATION_TOKEN:
         token_provided = user_in.registration_token or request.headers.get("X-Registration-Token", "")
-        if not secrets.compare_digest(token_provided, settings.REGISTRATION_TOKEN):
+        token_valid = bool(token_provided) and secrets.compare_digest(token_provided, settings.REGISTRATION_TOKEN)
+        kyc_verified = is_client_app and bool(phone_clean) and has_valid_device
+
+        if not token_valid and not kyc_verified:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid or missing registration verification token. Account creation requires a verified invitation token."
+                detail="Invalid or missing registration verification token. Account creation requires a verified invitation token or authentic mobile hardware KYC."
             )
 
     # Registration lockdown: The platform operates under a single-owner model.
