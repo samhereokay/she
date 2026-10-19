@@ -378,3 +378,135 @@ def test_verify_email_update_with_kyc_checks(client):
     me_resp = client.get("/auth/me", headers=headers)
     assert me_resp.json()["email"] == "new_address@example.com"
     assert me_resp.json()["email_verified_at"] is None
+
+
+def test_email_change_clears_verification_and_requires_new_otp(client):
+    """
+    CRITICAL SECURITY INVARIANT:
+    Changing an account's email address immediately clears email_verified_at.
+    Protected routes become locked (HTTP 403) until the new address is verified with a fresh OTP.
+    """
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+
+    # 1. Register and verify address A
+    client.post("/auth/register", json={
+        "username": "switch_user",
+        "email": "addr_a@example.com",
+        "password": "PasswordSwitch123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "switch_user",
+        "password": "PasswordSwitch123!"
+    }).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch("app.api.verify.send_verification_email") as mock_mail_a:
+        client.post("/verify/email/send", json={}, headers=headers)
+        code_a = mock_mail_a.call_args[0][1]
+        client.post("/verify/email/confirm", json={"code": code_a}, headers=headers)
+
+    # User is fully verified: device listing succeeds
+    assert client.get("/api/v1/devices", headers=headers).status_code == 200
+
+    # 2. Switch to address B via /verify/email/send
+    with patch("app.api.verify.send_verification_email") as mock_mail_b:
+        change_resp = client.post("/verify/email/send", json={"email": "addr_b@example.com"}, headers=headers)
+        assert change_resp.status_code == 202
+        code_b = mock_mail_b.call_args[0][1]
+
+    # Verification must be IMMEDIATELY REVOKED
+    me_resp = client.get("/auth/me", headers=headers)
+    assert me_resp.json()["email"] == "addr_b@example.com"
+    assert me_resp.json()["email_verified_at"] is None
+
+    # Protected routes are now blocked!
+    blocked_dev = client.get("/api/v1/devices", headers=headers)
+    assert blocked_dev.status_code == 403
+    assert blocked_dev.json()["detail"] == "email_not_verified"
+
+    # Attempting to use old code A fails
+    bad_old_code = client.post("/verify/email/confirm", json={"code": code_a}, headers=headers)
+    assert bad_old_code.status_code == 400
+
+    # 3. Confirm with new code B restores access
+    confirm_b = client.post("/verify/email/confirm", json={"code": code_b}, headers=headers)
+    assert confirm_b.status_code == 200
+    assert confirm_b.json()["status"] == "email_verified"
+
+    # Protected routes unblocked again
+    assert client.get("/api/v1/devices", headers=headers).status_code == 200
+
+
+def test_unverified_email_squatting_resolution(client):
+    """
+    Enforces that unverified placeholder accounts cannot squat on an email and block the legitimate owner.
+    Once an email is verified, it is permanently protected against duplicate registration.
+    """
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+
+    # 1. Attacker registers victim@example.com but never verifies it
+    att_resp = client.post("/auth/register", json={
+        "username": "attacker_squatter",
+        "email": "victim@example.com",
+        "password": "PasswordAttacker123!"
+    })
+    assert att_resp.status_code == 201
+
+    # 2. Legitimate owner registers with the same email
+    # Unverified squatter account is automatically purged
+    real_resp = client.post("/auth/register", json={
+        "username": "real_owner",
+        "email": "victim@example.com",
+        "password": "PasswordReal123!"
+    })
+    assert real_resp.status_code == 201
+
+    # 3. Legitimate owner logs in and verifies the email
+    token = client.post("/auth/login/json", json={
+        "username": "real_owner",
+        "password": "PasswordReal123!"
+    }).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with patch("app.api.verify.send_verification_email") as mock_mail:
+        client.post("/verify/email/send", json={}, headers=headers)
+        code = mock_mail.call_args[0][1]
+        conf_resp = client.post("/verify/email/confirm", json={"code": code}, headers=headers)
+        assert conf_resp.status_code == 200
+
+    # 4. Now that victim@example.com is VERIFIED, duplicate registration is strictly rejected (400)
+    blocked_resp = client.post("/auth/register", json={
+        "username": "another_user",
+        "email": "victim@example.com",
+        "password": "PasswordReal123!"
+    })
+    assert blocked_resp.status_code == 400
+    assert "Email already registered" in blocked_resp.json()["detail"]
+
+
+def test_startup_fails_when_debug_false_and_verify_secret_disallowed():
+    """Enforces production failure when DEBUG=False and VERIFY_SECRET is empty or example default."""
+    from app.main import validate_production_security_config
+
+    class MockConfig:
+        def __init__(self, debug: bool, verify_secret: str):
+            self.DEBUG = debug
+            self.VERIFY_SECRET = verify_secret
+
+    # DEBUG=True permits development default
+    validate_production_security_config(MockConfig(debug=True, verify_secret="default-verification-hmac-secret-32b"))
+    validate_production_security_config(MockConfig(debug=True, verify_secret=""))
+
+    # DEBUG=False rejects empty or example secrets
+    with pytest.raises(RuntimeError) as exc_empty:
+        validate_production_security_config(MockConfig(debug=False, verify_secret=""))
+    assert "VERIFY_SECRET must be set" in str(exc_empty.value)
+
+    with pytest.raises(RuntimeError) as exc_example:
+        validate_production_security_config(MockConfig(debug=False, verify_secret="default-verification-hmac-secret-32b"))
+    assert "VERIFY_SECRET must be set" in str(exc_example.value)
+
+    # DEBUG=False succeeds with genuine production secret
+    validate_production_security_config(
+        MockConfig(debug=False, verify_secret="prod-entropy-strong-unique-secret-32b-length")
+    )

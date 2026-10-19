@@ -38,17 +38,22 @@ def send_email_verification(
     is_valid, err_msg = validate_email_kyc(target_email)
     if not is_valid:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=err_msg
         )
 
     # Check if target email belongs to another registered account
     existing = db.query(User).filter(User.email == target_email, User.id != current_user.id).first()
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered by another account."
-        )
+        if existing.email_verified_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered by another account."
+            )
+        else:
+            # Reclaim unverified squatted email
+            db.delete(existing)
+            db.commit()
 
     # If updating to a new email address, update user record and reset verified timestamp
     if target_email != current_user.email.lower():

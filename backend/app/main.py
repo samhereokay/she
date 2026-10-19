@@ -12,6 +12,25 @@ from app.api.verify import router as verify_router
 # Auto-create tables for development / SQLite testing
 Base.metadata.create_all(bind=engine)
 
+DISALLOWED_VERIFY_SECRETS = {
+    "",
+    "default-verification-hmac-secret-32b",
+    "development-challenge-hmac-sha256-secret-minimum-32bytes",
+    "change-me",
+}
+
+def validate_production_security_config(cfg=None):
+    """Enforces non-empty, non-example VERIFY_SECRET when DEBUG is False."""
+    conf = cfg or settings
+    if not conf.DEBUG:
+        sec = (conf.VERIFY_SECRET or "").strip()
+        if not sec or sec in DISALLOWED_VERIFY_SECRETS:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR: VERIFY_SECRET must be set to a secure, unique, non-default value when DEBUG=false."
+            )
+
+validate_production_security_config()
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
