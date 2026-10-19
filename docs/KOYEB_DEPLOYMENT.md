@@ -43,16 +43,16 @@ In the **Environment Variables** section, add the following key-value pairs:
 
 | Key | Example Value | Description |
 | :--- | :--- | :--- |
-| `SECRET_KEY` | *(64-character hex string)* | Signs JWT session tokens |
-| `TOTP_ENCRYPTION_KEY` | *(64-character hex string)* | Encrypts 2FA secrets at rest |
+| `SECRET_KEY` | *(64-character hex string)* | Signs JWT session tokens (and auto-derives 2FA encryption key) |
 | `DATABASE_URL` | `postgresql://...` | Connection URI from Step 1 |
 | `ALLOW_PUBLIC_REGISTRATION` | `true` | Allows new owner accounts to register |
 | `ENFORCE_HTTPS` | `true` | Injects HSTS and enforces secure TLS |
+| `TOTP_ENCRYPTION_KEY` | *(Optional)* | Dedicated key for encrypting 2FA seeds (auto-derived from `SECRET_KEY` if omitted) |
 | `PROJECT_NAME` | `SHE Anti-Theft` | API title in docs and headers |
 
-> **To generate new random 64-char keys**, run in terminal:
+> **To generate a new random 64-char key**, run in terminal:
 > ```bash
-> python3 -c 'import secrets; print("SECRET_KEY=" + secrets.token_hex(32)); print("TOTP_ENCRYPTION_KEY=" + secrets.token_hex(32))'
+> python3 -c 'import secrets; print("SECRET_KEY=" + secrets.token_hex(32))'
 > ```
 
 ### Step 4: Configure Health Check
