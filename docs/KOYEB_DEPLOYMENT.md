@@ -28,11 +28,18 @@ This guide provides step-by-step instructions for deploying the **SHE Anti-Theft
 #### Option A: Using Supabase (Recommended)
 1. Go to your [Supabase Dashboard](https://supabase.com/dashboard) and select your project.
 2. Go to **Project Settings** $\rightarrow$ **Database**.
-3. Under **Connection string**, select **URI**:
-   - **Connection Pooling (Session Mode)**: `postgresql://postgres.[PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres`
-   - *Or* **Direct connection**: `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
-4. Replace `[YOUR-PASSWORD]` with your actual database password.
-5. *Note*: The backend automatically handles both `postgres://` and `postgresql://` URI prefixes without requiring manual string edits.
+3. Under **Connection string**, select **URI** and pick the right mode for your network:
+
+   | Hosting Network | Connection Mode | URI (port) |
+   | :--- | :--- | :--- |
+   | **IPv4** (Koyeb, AWS, most VPS) | **Session Pooler** — free IPv4 proxy | `postgresql://postgres.[REF]:[PWD]@aws-0-[REGION].pooler.supabase.com:5432/postgres` |
+   | **IPv6** only | **Direct Connection** | `postgresql://postgres:[PWD]@db.[REF].supabase.co:5432/postgres` |
+
+   > **Koyeb runs on IPv4** — always use the **Session Pooler** URL (`*.pooler.supabase.com:5432`).
+   > Session Pooler connections are proxied over IPv4 for free; Direct Connection is only needed on pure IPv6 networks.
+
+4. Replace `[REF]` with your Supabase project reference, `[PWD]` with your database password, and `[REGION]` with your project region (e.g. `ap-south-1`).
+5. The backend automatically normalizes both `postgres://` and `postgresql://` URI prefixes — no manual string edits required.
 
 #### Option B: Using Koyeb Managed PostgreSQL
 1. In the Koyeb Console, click **"Create"** $\rightarrow$ select **"Database"**.
