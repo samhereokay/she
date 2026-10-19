@@ -262,6 +262,47 @@ nav {
     margin-bottom: 0.25rem;
 }
 
+.release-banner {
+    background: rgba(56, 189, 248, 0.08);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 16px;
+    padding: 1.25rem 1.6rem;
+    margin: 1.5rem auto 0 auto;
+    max-width: 1140px;
+    display: flex;
+    align-items: center;
+    gap: 1.15rem;
+    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.08);
+}
+.release-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--primary);
+    flex-shrink: 0;
+}
+.release-body {
+    flex: 1;
+    font-size: 0.92rem;
+    color: var(--text-main);
+    line-height: 1.55;
+}
+.release-title {
+    font-weight: 800;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.8rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 /* Hero Section */
 .hero {
     text-align: center;
@@ -1009,12 +1050,13 @@ def render_landing_page():
 
     body = f"""
     <div style="padding: 0 1.5rem;">
-        <div class="warning-banner">
-            <div class="warning-icon">{SVG_ALERT}</div>
-            <div class="warning-body">
-                <div class="warning-title">Pre-Release / Hardware Verification in Progress</div>
-                SHE is currently undergoing active hardware testing on physical test devices. Official signed release builds have not yet been published. Direct APK downloads are paused to prevent distribution of unauthenticated debug binaries. Please build directly from the verified open-source repository via Gradle.
+        <div class="release-banner">
+            <div class="release-icon">{SVG_DOWNLOAD}</div>
+            <div class="release-body">
+                <div class="release-title">v0.3.0 Community Release Active &bull; Verified Binaries Live</div>
+                Official APK builds for <strong>SHE Guardian</strong> and <strong>SHE Admin Companion</strong> are now live for hardware testing and sideloading with full SHA-256 cryptographic verification.
             </div>
+            <a href="/releases" class="btn btn-primary" style="white-space: nowrap; padding: 0.55rem 1.15rem; font-size: 0.85rem; text-decoration: none;">Download APKs &rarr;</a>
         </div>
     </div>
 

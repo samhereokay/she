@@ -10,9 +10,9 @@ def test_landing_page_renders_with_pre_release_and_features():
     assert "text/html" in response.headers["content-type"]
     html = response.text
 
-    # Pre-release banner verification
-    assert "Pre-Release / Hardware Verification in Progress" in html
-    assert "Direct APK downloads are paused" in html
+    # Community release banner verification
+    assert "v0.3.0 Community Release Active" in html
+    assert "Verified Binaries Live" in html
 
     # 9 architectural capabilities verification
     assert "1. Direct Boot Resumption" in html
