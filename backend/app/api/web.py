@@ -785,11 +785,11 @@ def render_html_shell(
     {bing_verify_meta}
 
     <!-- Favicon & Touch Icons -->
-    <link rel="shortcut icon" href="/favicon.ico">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="/logo.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="/logo.png">
-    <link rel="apple-touch-icon" href="/logo.png">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=3">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3">
+    <link rel="icon" type="image/png" sizes="32x32" href="/logo.png?v=3">
+    <link rel="icon" type="image/png" sizes="192x192" href="/logo.png?v=3">
+    <link rel="apple-touch-icon" sizes="180x180" href="/logo.png?v=3">
 
     <!-- Schema.org JSON-LD Structured Data -->
     <script type="application/ld+json">
@@ -896,7 +896,7 @@ def render_html_shell(
 # -----------------------------------------------------------------------------
 # Asset & Binary Download Routes (503 Gated)
 # -----------------------------------------------------------------------------
-@router.get("/logo.png")
+@router.api_route("/logo.png", methods=["GET", "HEAD"])
 def get_logo():
     """Serve official SHE logo asset."""
     if not os.path.exists(LOGO_PATH):
@@ -904,7 +904,7 @@ def get_logo():
     return FileResponse(LOGO_PATH, media_type="image/png")
 
 
-@router.get("/favicon.ico")
+@router.api_route("/favicon.ico", methods=["GET", "HEAD"])
 def get_favicon():
     """Serve official multi-resolution favicon.ico."""
     if os.path.exists(FAVICON_PATH):
