@@ -30,7 +30,7 @@ class User(Base):
     username = Column(String(64), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    totp_secret = Column(String(64), nullable=True)
+    totp_secret = Column(Text, nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)
     totp_recovery_hashes = Column(Text, nullable=True, default="[]")
     phone_number = Column(String(32), nullable=True)
