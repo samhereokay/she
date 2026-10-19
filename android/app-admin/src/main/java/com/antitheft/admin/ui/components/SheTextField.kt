@@ -2,6 +2,7 @@ package com.antitheft.admin.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -115,17 +116,21 @@ fun SheTextField(
 
                 if (isPassword) {
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (passwordVisible) "HIDE" else "SHOW",
-                        color = SheTheme.colors.accent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                    Box(
                         modifier = Modifier
-                            .padding(4.dp)
-                            .then(
-                                Modifier.padding(horizontal = 4.dp)
-                            )
-                    )
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { passwordVisible = !passwordVisible }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (passwordVisible) "HIDE" else "SHOW",
+                            color = SheTheme.colors.accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 }
             }
         }
