@@ -18,6 +18,7 @@ SHE app icon variants/
 build/
 */build/
 *.apk
+!backend/static/*.apk
 *.aab
 local.properties
 .idea/
