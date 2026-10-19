@@ -1,0 +1,6 @@
+.tools/
+.venv/
+.pytest_cache/
+__pycache__/
+android/**/build/
+*.keystore
