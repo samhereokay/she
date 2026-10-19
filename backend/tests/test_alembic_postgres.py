@@ -3,7 +3,8 @@ import pytest
 from alembic.config import Config
 from alembic import command
 from sqlalchemy import create_engine, inspect
-import pgserver
+pgserver = pytest.importorskip("pgserver", reason="pgserver required for isolated PostgreSQL migration test")
+
 
 
 def test_alembic_migrations_on_real_postgresql():
