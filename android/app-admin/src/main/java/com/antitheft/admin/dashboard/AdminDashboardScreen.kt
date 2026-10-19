@@ -3,12 +3,14 @@ package com.antitheft.admin.dashboard
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +20,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.DeleteForever
@@ -41,7 +47,6 @@ import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
 import com.antitheft.common.util.ApkShareHelper
-import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +54,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -77,11 +83,22 @@ import com.antitheft.admin.ui.components.SheStatusChip
 import com.antitheft.admin.ui.components.SheThemeSelector
 import com.antitheft.admin.ui.components.StatusLevel
 import com.antitheft.admin.ui.theme.SheTheme
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.SimCard
+import androidx.compose.material3.AlertDialog
+import com.antitheft.admin.network.UserProfileDto
+import com.antitheft.admin.ui.components.SheTextField
 import java.util.Locale
+
+data class CommandDispatchDialogState(
+    val device: DeviceDto,
+    val commandType: String
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardScreen(
+    userProfile: UserProfileDto?,
     devices: List<DeviceDto>,
     isLoading: Boolean,
     onRefresh: () -> Unit,
@@ -89,7 +106,26 @@ fun AdminDashboardScreen(
     onLogout: () -> Unit,
     onPairDevice: () -> Unit,
     onSendCommand: (DeviceDto, String) -> Unit,
-    onShowGuide: () -> Unit
+    onShowGuide: () -> Unit,
+    onStartEmailVerification: () -> Unit,
+    onStartPhoneVerification: () -> Unit,
+    showEmailVerifyDialog: Boolean,
+    onDismissEmailVerifyDialog: () -> Unit,
+    onSendEmailCode: () -> Unit,
+    onConfirmEmailCode: (String) -> Unit,
+    isEmailVerifying: Boolean,
+    emailVerifyMessage: String?,
+    showPhoneVerifyDialog: Boolean,
+    onDismissPhoneVerifyDialog: () -> Unit,
+    onSendPhoneCode: (String) -> Unit,
+    onConfirmPhoneCode: (String) -> Unit,
+    isPhoneVerifying: Boolean,
+    phoneVerifyMessage: String?,
+    commandDispatchState: CommandDispatchDialogState? = null,
+    onDismissCommandDispatch: () -> Unit = {},
+    onConfirmCommandDispatch: (totpCode: String, friendPhone: String) -> Unit = { _, _ -> },
+    showGuideDialog: Boolean = false,
+    onDismissGuideDialog: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showThemeSheet by remember { mutableStateOf(false) }
@@ -173,6 +209,15 @@ fun AdminDashboardScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+
+            // Ownership Verification Status Banner
+            item {
+                VerificationStatusSection(
+                    userProfile = userProfile,
+                    onVerifyEmailClick = onStartEmailVerification,
+                    onVerifyPhoneClick = onStartPhoneVerification
+                )
             }
 
             // Devices Section Header
@@ -268,123 +313,239 @@ fun AdminDashboardScreen(
         }
     }
 
-    // Command Dispatch Bottom Sheet
+    // iOS-Style Command Dispatch Bottom Sheet
     if (selectedDeviceForCommand != null) {
         val dev = selectedDeviceForCommand!!
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
             onDismissRequest = { selectedDeviceForCommand = null },
             sheetState = sheetState,
-            containerColor = SheTheme.colors.surface
+            containerColor = SheTheme.colors.surface,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    text = "Remote Command: ${dev.device_alias}",
-                    color = SheTheme.colors.textPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Dispatches cryptographically signed ECDSA command to handset.",
-                    color = SheTheme.colors.textSecondary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-                )
-
-                val commands = listOf(
-                    Triple("LOCATE", "Ping real-time GPS coordinates", Icons.Outlined.MyLocation),
-                    Triple("RING", "Play maximum-volume siren alarm", Icons.Outlined.NotificationsActive),
-                    Triple("STOP_RING", "Silence siren alarm", Icons.Outlined.VolumeOff),
-                    Triple("LOCK", "Enforce instant screen lock", Icons.Outlined.Lock),
-                    Triple("TEST_MODE", "Run simulated recovery drill", Icons.Outlined.Science),
-                    Triple("STOLEN_MODE", "Engage anti-theft lockdown & kiosk", Icons.Outlined.WarningAmber),
-                    Triple("EXIT_KIOSK", "Release stolen mode kiosk lockdown", Icons.Outlined.LockOpen),
-                    Triple("UNPAIR", "Revoke pairing keys and unbind", Icons.Outlined.LinkOff),
-                    Triple("CLEAR_DEVICE_OWNER", "Revoke enterprise device owner", Icons.Outlined.DeleteForever)
-                )
-
-                commands.forEach { (cmd, desc, iconVector) ->
-                    val isDestructive = cmd.contains("STOLEN") || cmd.contains("CLEAR") || cmd.contains("UNPAIR")
-                    SheCard(
+                // iOS Handle & Header
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable {
+                            .width(36.dp)
+                            .height(5.dp)
+                            .clip(CircleShape)
+                            .background(SheTheme.colors.border)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = dev.device_alias,
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Hardware Keystore ECDSA Command Center",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+
+                // Group 1: SIMULATION & DIAGNOSTICS
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "SIMULATION & DIAGNOSTICS",
+                        color = SheTheme.colors.textTertiary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                    IosGroupedCard {
+                        IosActionSheetRow(
+                            title = "Simulated Anti-Theft Drill",
+                            subtitle = "Safe 10s alert. Configurable friend's phone for drill SMS.",
+                            icon = Icons.Outlined.Science,
+                            iconBg = Color(0xFF8B5CF6),
+                            badge = "DRILL",
+                            onClick = {
+                                val d = dev
                                 selectedDeviceForCommand = null
-                                onSendCommand(dev, cmd)
-                            },
-                        cornerRadius = 14.dp,
-                        backgroundColor = SheTheme.colors.surfaceVariant
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isDestructive) SheTheme.colors.dangerContainer else SheTheme.colors.surface),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = iconVector,
-                                        contentDescription = null,
-                                        tint = if (isDestructive) SheTheme.colors.danger else SheTheme.colors.accent,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = cmd,
-                                        color = if (isDestructive) SheTheme.colors.danger else SheTheme.colors.textPrimary,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = desc,
-                                        color = SheTheme.colors.textSecondary,
-                                        fontSize = 11.sp
-                                    )
-                                }
+                                onSendCommand(d, "TEST_MODE")
                             }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(start = 8.dp)
-                            ) {
-                                Text(
-                                    text = "SEND",
-                                    color = SheTheme.colors.accent,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
-                                    contentDescription = null,
-                                    tint = SheTheme.colors.accent,
-                                    modifier = Modifier.size(14.dp)
-                                )
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Satellite GPS Telemetry",
+                            subtitle = "Pings hardware GPS for fresh live satellite coordinates.",
+                            icon = Icons.Outlined.MyLocation,
+                            iconBg = Color(0xFF0284C7),
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "LOCATE")
                             }
-                        }
+                        )
+                    }
+                }
+
+                // Group 2: ACOUSTIC & HARDWARE CONTROLS
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "ACOUSTIC & DISPLAY LOCK",
+                        color = SheTheme.colors.textTertiary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                    IosGroupedCard {
+                        IosActionSheetRow(
+                            title = "Maximum Siren Alarm",
+                            subtitle = "Loud acoustic emergency alarm overriding silent mode.",
+                            icon = Icons.Outlined.NotificationsActive,
+                            iconBg = Color(0xFF10B981),
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "RING")
+                            }
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Silence Siren Alarm",
+                            subtitle = "Mutes active acoustic alarm on the handset.",
+                            icon = Icons.AutoMirrored.Outlined.VolumeOff,
+                            iconBg = Color(0xFF64748B),
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "STOP_RING")
+                            }
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Force Screen Lock",
+                            subtitle = "Instantly locks display and requires enterprise PIN.",
+                            icon = Icons.Outlined.Lock,
+                            iconBg = Color(0xFF6366F1),
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "LOCK")
+                            }
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Release Kiosk Launcher",
+                            subtitle = "Releases stolen kiosk lock and restores default launcher.",
+                            icon = Icons.Outlined.LockOpen,
+                            iconBg = Color(0xFF0D9488),
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "EXIT_KIOSK")
+                            }
+                        )
+                    }
+                }
+
+                // Group 3: THEFT EMERGENCY & RECOVERY
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "THEFT EMERGENCY & RECOVERY",
+                        color = SheTheme.colors.textTertiary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                    IosGroupedCard {
+                        IosActionSheetRow(
+                            title = "🚨 Real Stolen Lockdown",
+                            subtitle = "Full lockdown: continuous siren, kiosk, & SMS beacon.",
+                            icon = Icons.Outlined.WarningAmber,
+                            iconBg = Color(0xFFEF4444),
+                            isDestructive = true,
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "STOLEN_MODE")
+                            }
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Revoke Pairing Session",
+                            subtitle = "Invalidates mutual ECDSA pairing keys.",
+                            icon = Icons.Outlined.LinkOff,
+                            iconBg = Color(0xFFF43F5E),
+                            isDestructive = true,
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "UNPAIR")
+                            }
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Deprovision Device Owner",
+                            subtitle = "Permanent administrative reset (requires TOTP).",
+                            icon = Icons.Outlined.DeleteForever,
+                            iconBg = Color(0xFFDC2626),
+                            isDestructive = true,
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "CLEAR_DEVICE_OWNER")
+                            }
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+
+    if (showEmailVerifyDialog) {
+        EmailVerificationDialog(
+            email = userProfile?.email ?: "",
+            onDismiss = onDismissEmailVerifyDialog,
+            onSendCode = onSendEmailCode,
+            onConfirmCode = onConfirmEmailCode,
+            isLoading = isEmailVerifying,
+            errorMessage = emailVerifyMessage
+        )
+    }
+
+    if (showPhoneVerifyDialog) {
+        PhoneVerificationDialog(
+            initialPhone = userProfile?.fallback_phone_e164 ?: userProfile?.phone_number ?: "",
+            onDismiss = onDismissPhoneVerifyDialog,
+            onSendCode = onSendPhoneCode,
+            onConfirmCode = onConfirmPhoneCode,
+            isLoading = isPhoneVerifying,
+            errorMessage = phoneVerifyMessage
+        )
+    }
+
+    if (commandDispatchState != null) {
+        IosCommandDispatchDialog(
+            state = commandDispatchState,
+            onDismiss = onDismissCommandDispatch,
+            onConfirm = onConfirmCommandDispatch
+        )
+    }
+
+    if (showGuideDialog) {
+        IosCommandGuideDialog(
+            onDismiss = onDismissGuideDialog
+        )
     }
 }
 
@@ -738,3 +899,833 @@ private fun openMapForDevice(context: Context, device: DeviceDto) {
         context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
     }
 }
+
+@Composable
+private fun VerificationStatusSection(
+    userProfile: UserProfileDto?,
+    onVerifyEmailClick: () -> Unit,
+    onVerifyPhoneClick: () -> Unit
+) {
+    if (userProfile == null) return
+
+    val emailVerified = !userProfile.email_verified_at.isNullOrBlank()
+    val phoneVerified = !userProfile.phone_verified_at.isNullOrBlank()
+
+    if (!emailVerified) {
+        // High-priority Warning Banner for Unverified Email
+        SheCard(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = SheTheme.colors.warningContainer.copy(alpha = 0.25f),
+            borderColor = SheTheme.colors.warning
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.WarningAmber,
+                        contentDescription = null,
+                        tint = SheTheme.colors.warning,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "ACTION REQUIRED: EMAIL UNVERIFIED",
+                        color = SheTheme.colors.warning,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "Your account email (${userProfile.email}) is unverified. Zero-trust policy blocks remote commands, GPS tracking, and vault decryption until ownership is proven.",
+                    color = SheTheme.colors.textPrimary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+                SheButton(
+                    text = "Verify Email Now",
+                    onClick = onVerifyEmailClick,
+                    variant = SheButtonVariant.PRIMARY,
+                    height = 42.dp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    } else if (!phoneVerified) {
+        // Warning Banner for Unverified Emergency Phone
+        SheCard(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = SheTheme.colors.warningContainer.copy(alpha = 0.15f),
+            borderColor = SheTheme.colors.warning.copy(alpha = 0.6f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.SimCard,
+                        contentDescription = null,
+                        tint = SheTheme.colors.warning,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "EMERGENCY SMS PHONE UNVERIFIED",
+                        color = SheTheme.colors.warning,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "Offline SIM swap beacons and emergency SMS alerts will only transmit to a cryptographically verified mobile number.",
+                    color = SheTheme.colors.textPrimary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+                SheButton(
+                    text = "Verify Fallback Phone",
+                    onClick = onVerifyPhoneClick,
+                    variant = SheButtonVariant.TONAL,
+                    height = 42.dp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    } else {
+        // Both Verified Banner
+        SheCard(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = SheTheme.colors.surfaceVariant,
+            borderColor = SheTheme.colors.border
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(SheTheme.colors.success)
+                        )
+                        Text(
+                            text = "Ownership Verified",
+                            color = SheTheme.colors.success,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "Email: ${userProfile.email} • SMS: ${userProfile.fallback_phone_e164 ?: userProfile.phone_number ?: "Armed"}",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                SheButton(
+                    text = "Update",
+                    onClick = onVerifyPhoneClick,
+                    variant = SheButtonVariant.OUTLINED,
+                    height = 34.dp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmailVerificationDialog(
+    email: String,
+    onDismiss: () -> Unit,
+    onSendCode: () -> Unit,
+    onConfirmCode: (String) -> Unit,
+    isLoading: Boolean,
+    errorMessage: String?
+) {
+    var code by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SheTheme.colors.surface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Security,
+                    contentDescription = null,
+                    tint = SheTheme.colors.accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = "Verify Account Email",
+                    color = SheTheme.colors.textPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "To prevent unauthorized takeovers, remote device administration and tracking require cryptographic proof of email ownership.",
+                    color = SheTheme.colors.textSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+
+                SheCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = SheTheme.colors.surfaceVariant,
+                    borderColor = SheTheme.colors.border
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "TARGET ADDRESS",
+                            color = SheTheme.colors.textTertiary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = email.ifBlank { "Registered Account Email" },
+                            color = SheTheme.colors.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                SheButton(
+                    text = "Dispatch / Resend OTP",
+                    onClick = onSendCode,
+                    variant = SheButtonVariant.TONAL,
+                    modifier = Modifier.fillMaxWidth(),
+                    isLoading = isLoading
+                )
+
+                SheTextField(
+                    value = code,
+                    onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) code = it },
+                    label = "6-DIGIT VERIFICATION CODE",
+                    placeholder = "123456",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    )
+                )
+
+                if (!errorMessage.isNullOrBlank()) {
+                    Text(
+                        text = errorMessage,
+                        color = if (errorMessage.contains("dispatched", ignoreCase = true) || errorMessage.contains("sent", ignoreCase = true))
+                            SheTheme.colors.success else SheTheme.colors.danger,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            SheButton(
+                text = "Confirm Verification",
+                onClick = { onConfirmCode(code) },
+                enabled = code.length == 6 && !isLoading,
+                isLoading = isLoading,
+                variant = SheButtonVariant.PRIMARY
+            )
+        },
+        dismissButton = {
+            SheButton(
+                text = "Close",
+                onClick = onDismiss,
+                variant = SheButtonVariant.OUTLINED
+            )
+        }
+    )
+}
+
+@Composable
+private fun PhoneVerificationDialog(
+    initialPhone: String,
+    onDismiss: () -> Unit,
+    onSendCode: (String) -> Unit,
+    onConfirmCode: (String) -> Unit,
+    isLoading: Boolean,
+    errorMessage: String?
+) {
+    var phoneInput by remember { mutableStateOf(initialPhone) }
+    var code by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SheTheme.colors.surface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Smartphone,
+                    contentDescription = null,
+                    tint = SheTheme.colors.accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = "Verify Emergency SMS Phone",
+                    color = SheTheme.colors.textPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Offline emergency beacons and SIM swap alerts only transmit to verified phone numbers. The OTP challenge is sent directly from your paired Guardian handset.",
+                    color = SheTheme.colors.textSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+
+                SheTextField(
+                    value = phoneInput,
+                    onValueChange = { phoneInput = it },
+                    label = "EMERGENCY MOBILE NUMBER (E.164)",
+                    placeholder = "+919876543210 or +1234567890",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                    )
+                )
+
+                SheButton(
+                    text = "Dispatch SMS via Guardian",
+                    onClick = { onSendCode(phoneInput) },
+                    variant = SheButtonVariant.TONAL,
+                    modifier = Modifier.fillMaxWidth(),
+                    isLoading = isLoading
+                )
+
+                SheTextField(
+                    value = code,
+                    onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) code = it },
+                    label = "6-DIGIT SMS CODE",
+                    placeholder = "123456",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    )
+                )
+
+                if (!errorMessage.isNullOrBlank()) {
+                    Text(
+                        text = errorMessage,
+                        color = if (errorMessage.contains("dispatched", ignoreCase = true) || errorMessage.contains("sent", ignoreCase = true))
+                            SheTheme.colors.success else SheTheme.colors.danger,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            SheButton(
+                text = "Verify & Arm Beacons",
+                onClick = { onConfirmCode(code) },
+                enabled = code.length == 6 && !isLoading,
+                isLoading = isLoading,
+                variant = SheButtonVariant.PRIMARY
+            )
+        },
+        dismissButton = {
+            SheButton(
+                text = "Close",
+                onClick = onDismiss,
+                variant = SheButtonVariant.OUTLINED
+            )
+        }
+    )
+}
+
+@Composable
+private fun IosGroupedCard(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = SheTheme.colors.surfaceVariant.copy(alpha = 0.7f),
+        border = BorderStroke(0.75.dp, SheTheme.colors.border.copy(alpha = 0.5f))
+    ) {
+        Column {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun IosDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 58.dp)
+            .height(0.5.dp)
+            .background(SheTheme.colors.border.copy(alpha = 0.5f))
+    )
+}
+
+@Composable
+private fun IosActionSheetRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    iconBg: Color,
+    badge: String? = null,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(iconBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        color = if (isDestructive) SheTheme.colors.danger else SheTheme.colors.textPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (badge != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(iconBg.copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = badge,
+                                color = iconBg,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = subtitle,
+                    color = SheTheme.colors.textSecondary,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+            contentDescription = null,
+            tint = SheTheme.colors.textTertiary,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun IosCommandDispatchDialog(
+    state: CommandDispatchDialogState,
+    onDismiss: () -> Unit,
+    onConfirm: (totpCode: String, friendPhone: String) -> Unit
+) {
+    var totpCode by remember { mutableStateOf("") }
+    var friendPhone by remember { mutableStateOf("") }
+
+    val cmd = state.commandType
+    val isTestMode = cmd == "TEST_MODE"
+    val isStolenMode = cmd == "STOLEN_MODE"
+    val isClearOwner = cmd == "CLEAR_DEVICE_OWNER"
+    val isDestructive = isStolenMode || isClearOwner || cmd == "UNPAIR"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SheTheme.colors.surface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            when {
+                                isTestMode -> Color(0xFF8B5CF6).copy(alpha = 0.2f)
+                                isDestructive -> SheTheme.colors.dangerContainer
+                                else -> SheTheme.colors.accentContainer
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = when (cmd) {
+                            "TEST_MODE" -> Icons.Outlined.Science
+                            "STOLEN_MODE" -> Icons.Outlined.WarningAmber
+                            "CLEAR_DEVICE_OWNER" -> Icons.Outlined.DeleteForever
+                            "LOCATE" -> Icons.Outlined.MyLocation
+                            "RING" -> Icons.Outlined.NotificationsActive
+                            "STOP_RING" -> Icons.AutoMirrored.Outlined.VolumeOff
+                            "LOCK" -> Icons.Outlined.Lock
+                            "EXIT_KIOSK" -> Icons.Outlined.LockOpen
+                            "UNPAIR" -> Icons.Outlined.LinkOff
+                            else -> Icons.Outlined.Security
+                        },
+                        contentDescription = null,
+                        tint = when {
+                            isTestMode -> Color(0xFF8B5CF6)
+                            isDestructive -> SheTheme.colors.danger
+                            else -> SheTheme.colors.accent
+                        },
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = when (cmd) {
+                            "TEST_MODE" -> "Simulated Drill (Test Mode)"
+                            "STOLEN_MODE" -> "🚨 Real Stolen Lockdown"
+                            "CLEAR_DEVICE_OWNER" -> "⚠️ Clear Device Owner"
+                            else -> "Confirm: $cmd"
+                        },
+                        color = if (isDestructive) SheTheme.colors.danger else SheTheme.colors.textPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Target: ${state.device.device_alias}",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                when {
+                    isTestMode -> {
+                        SheCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.12f),
+                            borderColor = Color(0xFF8B5CF6).copy(alpha = 0.4f),
+                            cornerRadius = 14.dp
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "🛡️ NON-DESTRUCTIVE SECURITY DRILL",
+                                    color = Color(0xFF8B5CF6),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Sounds handset siren for 10 seconds only. It will NOT broadcast emergency alerts to police or official authorities.",
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+
+                        SheTextField(
+                            value = friendPhone,
+                            onValueChange = { friendPhone = it },
+                            label = "FRIEND'S MOBILE FOR DRILL SMS (OPTIONAL)",
+                            placeholder = "+1234567890 or +91...",
+                            helperText = "Enter friend's number to test offline SMS beacon reception safely without irritating officers. Leave empty for sound-only drill.",
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                            )
+                        )
+                    }
+                    isStolenMode -> {
+                        SheCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            backgroundColor = SheTheme.colors.dangerContainer.copy(alpha = 0.3f),
+                            borderColor = SheTheme.colors.danger,
+                            cornerRadius = 14.dp
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "🚨 LIVE THEFT RECOVERY MODE",
+                                    color = SheTheme.colors.danger,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Escalates to maximum threat level: continuous acoustic siren, forces enterprise kiosk lock, suppresses notifications, and broadcasts emergency SMS beacon to your verified contacts.",
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    }
+                    isClearOwner -> {
+                        SheCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            backgroundColor = SheTheme.colors.dangerContainer.copy(alpha = 0.3f),
+                            borderColor = SheTheme.colors.danger,
+                            cornerRadius = 14.dp
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "⚠️ PERMANENT DEPROVISIONING",
+                                    color = SheTheme.colors.danger,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Permanently deprovisions Device Owner administrative control, revokes enterprise lockdown, and clears factory reset protection.",
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        Text(
+                            text = when (cmd) {
+                                "LOCATE" -> "Pings the handset's hardware GPS to capture and transmit fresh satellite coordinates immediately."
+                                "RING" -> "Triggers loud acoustic emergency siren at 100% maximum volume (overrides silent/DND mode)."
+                                "STOP_RING" -> "Silences the active acoustic siren alert."
+                                "LOCK" -> "Instantly turns off the screen and forces enterprise kiosk/PIN lockdown."
+                                "EXIT_KIOSK" -> "Releases kiosk lock and restores default Android home screen."
+                                "UNPAIR" -> "Revokes mutual pairing keys between this companion and the target handset."
+                                else -> "Dispatches signed cryptographic command to target device."
+                            },
+                            color = SheTheme.colors.textSecondary,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                SheTextField(
+                    value = totpCode,
+                    onValueChange = { totpCode = it },
+                    label = "6-DIGIT TOTP OR RECOVERY CODE",
+                    placeholder = "Enter 6-digit TOTP or recovery key",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            SheButton(
+                text = when {
+                    isTestMode -> "Run Drill Simulation"
+                    isStolenMode -> "🚨 Arm Stolen Lockdown"
+                    isClearOwner -> "Deprovision Device"
+                    else -> "Dispatch Command"
+                },
+                onClick = { onConfirm(totpCode.trim(), friendPhone.trim()) },
+                enabled = totpCode.isNotBlank(),
+                variant = if (isDestructive) SheButtonVariant.DANGER else SheButtonVariant.PRIMARY
+            )
+        },
+        dismissButton = {
+            SheButton(
+                text = "Cancel",
+                onClick = onDismiss,
+                variant = SheButtonVariant.OUTLINED
+            )
+        }
+    )
+}
+
+@Composable
+private fun IosCommandGuideDialog(
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SheTheme.colors.surface,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Security,
+                    contentDescription = null,
+                    tint = SheTheme.colors.accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = "Recovery Command Center",
+                    color = SheTheme.colors.textPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Test Mode vs Real Mode Comparison Card
+                SheCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = SheTheme.colors.surfaceVariant,
+                    borderColor = SheTheme.colors.accent.copy(alpha = 0.5f),
+                    cornerRadius = 14.dp
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "💡 TEST MODE VS REAL MODE",
+                            color = SheTheme.colors.accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "• TEST MODE (Drill):\n" +
+                                   "  Runs a non-destructive simulation. The siren sounds for 10 seconds only. You can input a friend's mobile number to test offline SMS beacons without notifying police or emergency authorities.\n\n" +
+                                   "• REAL MODE (STOLEN_MODE):\n" +
+                                   "  Full production theft lockdown. Sounds continuous acoustic siren + TTS alert, forces enterprise kiosk, hides notifications, and transmits emergency SMS beacons with live GPS coordinates to verified emergency contacts.",
+                            color = SheTheme.colors.textPrimary,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
+                }
+
+                Text(
+                    text = "COMMAND REFERENCE",
+                    color = SheTheme.colors.textTertiary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+
+                val guideItems = listOf(
+                    Triple("LOCATE", "Captures fresh GPS fix via satellite hardware and transmits over WebSocket.", Icons.Outlined.MyLocation),
+                    Triple("RING", "Plays maximum volume siren alert to pinpoint phone nearby (overrides Silent/DND).", Icons.Outlined.NotificationsActive),
+                    Triple("STOP_RING", "Silences the acoustic emergency siren alert.", Icons.AutoMirrored.Outlined.VolumeOff),
+                    Triple("LOCK", "Forces immediate screen sleep and enterprise PIN/kiosk lockdown.", Icons.Outlined.Lock),
+                    Triple("EXIT_KIOSK", "Releases stolen kiosk lock and restores default Android home launcher.", Icons.Outlined.LockOpen),
+                    Triple("UNPAIR", "Revokes mutual pairing handshake keys between companion and handset.", Icons.Outlined.LinkOff),
+                    Triple("CLEAR_DEVICE_OWNER", "Deprovisions enterprise Device Owner administration (requires TOTP confirmation).", Icons.Outlined.DeleteForever)
+                )
+
+                guideItems.forEach { (cmd, desc, icon) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SheTheme.colors.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = SheTheme.colors.accent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = cmd,
+                                color = SheTheme.colors.textPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = desc,
+                                color = SheTheme.colors.textSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            SheButton(
+                text = "Got It",
+                onClick = onDismiss,
+                variant = SheButtonVariant.PRIMARY
+            )
+        }
+    )
+}
+
+

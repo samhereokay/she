@@ -33,12 +33,31 @@ import java.util.Locale
 import java.util.UUID
 import com.antitheft.admin.security.BaseSecureActivity
 
+import com.antitheft.admin.network.EmailConfirmRequest
+import com.antitheft.admin.network.PhoneConfirmRequest
+import com.antitheft.admin.network.PhoneStartRequest
+import com.antitheft.admin.network.UserProfileDto
+import org.json.JSONObject
+
 class AdminDashboardActivity : BaseSecureActivity() {
 
     private val adminKeystore = AdminKeystoreManager()
     private var devicesList by mutableStateOf<List<DeviceDto>>(emptyList())
+    private var userProfile by mutableStateOf<UserProfileDto?>(null)
     private var isLoading by mutableStateOf(false)
     private var isUnlockedByBiometric by mutableStateOf(false)
+
+    // Verification Dialog State
+    private var showEmailVerifyDialog by mutableStateOf(false)
+    private var isEmailVerifying by mutableStateOf(false)
+    private var emailVerifyMessage by mutableStateOf<String?>(null)
+
+    private var showPhoneVerifyDialog by mutableStateOf(false)
+    private var isPhoneVerifying by mutableStateOf(false)
+    private var phoneVerifyMessage by mutableStateOf<String?>(null)
+
+    private var activeCommandDispatch by mutableStateOf<CommandDispatchDialogState?>(null)
+    private var showGuideDialog by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,7 +68,7 @@ class AdminDashboardActivity : BaseSecureActivity() {
                 subtitle = "Confirm fingerprint or screen lock to access command center",
                 onSuccess = {
                     isUnlockedByBiometric = true
-                    loadDevices()
+                    refreshDashboardData()
                 },
                 onFailedOrCancelled = {
                     finish()
@@ -57,40 +76,93 @@ class AdminDashboardActivity : BaseSecureActivity() {
             )
         } else {
             isUnlockedByBiometric = true
+            refreshDashboardData()
         }
 
         setContent {
             SheTheme {
                 if (isUnlockedByBiometric) {
                     AdminDashboardScreen(
-                    devices = devicesList,
-                    isLoading = isLoading,
-                    onRefresh = { loadDevices() },
-                    onOpenVault = { startActivity(Intent(this, AdminVaultActivity::class.java)) },
-                    onLogout = {
-                        sessionManager.clearSession()
-                        Toast.makeText(this, "Logged out successfully", Toast.LENGTH_SHORT).show()
-                        val intent = Intent(this, com.antitheft.admin.auth.AdminLoginActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                        }
-                        startActivity(intent)
-                        finish()
-                    },
-                    onPairDevice = {
-                        startActivity(Intent(this, PairDeviceActivity::class.java))
-                    },
-                    onSendCommand = { device, cmd ->
-                        when (cmd) {
-                            "CLEAR_DEVICE_OWNER" -> showDestructiveClearOwnerDialog(device.id)
-                            "TEST_MODE" -> promptForTotpAndDispatch(device.id, "STOLEN_MODE", "{\"test_mode\": true}")
-                            "STOLEN_MODE" -> promptForTotpAndDispatch(device.id, "STOLEN_MODE", "{\"test_mode\": false}")
-                            else -> promptForTotpAndDispatch(device.id, cmd, "{}")
-                        }
-                    },
-                    onShowGuide = {
-                        showCommandGuideDialog()
-                    }
-                )
+                        userProfile = userProfile,
+                        devices = devicesList,
+                        isLoading = isLoading,
+                        onRefresh = { refreshDashboardData() },
+                        onOpenVault = {
+                            if (userProfile?.email_verified_at == null) {
+                                emailVerifyMessage = "Email verification required before accessing the vault."
+                                showEmailVerifyDialog = true
+                                Toast.makeText(this, "Email verification required before accessing vault", Toast.LENGTH_SHORT).show()
+                            } else {
+                                startActivity(Intent(this, AdminVaultActivity::class.java))
+                            }
+                        },
+                        onLogout = {
+                            sessionManager.clearSession()
+                            Toast.makeText(this, "Logged out successfully", Toast.LENGTH_SHORT).show()
+                            val intent = Intent(this, com.antitheft.admin.auth.AdminLoginActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            }
+                            startActivity(intent)
+                            finish()
+                        },
+                        onPairDevice = {
+                            if (userProfile?.email_verified_at == null) {
+                                emailVerifyMessage = "Email verification required before pairing devices."
+                                showEmailVerifyDialog = true
+                                Toast.makeText(this, "Email verification required before pairing devices", Toast.LENGTH_SHORT).show()
+                            } else {
+                                startActivity(Intent(this, PairDeviceActivity::class.java))
+                            }
+                        },
+                        onSendCommand = { device, cmd ->
+                            if (userProfile?.email_verified_at == null) {
+                                emailVerifyMessage = "Email verification required before dispatching commands."
+                                showEmailVerifyDialog = true
+                                Toast.makeText(this, "Email verification required before dispatching commands", Toast.LENGTH_SHORT).show()
+                            } else {
+                                activeCommandDispatch = CommandDispatchDialogState(device, cmd)
+                            }
+                        },
+                        onShowGuide = {
+                            showGuideDialog = true
+                        },
+                        onStartEmailVerification = {
+                            emailVerifyMessage = null
+                            showEmailVerifyDialog = true
+                        },
+                        onStartPhoneVerification = {
+                            phoneVerifyMessage = null
+                            showPhoneVerifyDialog = true
+                        },
+                        showEmailVerifyDialog = showEmailVerifyDialog,
+                        onDismissEmailVerifyDialog = { showEmailVerifyDialog = false },
+                        onSendEmailCode = { sendEmailVerificationCode() },
+                        onConfirmEmailCode = { code -> confirmEmailVerificationCode(code) },
+                        isEmailVerifying = isEmailVerifying,
+                        emailVerifyMessage = emailVerifyMessage,
+                        showPhoneVerifyDialog = showPhoneVerifyDialog,
+                        onDismissPhoneVerifyDialog = { showPhoneVerifyDialog = false },
+                        onSendPhoneCode = { phone -> sendPhoneVerificationCode(phone) },
+                        onConfirmPhoneCode = { code -> confirmPhoneVerificationCode(code) },
+                        isPhoneVerifying = isPhoneVerifying,
+                        phoneVerifyMessage = phoneVerifyMessage,
+                        commandDispatchState = activeCommandDispatch,
+                        onDismissCommandDispatch = { activeCommandDispatch = null },
+                        onConfirmCommandDispatch = { totpCode, friendPhone ->
+                            val dispatchState = activeCommandDispatch
+                            activeCommandDispatch = null
+                            if (dispatchState != null) {
+                                dispatchCommandWithTotp(
+                                    targetDeviceId = dispatchState.device.id,
+                                    commandType = dispatchState.commandType,
+                                    totpCode = totpCode,
+                                    friendPhone = friendPhone
+                                )
+                            }
+                        },
+                        showGuideDialog = showGuideDialog,
+                        onDismissGuideDialog = { showGuideDialog = false }
+                    )
                 }
             }
         }
@@ -115,130 +187,241 @@ class AdminDashboardActivity : BaseSecureActivity() {
 
     override fun onResume() {
         super.onResume()
-        loadDevices()
+        if (isUnlockedByBiometric) {
+            refreshDashboardData()
+        }
     }
 
-    private fun loadDevices() {
+    private fun refreshDashboardData() {
         isLoading = true
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val response = api.listDevices()
-                response.devices.forEach { d ->
-                    if (!d.pairing_id.isNullOrBlank()) {
-                        sessionManager.saveDevicePairingId(d.id, d.pairing_id)
+                try {
+                    val profile = api.getProfile()
+                    userProfile = profile
+                    if (profile.email_verified_at.isNullOrBlank()) {
+                        showEmailVerifyDialog = true
                     }
+                } catch (pe: Exception) {
+                    android.util.Log.w("AdminDashboard", "Failed to fetch profile: ${pe.message}")
                 }
-                devicesList = response.devices
-                isLoading = false
+                loadDevicesInternal(api)
             } catch (e: Exception) {
+                handleApiError(e)
+            } finally {
                 isLoading = false
-                val msg = e.message ?: ""
-                val is401 = msg.contains("401", ignoreCase = true) ||
-                        (e is retrofit2.HttpException && e.code() == 401)
-                if (is401) {
-                    sessionManager.clearSession()
-                    Toast.makeText(this@AdminDashboardActivity, "Session expired or owner account reset. Please sign in or register.", Toast.LENGTH_LONG).show()
-                    val loginIntent = Intent(this@AdminDashboardActivity, com.antitheft.admin.auth.AdminLoginActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    }
-                    startActivity(loginIntent)
-                    finish()
-                } else {
-                    Toast.makeText(this@AdminDashboardActivity, "Error loading devices: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
             }
         }
     }
 
-    private fun showCommandGuideDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("SHE Recovery Command Guide")
-            .setMessage(
-                "• LOCATE:\n" +
-                "  Pings the handset's hardware GPS to capture and transmit fresh satellite coordinates over WebSocket immediately.\n\n" +
-                "• RING:\n" +
-                "  Triggers loud acoustic emergency alarm at maximum hardware volume to pinpoint the handset nearby (overrides Silent/DND modes).\n\n" +
-                "• STOP_RING:\n" +
-                "  Silences the active acoustic siren alert.\n\n" +
-                "• LOCK:\n" +
-                "  Immediately turns off the screen and forces enterprise PIN/kiosk lockdown.\n\n" +
-                "• TEST_MODE (Drill):\n" +
-                "  Executes a safe security drill simulation on the handset without triggering real emergency panic escalation.\n\n" +
-                "• STOLEN_MODE (Real OG):\n" +
-                "  Arms comprehensive theft lockdown: hides status bar, suppresses notifications, locks into kiosk, and initiates high-frequency GPS tracking beacons.\n\n" +
-                "• EXIT_KIOSK:\n" +
-                "  Releases kiosk lock and restores normal Android home screen launcher.\n\n" +
-                "• UNPAIR:\n" +
-                "  Revokes mutual pairing handshake between this companion and the target handset.\n\n" +
-                "• CLEAR_DEVICE_OWNER:\n" +
-                "  Deprovisions Device Owner enterprise administration status (strictly requires 6-digit TOTP confirmation)."
-            )
-            .setPositiveButton("Got It", null)
-            .show()
-    }
-
-    private fun showDestructiveClearOwnerDialog(targetDeviceId: String) {
-        val input = EditText(this).apply {
-            hint = "6-digit TOTP code (strictly required)"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setPadding(32, 32, 32, 32)
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("⚠️ DANGER: CLEAR DEVICE OWNER")
-            .setMessage("This command permanently deprovisions Device Owner status on the target device, clears all theft restrictions (safe boot, factory reset protection), and revokes enterprise lockdown.\n\nEnter your 6-digit TOTP authenticator code to confirm this destructive action:")
-            .setView(input)
-            .setPositiveButton("Deprovision Device") { _, _ ->
-                val totpCode = input.text.toString().trim()
-                if (totpCode.isBlank() || (totpCode.length != 6 && totpCode.length !in 8..9)) {
-                    Toast.makeText(this, "Valid 6-digit TOTP or emergency recovery code (XXXX-XXXX) required", Toast.LENGTH_LONG).show()
-                    return@setPositiveButton
-                }
-                dispatchCommandOnline(targetDeviceId, "CLEAR_DEVICE_OWNER", totpCode, "{}")
+    private suspend fun loadDevicesInternal(api: com.antitheft.admin.network.AdminApiService) {
+        val response = api.listDevices()
+        response.devices.forEach { d ->
+            if (!d.pairing_id.isNullOrBlank()) {
+                sessionManager.saveDevicePairingId(d.id, d.pairing_id)
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
+        devicesList = response.devices
     }
 
-    private fun promptForTotpAndDispatch(targetDeviceId: String, commandType: String, paramsJson: String = "{}") {
-        val input = EditText(this).apply {
-            hint = "6-digit TOTP or recovery code (XXXX-XXXX)"
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-            setPadding(32, 32, 32, 32)
-        }
+    private fun handleApiError(e: Throwable) {
+        val msg = e.message ?: ""
+        var isEmailNotVerified = false
 
-        val explanation = when (commandType) {
-            "LOCATE" -> "Pings hardware GPS to capture and stream fresh satellite coordinates."
-            "RING" -> "Sounds loud acoustic alarm at maximum volume (overrides silent mode)."
-            "STOP_RING" -> "Silences the active emergency siren alarm."
-            "LOCK" -> "Immediately turns off screen and locks the device into kiosk security."
-            "STOLEN_MODE" -> "Arms the handset: locks kiosk, suppresses notifications, and initiates high-frequency GPS beacons."
-            "EXIT_KIOSK" -> "Releases kiosk lock and restores default Android home screen."
-            "UNPAIR" -> "Revokes device pairing session from this controller."
-            else -> "Executes signed remote command on target device."
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Confirm: $commandType")
-            .setMessage("$explanation\n\nEnter your 6-digit TOTP code or recovery code:")
-            .setView(input)
-            .setPositiveButton("Dispatch") { _, _ ->
-                val totpCode = input.text.toString().trim()
-                if (totpCode.isBlank() || (totpCode.length != 6 && totpCode.length !in 8..9)) {
-                    Toast.makeText(this, "Valid 6-digit TOTP or emergency recovery code (XXXX-XXXX) required", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                dispatchCommandOnline(targetDeviceId, commandType, totpCode, paramsJson)
+        if (e is retrofit2.HttpException && e.code() == 403) {
+            val errBody = try { e.response()?.errorBody()?.string() ?: "" } catch (_: Exception) { "" }
+            if (errBody.contains("email_not_verified", ignoreCase = true) || msg.contains("email_not_verified", ignoreCase = true)) {
+                isEmailNotVerified = true
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        } else if (msg.contains("email_not_verified", ignoreCase = true)) {
+            isEmailNotVerified = true
+        }
+
+        if (isEmailNotVerified) {
+            showEmailVerifyDialog = true
+            Toast.makeText(this@AdminDashboardActivity, "Ownership verification required: Please verify your email", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val is401 = msg.contains("401", ignoreCase = true) ||
+                (e is retrofit2.HttpException && e.code() == 401)
+        if (is401) {
+            sessionManager.clearSession()
+            Toast.makeText(this@AdminDashboardActivity, "Session expired or owner account reset. Please sign in or register.", Toast.LENGTH_LONG).show()
+            val loginIntent = Intent(this@AdminDashboardActivity, com.antitheft.admin.auth.AdminLoginActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            startActivity(loginIntent)
+            finish()
+        } else {
+            Toast.makeText(this@AdminDashboardActivity, "Error loading devices: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun dispatchCommandOnline(targetDeviceId: String, commandType: String, totpCode: String, paramsJson: String = "{}") {
+    private fun sendEmailVerificationCode() {
+        isEmailVerifying = true
+        emailVerifyMessage = null
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
+                api.sendEmailVerification()
+                withContext(Dispatchers.Main) {
+                    emailVerifyMessage = "Verification OTP dispatched to ${userProfile?.email ?: "your email"}. Check your inbox."
+                    Toast.makeText(this@AdminDashboardActivity, "Verification OTP code sent", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val errMsg = if (e is retrofit2.HttpException) {
+                        try {
+                            val body = e.response()?.errorBody()?.string() ?: ""
+                            if (body.contains("{")) JSONObject(body).optString("detail", e.message()) else body
+                        } catch (_: Exception) { e.message() }
+                    } else e.message ?: "Failed to dispatch email OTP"
+                    emailVerifyMessage = "Error: $errMsg"
+                }
+            } finally {
+                isEmailVerifying = false
+            }
+        }
+    }
+
+    private fun confirmEmailVerificationCode(code: String) {
+        if (code.length != 6) {
+            emailVerifyMessage = "Please enter the full 6-digit code"
+            return
+        }
+        isEmailVerifying = true
+        emailVerifyMessage = null
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val resp = api.confirmEmailVerification(EmailConfirmRequest(code.trim()))
+                withContext(Dispatchers.Main) {
+                    userProfile = userProfile?.copy(email_verified_at = resp.email_verified_at)
+                    showEmailVerifyDialog = false
+                    Toast.makeText(this@AdminDashboardActivity, "Email verified successfully! Access granted.", Toast.LENGTH_LONG).show()
+                    refreshDashboardData()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val errMsg = if (e is retrofit2.HttpException) {
+                        try {
+                            val body = e.response()?.errorBody()?.string() ?: ""
+                            if (body.contains("{")) JSONObject(body).optString("detail", e.message()) else body
+                        } catch (_: Exception) { e.message() }
+                    } else e.message ?: "Verification failed"
+                    emailVerifyMessage = "Error: $errMsg"
+                }
+            } finally {
+                isEmailVerifying = false
+            }
+        }
+    }
+
+    private fun sendPhoneVerificationCode(phone: String) {
+        val clean = phone.trim()
+        if (clean.isBlank()) {
+            phoneVerifyMessage = "Please enter an international phone number (e.g. +1... or +91...)"
+            return
+        }
+        isPhoneVerifying = true
+        phoneVerifyMessage = null
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                api.startPhoneVerification(PhoneStartRequest(clean))
+                withContext(Dispatchers.Main) {
+                    phoneVerifyMessage = "SMS challenge dispatched via active Guardian handset to $clean."
+                    Toast.makeText(this@AdminDashboardActivity, "SMS challenge dispatched", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val errMsg = if (e is retrofit2.HttpException) {
+                        try {
+                            val body = e.response()?.errorBody()?.string() ?: ""
+                            if (body.contains("{")) JSONObject(body).optString("detail", e.message()) else body
+                        } catch (_: Exception) { e.message() }
+                    } else e.message ?: "Failed to dispatch SMS"
+                    phoneVerifyMessage = "Error: $errMsg"
+                }
+            } finally {
+                isPhoneVerifying = false
+            }
+        }
+    }
+
+    private fun confirmPhoneVerificationCode(code: String) {
+        if (code.length != 6) {
+            phoneVerifyMessage = "Please enter the 6-digit SMS code"
+            return
+        }
+        isPhoneVerifying = true
+        phoneVerifyMessage = null
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val resp = api.confirmPhoneVerification(PhoneConfirmRequest(code.trim()))
+                withContext(Dispatchers.Main) {
+                    userProfile = userProfile?.copy(
+                        phone_verified_at = resp.phone_verified_at,
+                        fallback_phone_e164 = resp.fallback_phone_e164
+                    )
+                    sessionManager.setAdminPhoneNumber(resp.fallback_phone_e164)
+                    showPhoneVerifyDialog = false
+                    Toast.makeText(this@AdminDashboardActivity, "Phone verified! Offline SMS beacons armed.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val errMsg = if (e is retrofit2.HttpException) {
+                        try {
+                            val body = e.response()?.errorBody()?.string() ?: ""
+                            if (body.contains("{")) JSONObject(body).optString("detail", e.message()) else body
+                        } catch (_: Exception) { e.message() }
+                    } else e.message ?: "Verification failed"
+                    phoneVerifyMessage = "Error: $errMsg"
+                }
+            } finally {
+                isPhoneVerifying = false
+            }
+        }
+    }
+
+    private fun dispatchCommandWithTotp(
+        targetDeviceId: String,
+        commandType: String,
+        totpCode: String,
+        friendPhone: String
+    ) {
+        val paramsJson = when (commandType) {
+            "TEST_MODE" -> {
+                val json = JSONObject().apply {
+                    put("test_mode", true)
+                    if (friendPhone.isNotBlank()) {
+                        put("test_recipient_phone", friendPhone.trim())
+                    }
+                }
+                json.toString()
+            }
+            "STOLEN_MODE" -> "{\"test_mode\": false}"
+            else -> "{}"
+        }
+        val actualCmd = if (commandType == "TEST_MODE") "STOLEN_MODE" else commandType
+        dispatchCommandOnline(targetDeviceId, actualCmd, totpCode, paramsJson)
+    }
+
+    private fun dispatchCommandOnline(targetDeviceId: String, commandType: String, totpCode: String = "", paramsJson: String = "{}") {
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                if (totpCode.isNotBlank()) {
+                    try {
+                        val upgraded = api.validateTotp(com.antitheft.admin.network.TotpValidateRequest(totpCode.trim()))
+                        sessionManager.saveToken(upgraded.access_token)
+                    } catch (te: Exception) {
+                        android.util.Log.w("AdminDashboard", "TOTP pre-validation note: ${te.message}")
+                    }
+                }
                 val trustedDevId = ensureTrustedDeviceRegistered(api)
 
                 val seqCounter = sessionManager.getNextCommandSequence()
@@ -277,7 +460,7 @@ class AdminDashboardActivity : BaseSecureActivity() {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@AdminDashboardActivity, "Command $commandType dispatched (Status: ${resp.status})", Toast.LENGTH_SHORT).show()
                 }
-                loadDevices()
+                refreshDashboardData()
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@AdminDashboardActivity, "Dispatch failed: ${e.message}", Toast.LENGTH_LONG).show()

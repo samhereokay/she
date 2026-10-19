@@ -132,8 +132,34 @@ object CommandExecutionManager {
                     }
                 }
             } else {
-                // Test Mode: Safe drill for friends (10-second alert, no external SMS spam)
-                AlarmSoundManager.startAlarm(context, "Anti-Theft Test Mode activated. This is a non-destructive drill. No emergency SMS dispatched.")
+                // Test Mode: Safe drill for friends (10-second alert, optional friend drill SMS)
+                val testRecipientPhone = try {
+                    val obj = org.json.JSONObject(parametersJson)
+                    obj.optString("test_recipient_phone", "").trim()
+                } catch (_: Exception) { "" }
+
+                if (testRecipientPhone.isNotBlank()) {
+                    scope.launch {
+                        try {
+                            val cleanTest = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeForSmsDispatch(testRecipientPhone)
+                            if (cleanTest.isNotBlank()) {
+                                val captureManager = LocationCaptureManager(context)
+                                val loc = captureManager.captureCurrentLocation(timeoutMs = 5000)
+                                    ?: captureManager.getLastKnownLocation()
+                                val coordsStr = if (loc != null) "https://maps.google.com/?q=${loc.latitude},${loc.longitude} (±${loc.accuracy.toInt()}m)" else "Location acquiring..."
+                                val smsText = "[AntiTheft DRILL] Safe test drill simulated on '${storage.getDeviceAlias()}'. Test GPS: $coordsStr. No real emergency."
+                                val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
+                                    ?: android.telephony.SmsManager.getDefault()
+                                smsManager.sendTextMessage(cleanTest, null, smsText, null, null)
+                                Log.i(TAG, "Test Mode: Dispatched friend drill SMS to $cleanTest")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed dispatching test drill SMS", e)
+                        }
+                    }
+                }
+
+                AlarmSoundManager.startAlarm(context, "Anti-Theft Test Mode activated. This is a non-destructive drill.")
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     AlarmSoundManager.stopAlarm()
                 }, 10000L)

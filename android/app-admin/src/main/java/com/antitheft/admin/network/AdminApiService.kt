@@ -157,12 +157,47 @@ data class VaultPurgeResponse(
     val deleted_count: Int
 )
 
+data class UserProfileDto(
+    val id: String,
+    val username: String,
+    val email: String,
+    val phone_number: String? = null,
+    val device_info: String? = null,
+    val email_verified_at: String? = null,
+    val fallback_phone_e164: String? = null,
+    val phone_verified_at: String? = null,
+    val created_at: String
+)
+
+data class EmailSendRequest(val email: String? = null)
+data class EmailConfirmRequest(val code: String)
+data class EmailVerifyResponse(val status: String, val email_verified_at: String)
+
+data class PhoneStartRequest(val phone_number: String)
+data class PhoneConfirmRequest(val code: String)
+data class PhoneVerifyResponse(val status: String, val fallback_phone_e164: String, val phone_verified_at: String)
+
 interface AdminApiService {
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): UserResponseDto
 
     @POST("auth/login/json")
     suspend fun login(@Body request: LoginRequest): TokenResponse
+
+    @GET("auth/me")
+    suspend fun getProfile(): UserProfileDto
+
+    @POST("verify/email/send")
+    suspend fun sendEmailVerification(@Body request: EmailSendRequest = EmailSendRequest()): Map<String, Any>
+
+    @POST("verify/email/confirm")
+    suspend fun confirmEmailVerification(@Body request: EmailConfirmRequest): EmailVerifyResponse
+
+    @POST("verify/phone/start")
+    suspend fun startPhoneVerification(@Body request: PhoneStartRequest): Map<String, Any>
+
+    @POST("verify/phone/confirm")
+    suspend fun confirmPhoneVerification(@Body request: PhoneConfirmRequest): PhoneVerifyResponse
 
     @POST("auth/totp/setup")
     suspend fun setupTotp(): TotpSetupResponse
