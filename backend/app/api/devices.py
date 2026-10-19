@@ -98,6 +98,7 @@ def pair_device(
             existing.public_key_pem = pair_in.public_key_pem
             existing.trusted_phone_number = pair_in.trusted_phone_number
             existing.pairing_secret_hash = pairing_hash
+            existing.pairing_secret = pair_in.pairing_secret
             existing.pairing_id = pairing_id
             existing.confirmation_code = confirmation_code
             existing.status = "PENDING_CONFIRMATION"
@@ -112,6 +113,7 @@ def pair_device(
                 public_key_pem=pair_in.public_key_pem,
                 trusted_phone_number=pair_in.trusted_phone_number,
                 pairing_secret_hash=pairing_hash,
+                pairing_secret=pair_in.pairing_secret,
                 pairing_id=pairing_id,
                 confirmation_code=confirmation_code,
                 status="PENDING_CONFIRMATION"
@@ -126,6 +128,7 @@ def pair_device(
             public_key_pem=pair_in.public_key_pem,
             trusted_phone_number=pair_in.trusted_phone_number,
             pairing_secret_hash=pairing_hash,
+            pairing_secret=pair_in.pairing_secret,
             pairing_id=pairing_id,
             confirmation_code=confirmation_code,
             status="PENDING_CONFIRMATION"
@@ -449,6 +452,7 @@ def dispatch_command(
         "RECOVERED",
         "UNPAIR",
         "CLEAR_DEVICE_OWNER",
+        "SEND_VERIFY_SMS",
     }
     if req.command_type not in ALLOWED_COMMAND_TYPES:
         raise HTTPException(

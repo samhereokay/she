@@ -44,6 +44,20 @@ class EmailVerifyResponse(BaseModel):
     email_verified_at: datetime
 
 
+class PhoneStartRequest(BaseModel):
+    phone_number: str = Field(..., min_length=7, max_length=32, description="International mobile number in E.164 format")
+
+
+class PhoneConfirmRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6, description="6-digit SMS verification code")
+
+
+class PhoneVerifyResponse(BaseModel):
+    status: str
+    fallback_phone_e164: str
+    phone_verified_at: datetime
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

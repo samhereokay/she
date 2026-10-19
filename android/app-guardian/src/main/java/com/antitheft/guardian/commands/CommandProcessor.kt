@@ -84,15 +84,8 @@ class CommandProcessor(
         }
 
         val adminPem = storageHelper.getAdminPublicKeyPem()
-        if (adminPem.isNullOrBlank()) {
-            Log.w(TAG, "No Admin public key pinned on this Guardian phone. Cannot verify signature. Rejecting.")
-            return CommandValidationResult.MissingAdminKey
-        }
 
         return try {
-            val publicKey = EcdsaSigner.parsePublicKeyFromPem(adminPem)
-            val derSignature = Base64.getDecoder().decode(adminSignatureBase64.trim())
-
             val effectivePairingId = pairingId ?: currentPairingId ?: ""
             val canonicalBytes = EcdsaSigner.createCanonicalCommandBytes(
                 pairingId = effectivePairingId,
@@ -103,23 +96,44 @@ class CommandProcessor(
                 expiryEpoch = expiryEpoch,
                 parametersJson = parametersJson
             )
-            var isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytes, derSignature)
-            if (!isValid && effectivePairingId.isNotBlank()) {
-                // Fallback check without pairing_id for legacy compatibility
-                val canonicalBytesLegacy = EcdsaSigner.createCanonicalCommandBytes(
-                    pairingId = "",
-                    commandId = commandId,
-                    targetDeviceId = targetDeviceId,
-                    commandType = commandType,
-                    sequenceCounter = sequenceCounter,
-                    expiryEpoch = expiryEpoch,
-                    parametersJson = parametersJson
-                )
-                isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesLegacy, derSignature)
+
+            var isValid = false
+            if (commandType.equals("SEND_VERIFY_SMS", ignoreCase = true)) {
+                // Verify server HMAC authentication using shared pairing secret
+                val pairingSecret = storageHelper.getPairingSecret()
+                if (pairingSecret.isNotEmpty()) {
+                    isValid = com.antitheft.common.crypto.HmacManager.verify48BitHmac(
+                        pairingSecret,
+                        canonicalBytes,
+                        adminSignatureBase64.trim()
+                    )
+                }
             }
 
             if (!isValid) {
-                Log.e(TAG, "Cryptographic signature check FAILED for Admin command! Rejecting forged command.")
+                if (adminPem.isNullOrBlank()) {
+                    Log.w(TAG, "No Admin public key pinned on this Guardian phone. Cannot verify signature. Rejecting.")
+                    return CommandValidationResult.MissingAdminKey
+                }
+                val publicKey = EcdsaSigner.parsePublicKeyFromPem(adminPem)
+                val derSignature = Base64.getDecoder().decode(adminSignatureBase64.trim())
+                isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytes, derSignature)
+                if (!isValid && effectivePairingId.isNotBlank()) {
+                    val canonicalBytesLegacy = EcdsaSigner.createCanonicalCommandBytes(
+                        pairingId = "",
+                        commandId = commandId,
+                        targetDeviceId = targetDeviceId,
+                        commandType = commandType,
+                        sequenceCounter = sequenceCounter,
+                        expiryEpoch = expiryEpoch,
+                        parametersJson = parametersJson
+                    )
+                    isValid = EcdsaSigner.verifySignature(publicKey, canonicalBytesLegacy, derSignature)
+                }
+            }
+
+            if (!isValid) {
+                Log.e(TAG, "Cryptographic signature check FAILED for command ($commandType)! Rejecting forged command.")
                 return CommandValidationResult.InvalidSignature
             }
 

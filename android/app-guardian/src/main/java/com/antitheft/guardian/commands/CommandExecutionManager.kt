@@ -31,6 +31,7 @@ object CommandExecutionManager {
             "RECOVERED", "EXIT_KIOSK" -> executeStolenMode(context, false)
             "UNPAIR" -> executeUnpair(context)
             "CLEAR_DEVICE_OWNER" -> executeClearDeviceOwner(context)
+            "SEND_VERIFY_SMS" -> executeSendVerifySms(context, parametersJson)
             else -> {
                 Log.w(TAG, "Unknown recovery command type: $commandType")
                 false
@@ -186,5 +187,34 @@ object CommandExecutionManager {
     fun executeClearDeviceOwner(context: Context): Boolean {
         Log.i(TAG, "Executing verified CLEAR_DEVICE_OWNER command: deprovisioning Device Owner.")
         return deviceOwnerManager.clearDeviceOwner(context)
+    }
+
+    fun executeSendVerifySms(context: Context, parametersJson: String): Boolean {
+        return try {
+            val obj = org.json.JSONObject(parametersJson)
+            val to = obj.optString("to", "").trim()
+            val body = obj.optString("body", "")
+
+            // Validate recipient is valid international E.164
+            if (!to.matches(Regex("^\\+[1-9]\\d{1,14}\$"))) {
+                Log.w(TAG, "SEND_VERIFY_SMS rejected: invalid E.164 recipient format.")
+                return false
+            }
+            if (body.isBlank()) {
+                Log.w(TAG, "SEND_VERIFY_SMS rejected: blank message body.")
+                return false
+            }
+
+            val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
+                ?: android.telephony.SmsManager.getDefault()
+            smsManager.sendTextMessage(to, null, body, null, null)
+
+            // CRITICAL SECURITY INVARIANT: NEVER log the message body (contains OTP)
+            Log.i(TAG, "SEND_VERIFY_SMS: Verification challenge SMS dispatched successfully.")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "SEND_VERIFY_SMS dispatch failed", e)
+            false
+        }
     }
 }

@@ -89,6 +89,7 @@ class ProtectedDevice(Base):
     public_key_pem = Column(Text, nullable=False)
     trusted_phone_number = Column(String(32), nullable=False)
     pairing_secret_hash = Column(String(128), nullable=False)
+    pairing_secret = Column(String(128), nullable=True)  # Raw secret for server-originated HMAC (SEND_VERIFY_SMS)
     pairing_id = Column(String(36), default=generate_uuid, nullable=False)
     confirmation_code = Column(String(16), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -142,7 +143,7 @@ class DeviceCommand(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    trusted_device_id = Column(String(36), ForeignKey("trusted_devices.id", ondelete="CASCADE"), nullable=False)
+    trusted_device_id = Column(String(36), ForeignKey("trusted_devices.id", ondelete="CASCADE"), nullable=True)
     protected_device_id = Column(String(36), ForeignKey("protected_devices.id", ondelete="CASCADE"), nullable=False)
     command_type = Column(String(32), nullable=False)  # LOCATE, RING, LOCK, STOLEN_MODE
     sequence_counter = Column(BigInteger, nullable=False)
