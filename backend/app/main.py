@@ -10,7 +10,8 @@ from app.api.web import router as web_router
 from app.api.verify import router as verify_router
 
 # Auto-create tables for development / SQLite testing
-Base.metadata.create_all(bind=engine)
+if settings.DATABASE_URL.startswith("sqlite"):
+    Base.metadata.create_all(bind=engine)
 
 DISALLOWED_VERIFY_SECRETS = {
     "",

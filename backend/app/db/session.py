@@ -13,14 +13,23 @@ elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+")
 if "pooler.supabase.com:5432" in db_url:
     db_url = db_url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543")
 
+from sqlalchemy.pool import NullPool
+
 # Connection parameters & pooling strategy
 connect_args = {}
 engine_kwargs = {"pool_pre_ping": True}
 
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+elif "pooler.supabase.com" in db_url or ":6543" in db_url:
+    # Supabase Transaction Pooler (PgBouncer): NullPool delegates pooling to PgBouncer
+    connect_args = {"connect_timeout": 10, "sslmode": "require"}
+    engine_kwargs = {
+        "poolclass": NullPool,
+        "pool_pre_ping": True,
+    }
 else:
-    connect_args = {"connect_timeout": 5}
+    connect_args = {"connect_timeout": 10, "sslmode": "require"}
     engine_kwargs.update({
         "pool_recycle": 120,
         "pool_timeout": 5,
