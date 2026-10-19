@@ -38,7 +38,9 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
+import com.antitheft.common.util.ApkShareHelper
 import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
@@ -134,6 +136,13 @@ fun AdminDashboardScreen(
                 DashboardHeader(
                     onThemeClick = { showThemeSheet = true },
                     onOpenVault = onOpenVault,
+                    onShareApp = {
+                        ApkShareHelper.showShareOptions(
+                            context,
+                            "SHE Anti-Theft Admin",
+                            "she-admin.apk"
+                        )
+                    },
                     onLogout = onLogout
                 )
             }
@@ -383,6 +392,7 @@ fun AdminDashboardScreen(
 private fun DashboardHeader(
     onThemeClick: () -> Unit,
     onOpenVault: () -> Unit,
+    onShareApp: () -> Unit,
     onLogout: () -> Unit
 ) {
     SheCard(
@@ -435,6 +445,17 @@ private fun DashboardHeader(
                         )
                     },
                     onClick = onOpenVault
+                )
+                HeaderIconButton(
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Share,
+                            contentDescription = "Share App",
+                            tint = SheTheme.colors.textPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = onShareApp
                 )
                 HeaderIconButton(
                     icon = {

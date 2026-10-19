@@ -22,12 +22,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.app.admin.DevicePolicyManager
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ComponentName
+import android.content.Context
 import android.graphics.Color
 import android.net.Uri
 import android.widget.CheckBox
 import androidx.appcompat.app.AlertDialog
 import com.antitheft.deviceowner.DeviceOwnerManager
 import com.antitheft.deviceowner.SystemGuidanceManager
+import com.antitheft.common.util.ApkShareHelper
+import android.provider.Settings
 import java.util.Locale
 
 class GuardianMainActivity : AppCompatActivity() {
@@ -47,6 +54,14 @@ class GuardianMainActivity : AppCompatActivity() {
             requestBackgroundLocation()
         } else {
             Toast.makeText(this, "Location permission is required for anti-theft tracking", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            android.util.Log.w("GuardianLocation", "Background location permission was not granted by user")
         }
     }
 
@@ -231,6 +246,22 @@ class GuardianMainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnShowAdbCommand).setOnClickListener {
             showProvisioningDialog()
+        }
+
+        findViewById<Button>(R.id.btnShareGuardianApk)?.setOnClickListener {
+            ApkShareHelper.showShareOptions(
+                this,
+                "SHE Anti-Theft Guardian",
+                "she-guardian.apk"
+            )
+        }
+
+        findViewById<Button>(R.id.btnGrantDeviceAdmin)?.setOnClickListener {
+            requestDeviceAdminActivation()
+        }
+
+        findViewById<Button>(R.id.btnAdminGuide)?.setOnClickListener {
+            showBrandSetupGuideDialog()
         }
 
         handleIncomingPairingIntent(intent)
@@ -644,6 +675,22 @@ class GuardianMainActivity : AppCompatActivity() {
 
                 tvQueueCount.text = "Offline Queue: $pendingCount pending"
 
+                // Update Tier 2 Device Admin Card
+                val isAdmin = deviceOwnerManager.isAdminActive(this@GuardianMainActivity)
+                val tvDeviceAdminBadge = findViewById<TextView>(R.id.tvDeviceAdminBadge)
+                val btnGrantDeviceAdmin = findViewById<Button>(R.id.btnGrantDeviceAdmin)
+                if (isAdmin) {
+                    tvDeviceAdminBadge?.text = "ADMIN: ACTIVE (TIER 2)"
+                    tvDeviceAdminBadge?.setBackgroundColor(Color.parseColor("#14532D"))
+                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#86EFAC"))
+                    btnGrantDeviceAdmin?.text = "Admin Active (Protected)"
+                } else {
+                    tvDeviceAdminBadge?.text = "NOT GRANTED"
+                    tvDeviceAdminBadge?.setBackgroundColor(Color.parseColor("#78350F"))
+                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#FDE68A"))
+                    btnGrantDeviceAdmin?.text = "Activate Admin (1-Tap)"
+                }
+
                 // Update Device Owner Card
                 val tvDeviceOwnerBadge = findViewById<TextView>(R.id.tvDeviceOwnerBadge)
                 val tvRestrictionsStatus = findViewById<TextView>(R.id.tvRestrictionsStatus)
@@ -679,6 +726,134 @@ class GuardianMainActivity : AppCompatActivity() {
         }
     }
 
+    private fun requestDeviceAdminActivation() {
+        val adminComp = deviceOwnerManager.getAdminComponent(this)
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+        if (dpm != null && dpm.isAdminActive(adminComp)) {
+            Toast.makeText(this, "Device Admin is already ACTIVE on this handset.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComp)
+                putExtra(
+                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Activate AntiTheft Guardian Device Admin to enforce lock screen security, detect unauthorized access, and prevent app removal. Personal data is never erased."
+                )
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not launch admin activation: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showBrandSetupGuideDialog() {
+        val brands = arrayOf(
+            "Auto-Detect: ${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }}",
+            "Samsung One UI",
+            "Xiaomi / Redmi (MIUI / HyperOS)",
+            "Realme / Oppo (ColorOS)",
+            "Vivo / iQOO (Funtouch OS)",
+            "Motorola / Google Pixel (Stock Android)",
+            "Enterprise Device Owner (ADB Elevation)"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Device Admin & OEM Setup Guide")
+            .setItems(brands) { _, which ->
+                when (which) {
+                    0 -> showSpecificBrandGuide(Build.MANUFACTURER.lowercase())
+                    1 -> showSpecificBrandGuide("samsung")
+                    2 -> showSpecificBrandGuide("xiaomi")
+                    3 -> showSpecificBrandGuide("oppo")
+                    4 -> showSpecificBrandGuide("vivo")
+                    5 -> showSpecificBrandGuide("motorola")
+                    6 -> showProvisioningDialog()
+                }
+            }
+            .setPositiveButton("Activate Admin Now") { _, _ ->
+                requestDeviceAdminActivation()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showSpecificBrandGuide(brand: String) {
+        val (title, instructions, settingsAction) = when {
+            brand.contains("samsung") -> Triple(
+                "Samsung One UI Setup",
+                "1. Device Admin:\n" +
+                "   Settings -> Security and privacy -> More security settings -> Device admin apps -> Enable AntiTheft Guardian.\n\n" +
+                "2. Battery & Background Protection:\n" +
+                "   Settings -> Apps -> AntiTheft Guardian -> Battery -> Select 'Unrestricted'.\n\n" +
+                "3. Secure Power-Off:\n" +
+                "   Settings -> Lock screen -> Secure lock settings -> Enable 'Lock network and security' so a thief cannot toggle Wi-Fi or power off without PIN.",
+                Settings.ACTION_SECURITY_SETTINGS
+            )
+            brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") -> Triple(
+                "Xiaomi / HyperOS / MIUI Setup",
+                "1. Device Admin:\n" +
+                "   Settings -> Passwords & security -> Privacy -> Device administrators -> Activate AntiTheft Guardian (complete 10s security prompt).\n\n" +
+                "2. Autostart & Background Protection:\n" +
+                "   Settings -> Apps -> Manage apps -> AntiTheft Guardian -> Enable 'Autostart'. In Battery Saver, select 'No restrictions'.\n\n" +
+                "3. Lock in Recents:\n" +
+                "   Open App Switcher -> Long press Guardian card -> Tap Lock icon to prevent memory cleaner closure.",
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+            )
+            brand.contains("oppo") || brand.contains("realme") || brand.contains("oneplus") -> Triple(
+                "Realme / Oppo / OnePlus Setup",
+                "1. Device Admin:\n" +
+                "   Settings -> Password & Security -> System security -> Device admin apps -> Enter Captcha -> Activate AntiTheft Guardian.\n\n" +
+                "2. Background Activity:\n" +
+                "   Settings -> Battery -> More settings -> App battery management -> Guardian -> Enable 'Allow background activity' & 'Allow auto-launch'.\n\n" +
+                "3. Require Password to Power Off:\n" +
+                "   Settings -> Password & Security -> System security -> Enable 'Require password to power off'.",
+                Settings.ACTION_SECURITY_SETTINGS
+            )
+            brand.contains("vivo") || brand.contains("iqoo") -> Triple(
+                "Vivo / iQOO Funtouch OS Setup",
+                "1. Device Admin:\n" +
+                "   Settings -> Security -> Device administrators -> Activate AntiTheft Guardian.\n\n" +
+                "2. High Background Power Consumption:\n" +
+                "   Settings -> Battery -> Background power consumption management -> Guardian -> Select 'High background power consumption'.\n\n" +
+                "3. iManager Autostart:\n" +
+                "   Open iManager app -> App manager -> Autostart -> Allow AntiTheft Guardian.",
+                Settings.ACTION_SECURITY_SETTINGS
+            )
+            else -> Triple(
+                "Motorola / Pixel / Stock Android Setup",
+                "1. Device Admin:\n" +
+                "   Settings -> Security & privacy -> More security settings -> Device admin apps -> Enable AntiTheft Guardian.\n\n" +
+                "2. Battery Optimization (Unrestricted):\n" +
+                "   Settings -> Apps -> AntiTheft Guardian -> App battery usage -> Choose 'Unrestricted' so background GPS tracking is never paused.\n\n" +
+                "3. Lock Screen Security:\n" +
+                "   Settings -> Security -> Screen lock -> Ensure 6+ digit PIN or strong alphanumeric passphrase is set.",
+                Settings.ACTION_SECURITY_SETTINGS
+            )
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(instructions)
+            .setPositiveButton("Open Settings") { _, _ ->
+                try {
+                    val intent = if (settingsAction == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    } else {
+                        Intent(settingsAction)
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNeutralButton("Activate Admin (1-Tap)") { _, _ ->
+                requestDeviceAdminActivation()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -709,7 +884,7 @@ class GuardianMainActivity : AppCompatActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
                 // Background location must be requested separately on Android 10+
-                registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(
+                backgroundLocationLauncher.launch(
                     Manifest.permission.ACCESS_BACKGROUND_LOCATION
                 )
             }

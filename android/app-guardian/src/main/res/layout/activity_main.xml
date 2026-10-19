@@ -269,6 +269,108 @@
                     app:strokeColor="#0284C7"
                     app:cornerRadius="10dp" />
 
+                <!-- Share Guardian APK Button -->
+                <Button
+                    android:id="@+id/btnShareGuardianApk"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Share Guardian APK / Link (Bluetooth / Web)"
+                    android:textColor="#E2E8F0"
+                    android:textSize="12sp"
+                    app:cornerRadius="10dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Tier 2: Device Admin Permission & OEM Guide Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardDeviceAdmin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#262626"
+            app:cardBackgroundColor="#121212">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="TIER 2: DEVICE ADMIN PERMISSION"
+                        android:textColor="#F59E0B"
+                        android:textSize="13sp"
+                        android:letterSpacing="0.05"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvDeviceAdminBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="#78350F"
+                        android:paddingHorizontal="8dp"
+                        android:paddingVertical="3dp"
+                        android:text="NOT GRANTED"
+                        android:textColor="#FDE68A"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Grants hardware permission to lock the screen, block unauthorized app uninstall, and prevent thief bypass. Never erases personal data."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnGrantDeviceAdmin"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:backgroundTint="#F59E0B"
+                        android:textColor="#451A03"
+                        android:textStyle="bold"
+                        android:text="Activate Admin (1-Tap)"
+                        android:textSize="11sp"
+                        app:cornerRadius="8dp" />
+
+                    <Button
+                        android:id="@+id/btnAdminGuide"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="Brand Setup Guide"
+                        android:textColor="#38BDF8"
+                        app:strokeColor="#0284C7"
+                        android:textSize="11sp"
+                        app:cornerRadius="8dp" />
+                </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

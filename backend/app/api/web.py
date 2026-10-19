@@ -2134,12 +2134,12 @@ def render_terms_of_service():
                 <li><strong>Prohibited Surveillance:</strong> Installing SHE on a third party's handset without their informed, written consent violates local telecommunications and privacy laws (including Indian Information Technology Act 2000, Section 43/66E, and international anti-stalking statutes). Accounts engaging in unauthorized tracking will be permanently terminated.</li>
             </ul>
 
-            <h2>2. Handset Device Owner Controls &amp; Data Wipe</h2>
+            <h2>2. Handset Device Owner Controls &amp; Data Protection</h2>
             <p>
                 SHE leverages Android Device Owner and Direct Boot capabilities to protect your data during theft:
             </p>
             <ul>
-                <li><strong>Irreversible Data Erasure:</strong> Executing an emergency <code>WIPE</code> or factory reset command permanently erases all internal storage. The SHE project and its developers bear zero liability for data loss resulting from user-dispatched wipe actions.</li>
+                <li><strong>Data Protection Architecture:</strong> SHE is built to protect data, never destroy it. We do not provide destructive remote wipe commands that permanently delete your personal files, photos, or memories. Instead, SHE enforces tamper-proof hardware kiosk lockdown, suppresses power menu shutdown, locks the screen, and sounds forensic sirens while streaming GPS coordinates.</li>
                 <li><strong>Max-Volume Siren Alarms:</strong> The emergency siren alarm overrides device volume to 100% to assist physical retrieval. You agree not to trigger siren alarms in situations that could cause physical distress or harm.</li>
             </ul>
 
@@ -2421,8 +2421,8 @@ def render_emergency_console():
                     <button onclick="triggerEmergencyAction('LOCK')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
                         Lock Handset Screen
                     </button>
-                    <button onclick="if(confirm('WARNING: This will permanently erase all data on the stolen handset. Proceed?')) triggerEmergencyAction('WIPE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--danger); color: var(--danger); cursor: pointer;">
-                        Emergency Wipe Handset
+                    <button onclick="if(confirm('Engage Stolen Kiosk Lockdown on handset? This locks down the device into kiosk mode, suppresses power menu shutdown, and requires your recovery code to exit.')) triggerEmergencyAction('STOLEN_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--danger); color: var(--danger); cursor: pointer;">
+                        Engage Stolen Kiosk Lockdown
                     </button>
                 </div>
             </div>

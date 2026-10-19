@@ -31,7 +31,9 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Usb
+import com.antitheft.common.util.ApkShareHelper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -458,6 +460,30 @@ fun AdminLoginScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             SheThemeSelector(modifier = Modifier.fillMaxWidth())
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            SheButton(
+                text = "Share SHE App / APK (Bluetooth / Web)",
+                onClick = {
+                    ApkShareHelper.showShareOptions(
+                        context,
+                        "SHE Anti-Theft Admin",
+                        "she-admin.apk"
+                    )
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                variant = SheButtonVariant.OUTLINED,
+                height = 42.dp,
+                cornerRadius = 12.dp,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         // -------------------------------------------------------------
@@ -848,7 +874,7 @@ fun AdminLoginScreen(
                             text = "SHE Sentinel Anti-Theft Handset Agreement:\n\n" +
                                 "1. Authorized Personal Use: SHE is licensed exclusively for personal anti-theft defense, emergency device tracking, and data protection on handsets you own or legally manage. Stalking or unauthorized surveillance on third parties is strictly prohibited.\n\n" +
                                 "2. Single-Device Limit: Each account is strictly restricted to 1 active protected phone to maintain cryptographic chain-of-custody.\n\n" +
-                                "3. Permanent Remote Commands: Executing WIPE permanently erases device storage. The owner bears sole responsibility for dispatching remote commands.\n\n" +
+                                "3. Data Protection Policy: SHE is designed to protect your data, never erase it. Remote commands lock down the screen, engage anti-theft kiosk mode, and track GPS to recover your device intact without data destruction.\n\n" +
                                 "4. Zero Commercial Telemetry & 30-Day Purge: Location records older than 30 days are automatically purged. Vault secrets are protected with zero-knowledge AES-256-GCM encryption.\n\n" +
                                 "5. Open-Source Software: Distributed under the Apache 2.0 License without warranties of any kind.\n\n" +
                                 "Full policies available at:\n" +
