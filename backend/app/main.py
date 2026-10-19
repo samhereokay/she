@@ -45,6 +45,14 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "0"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com; "
+        "connect-src 'self' wss: https:;"
+    )
     if settings.ENFORCE_HTTPS:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     return response
