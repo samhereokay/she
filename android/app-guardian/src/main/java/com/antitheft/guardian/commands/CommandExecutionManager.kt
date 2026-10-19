@@ -27,7 +27,7 @@ object CommandExecutionManager {
             "RING" -> executeRing(context)
             "STOP_RING" -> executeStopRing()
             "LOCK" -> executeLock(context)
-            "STOLEN_MODE" -> executeStolenMode(context, true, parametersJson)
+            "STOLEN_MODE", "LOST_MODE" -> executeStolenMode(context, true, parametersJson)
             "RECOVERED", "EXIT_KIOSK" -> executeStolenMode(context, false)
             "UNPAIR" -> executeUnpair(context)
             "CLEAR_DEVICE_OWNER" -> executeClearDeviceOwner(context)

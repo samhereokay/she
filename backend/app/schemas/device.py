@@ -101,7 +101,7 @@ class CommandResponse(BaseModel):
 
     id: str
     pairing_id: Optional[str] = None
-    trusted_device_id: str
+    trusted_device_id: Optional[str] = None
     protected_device_id: str
     command_type: str
     sequence_counter: int
@@ -111,4 +111,17 @@ class CommandResponse(BaseModel):
     status: str
     created_at: datetime
     executed_at: Optional[datetime] = None
+
+
+class EmergencyCommandRequest(BaseModel):
+    command_type: str = Field(..., description="Action to trigger: RING, STOP_RING, LOCK, STOLEN_MODE, LOST_MODE, LOCATE")
+    payload: Optional[dict] = Field(default_factory=dict, description="Optional extra arguments (e.g. lock_message)")
+
+
+class EmergencyCommandResponse(BaseModel):
+    status: str
+    command_id: str
+    command_type: str
+    sequence_counter: int
+
 

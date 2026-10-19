@@ -836,3 +836,111 @@ def test_dns_mx_mocked_resolver_and_fail_open():
     assert ok
     assert err is None
 
+
+def test_emergency_console_location_and_command_dispatch(client, test_keypair, pair_device):
+    """
+    Verify emergency console endpoints:
+    1. GET /api/v1/devices/{device_id}/location (returns singular latest fix)
+    2. POST /api/v1/devices/{device_id}/command (HMAC signed emergency commands)
+    3. Verify Guardian can poll and retrieve the emergency command
+    """
+    private_key, pem_public = test_keypair
+    # 1. Setup Owner & Device
+    client.post("/auth/register", json={
+        "username": "owner_em_console",
+        "email": "em_console@example.com",
+        "password": "PasswordEm123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "owner_em_console",
+        "password": "PasswordEm123!"
+    }).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    pairing_secret = "secretemergencytestkey123456789"
+    device_id, _ = pair_device(
+        client,
+        token,
+        "Emergency Handset",
+        pem_public,
+        "+15550001122",
+        pairing_secret
+    )
+
+    # Ingest a test location fix
+    now = datetime.now(timezone.utc)
+    now_sec = int(now.timestamp())
+    canon_loc = format_canonical_location_string(device_id, 1, now_sec, 37.774929, -122.419416, 5.0)
+    sig = private_key.sign(canon_loc, ec.ECDSA(hashes.SHA256()))
+    sig_b64 = base64.b64encode(sig).decode("utf-8")
+
+    batch_resp = client.post("/api/v1/locations/batch", json={
+        "device_id": device_id,
+        "events": [{
+            "sequence_number": 1,
+            "capture_time": now.isoformat(),
+            "latitude": 37.774929,
+            "longitude": -122.419416,
+            "accuracy": 5.0,
+            "altitude": 10.0,
+            "velocity": 0.0,
+            "signature": sig_b64
+        }]
+    })
+    assert batch_resp.status_code == 200
+
+    # 1. Test GET /api/v1/devices/{device_id}/location
+    loc_resp = client.get(f"/api/v1/devices/{device_id}/location", headers=headers)
+    assert loc_resp.status_code == 200
+    loc_data = loc_resp.json()
+    assert abs(loc_data["latitude"] - 37.774929) < 1e-4
+    assert abs(loc_data["longitude"] - -122.419416) < 1e-4
+
+    # 2. Test POST /api/v1/devices/{device_id}/command for RING
+    cmd_resp = client.post(
+        f"/api/v1/devices/{device_id}/command",
+        headers=headers,
+        json={"command_type": "RING", "payload": {}}
+    )
+    assert cmd_resp.status_code == 201
+    cmd_data = cmd_resp.json()
+    assert cmd_data["status"] == "dispatched"
+    assert cmd_data["command_type"] == "RING"
+    assert cmd_data["command_id"] is not None
+
+    # 3. Test POST /api/v1/devices/{device_id}/command for LOST_MODE (normalizes to STOLEN_MODE)
+    lost_resp = client.post(
+        f"/api/v1/devices/{device_id}/command",
+        headers=headers,
+        json={"command_type": "LOST_MODE", "payload": {}}
+    )
+    assert lost_resp.status_code == 201
+    assert lost_resp.json()["command_type"] == "STOLEN_MODE"
+
+    # 4. Verify pending commands list
+    pending_resp = client.get(
+        f"/api/v1/devices/{device_id}/commands/pending",
+        headers={"X-Device-Timestamp": str(now_sec), "X-Device-Signature": ""}
+    )
+    assert pending_resp.status_code == 200
+    pending_list = pending_resp.json()
+    assert len(pending_list) >= 2
+    ring_cmd = [c for c in pending_list if c["command_type"] == "RING"][0]
+    assert ring_cmd["status"] == "PENDING"
+    assert len(ring_cmd["admin_signature"]) == 12  # 48-bit HMAC hex is 12 chars
+
+    # 5. Verify HMAC signature validity matches Guardian's expected verification
+    from app.core.security import create_canonical_command_bytes
+    expected_canonical = create_canonical_command_bytes(
+        pairing_id=ring_cmd.get("pairing_id") or "",
+        command_id=ring_cmd["id"],
+        target_device_id=device_id,
+        command_type="RING",
+        sequence_counter=ring_cmd["sequence_counter"],
+        expiry_epoch=ring_cmd["expiry_epoch"],
+        parameters_json="{}"
+    )
+    assert verify_truncated_hmac(pairing_secret.encode("utf-8"), expected_canonical, ring_cmd["admin_signature"])
+
+
+

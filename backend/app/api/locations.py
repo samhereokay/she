@@ -181,6 +181,32 @@ async def ingest_location_batch(
     )
 
 
+@router.get("/devices/{device_id}/location", response_model=LocationResponse)
+def get_device_latest_location(
+    device_id: str,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Retrieve the single most recent verified location fix for a protected device."""
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        
+    latest_loc = (
+        db.query(LocationEvent)
+        .filter(LocationEvent.protected_device_id == device.id)
+        .order_by(LocationEvent.sequence_number.desc())
+        .first()
+    )
+    if not latest_loc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No location recorded yet")
+    return latest_loc
+
+
 @router.get("/devices/{device_id}/locations", response_model=List[LocationResponse])
 def get_device_location_history(
     device_id: str,

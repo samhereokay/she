@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -21,7 +22,9 @@ from app.schemas.device import (
     CommandAckRequest,
     CommandResponse,
     PairingConfirmRequest,
-    PairingConfirmResponse
+    PairingConfirmResponse,
+    EmergencyCommandRequest,
+    EmergencyCommandResponse
 )
 from app.schemas.location import LocationResponse
 from app.api.deps import get_current_user, get_verified_user, get_current_user_2fa, get_pairing_token_user
@@ -30,7 +33,9 @@ from app.core.security import (
     create_canonical_command_bytes,
     decrypt_totp_secret,
     verify_totp_code,
-    encrypt_pairing_secret
+    encrypt_pairing_secret,
+    decrypt_pairing_secret,
+    compute_truncated_hmac
 )
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
@@ -579,6 +584,110 @@ def dispatch_command(
     db.commit()
     db.refresh(command)
     return command
+
+
+@router.post("/{device_id}/command", response_model=EmergencyCommandResponse, status_code=status.HTTP_201_CREATED)
+def dispatch_emergency_command(
+    device_id: str,
+    req: EmergencyCommandRequest,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Dispatch emergency recovery action from Web Console / Borrowed Handset Recovery Portal.
+    Authenticated via session token (Owner identity) and signed using device's symmetric pairing secret (HMAC).
+    Guarantees Guardian device can verify command integrity even when Admin companion phone is absent.
+    """
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protected device not found")
+
+    if device.status not in ("ACTIVE", "STOLEN"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot dispatch commands to device with status {device.status}. Must be ACTIVE."
+        )
+
+    raw_type = req.command_type.strip().upper()
+    ALLOWED_EMERGENCY_TYPES = {"RING", "STOP_RING", "LOCK", "STOLEN_MODE", "LOST_MODE", "LOCATE"}
+    if raw_type not in ALLOWED_EMERGENCY_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid emergency command type '{raw_type}'. Allowed: {', '.join(sorted(ALLOWED_EMERGENCY_TYPES))}"
+        )
+
+    # Normalize LOST_MODE to STOLEN_MODE with custom contact message if omitted
+    effective_cmd_type = "STOLEN_MODE" if raw_type == "LOST_MODE" else raw_type
+    payload = dict(req.payload or {})
+    if raw_type == "LOST_MODE" and "lock_message" not in payload:
+        payload["lock_message"] = "LOST DEVICE: Please contact owner to return."
+
+    if not device.pairing_secret:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Handset lacks cryptographic pairing secret. Please re-pair handset to enable web emergency console."
+        )
+
+    # Determine monotonic sequence counter for this protected handset
+    max_seq = db.query(func.max(DeviceCommand.sequence_counter)).filter(
+        DeviceCommand.protected_device_id == device.id
+    ).scalar() or 0
+    next_seq = max_seq + 1
+
+    cmd_id = generate_uuid()
+    now_epoch = int(time.time())
+    expiry_epoch = now_epoch + 600  # 10 minutes
+    params_json = json.dumps(payload)
+
+    canonical_bytes = create_canonical_command_bytes(
+        pairing_id=device.pairing_id or "",
+        command_id=cmd_id,
+        target_device_id=device.id,
+        command_type=effective_cmd_type,
+        sequence_counter=next_seq,
+        expiry_epoch=expiry_epoch,
+        parameters_json=params_json
+    )
+
+    raw_pairing_secret = decrypt_pairing_secret(device.pairing_secret)
+    pairing_secret_bytes = raw_pairing_secret.encode("utf-8")
+    server_sig = compute_truncated_hmac(pairing_secret_bytes, canonical_bytes, hex_length=12)
+
+    command = DeviceCommand(
+        id=cmd_id,
+        user_id=current_user.id,
+        trusted_device_id=None,
+        protected_device_id=device.id,
+        pairing_id=device.pairing_id,
+        command_type=effective_cmd_type,
+        sequence_counter=next_seq,
+        expiry_epoch=expiry_epoch,
+        parameters_json=params_json,
+        admin_signature=server_sig,
+        status="PENDING"
+    )
+    db.add(command)
+
+    audit = AuditEvent(
+        user_id=current_user.id,
+        protected_device_id=device.id,
+        event_type="EMERGENCY_COMMAND_DISPATCHED",
+        details=f"Emergency command {effective_cmd_type} (seq #{next_seq}) dispatched from web console for handset {device.device_alias} ({device.id})."
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(command)
+
+    return EmergencyCommandResponse(
+        status="dispatched",
+        command_id=command.id,
+        command_type=command.command_type,
+        sequence_counter=command.sequence_counter
+    )
+
 
 
 @router.get("/{device_id}/commands/pending", response_model=List[CommandResponse])

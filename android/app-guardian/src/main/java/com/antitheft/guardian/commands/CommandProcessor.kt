@@ -98,7 +98,10 @@ class CommandProcessor(
             )
 
             var isValid = false
-            if (commandType.equals("SEND_VERIFY_SMS", ignoreCase = true)) {
+            val serverAuthCommands = setOf(
+                "SEND_VERIFY_SMS", "RING", "STOP_RING", "LOCK", "STOLEN_MODE", "LOST_MODE", "LOCATE"
+            )
+            if (serverAuthCommands.contains(commandType.uppercase())) {
                 // Verify server HMAC authentication using shared pairing secret
                 val pairingSecret = storageHelper.getPairingSecret()
                 if (pairingSecret.isNotEmpty()) {

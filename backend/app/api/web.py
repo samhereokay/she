@@ -2448,6 +2448,12 @@ async def render_emergency_console():
                     <button onclick="triggerEmergencyAction('RING')" class="btn btn-primary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
                         Sound Siren (100 dB Alarm)
                     </button>
+                    <button onclick="triggerEmergencyAction('STOP_RING')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                        Silence Siren
+                    </button>
+                    <button onclick="triggerEmergencyAction('LOCATE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; cursor: pointer;">
+                        Request Fresh GPS Fix
+                    </button>
                     <button onclick="triggerEmergencyAction('LOST_MODE')" class="btn btn-secondary" style="font-weight: 700; padding: 0.75rem 1.25rem; border-color: var(--warning); color: var(--warning); cursor: pointer;">
                         Activate Lost Mode
                     </button>
