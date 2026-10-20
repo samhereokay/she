@@ -76,7 +76,13 @@
             android:directBootAware="true"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter android:priority="999">
+            <!--
+                android:priority="999" removed:
+                1. Google Play and Play Protect policies flag non-default SMS apps declaring maximum broadcast priority.
+                2. On modern Android (API 26+), SMS_RECEIVED is delivered to all registered broadcast receivers without
+                   requiring priority elevation.
+            -->
+            <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
@@ -87,25 +93,6 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.SIM_STATE_CHANGED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Device Owner & Admin Receiver for Anti-Theft Protection -->
-        <receiver
-            android:name="com.antitheft.deviceowner.AntiTheftDeviceAdminReceiver"
-            android:permission="android.permission.BIND_DEVICE_ADMIN"
-            android:exported="true">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin_policies" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-                <action android:name="android.app.action.DEVICE_ADMIN_DISABLE_REQUESTED" />
-                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
-                <action android:name="android.app.action.ACTION_PASSWORD_FAILED" />
-                <action android:name="android.app.action.ACTION_PASSWORD_SUCCEEDED" />
-                <action android:name="android.app.action.LOCK_TASK_ENTERING" />
-                <action android:name="android.app.action.LOCK_TASK_EXITING" />
             </intent-filter>
         </receiver>
 

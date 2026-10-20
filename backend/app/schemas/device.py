@@ -167,6 +167,7 @@ class GuardianPairRequest(BaseModel):
     sim_country: Optional[str] = None
     sim_changed: bool = False
     permission_health: Optional[dict] = Field(default_factory=dict)
+    capabilities: Optional[List[str]] = Field(default_factory=list)
 
 
 class DeviceRenameRequest(BaseModel):
@@ -180,6 +181,7 @@ class DeviceHeartbeatRequest(BaseModel):
     sim_country: Optional[str] = None
     sim_changed: bool = False
     permission_health: Optional[dict] = Field(default_factory=dict)
+    capabilities: Optional[List[str]] = Field(default_factory=list)
     timestamp: int = Field(..., description="Unix epoch timestamp in seconds")
     signature: str = Field(..., description="ECDSA signature by Guardian private key over canonical heartbeat payload")
 
@@ -218,6 +220,7 @@ class DeviceStatusResponse(BaseModel):
     sim_country: Optional[str] = None
     sim_changed: bool = False
     permission_health: dict = Field(default_factory=dict)
+    capabilities: List[str] = Field(default_factory=list)
     last_seen: Optional[datetime] = None
     last_sync_path: str = "online"
     is_stale: bool = False

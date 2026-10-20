@@ -164,6 +164,15 @@ def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDet
             except Exception:
                 perm_health = {}
 
+        caps_list = []
+        if status_rec and getattr(status_rec, "capabilities", None):
+            try:
+                caps_list = json.loads(status_rec.capabilities)
+            except Exception:
+                caps_list = ["locate_sms", "live_gps", "siren", "ring", "battery_report"]
+        else:
+            caps_list = ["locate_sms", "live_gps", "siren", "ring", "battery_report"]
+
         status_info = DeviceStatusResponse(
             battery_level=status_rec.battery_level,
             connectivity_type=status_rec.connectivity_type,
@@ -171,6 +180,7 @@ def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDet
             sim_country=status_rec.sim_country,
             sim_changed=status_rec.sim_changed,
             permission_health=perm_health,
+            capabilities=caps_list,
             last_seen=last_seen,
             last_sync_path=status_rec.last_sync_path or "online",
             is_stale=is_stale
@@ -183,6 +193,7 @@ def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDet
             sim_country=None,
             sim_changed=False,
             permission_health={},
+            capabilities=["locate_sms", "live_gps", "siren", "ring", "battery_report"],
             last_seen=dev.created_at,
             last_sync_path="online",
             is_stale=True
@@ -420,6 +431,10 @@ def pair_device(
     status_rec.sim_country = getattr(pair_in, "sim_country", None)
     status_rec.sim_changed = getattr(pair_in, "sim_changed", False)
     status_rec.permission_health = json.dumps(getattr(pair_in, "permission_health", {}) or {})
+    caps = getattr(pair_in, "capabilities", None)
+    if not caps:
+        caps = ["locate_sms", "live_gps", "siren", "ring", "battery_report"]
+    status_rec.capabilities = json.dumps(caps)
     status_rec.last_seen = utc_now()
     status_rec.last_sync_path = "online"
 
@@ -846,6 +861,8 @@ def device_heartbeat(
     status_rec.sim_changed = req.sim_changed
     if req.permission_health:
         status_rec.permission_health = json.dumps(req.permission_health)
+    if req.capabilities:
+        status_rec.capabilities = json.dumps(req.capabilities)
     status_rec.last_seen = utc_now()
     status_rec.last_sync_path = "online"
     db.commit()

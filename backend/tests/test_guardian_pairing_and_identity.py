@@ -426,6 +426,7 @@ def test_signed_guardian_heartbeat(client, keypair, monkeypatch):
             "sim_country": "IN",
             "sim_changed": False,
             "permission_health": {"sms": True, "background_location": True},
+            "capabilities": ["locate_sms", "live_gps", "siren", "ring", "battery_report"],
             "timestamp": now_ts,
             "signature": signature
         }
@@ -437,6 +438,7 @@ def test_signed_guardian_heartbeat(client, keypair, monkeypatch):
     dev_detail = client.get(f"/api/v1/devices/{dev_id}", headers={"Authorization": f"Bearer {token}"}).json()
     assert dev_detail["status_info"]["battery_level"] == 92
     assert dev_detail["status_info"]["sim_operator"] == "Airtel"
+    assert dev_detail["status_info"]["capabilities"] == ["locate_sms", "live_gps", "siren", "ring", "battery_report"]
     assert dev_detail["status_info"]["is_stale"] is False
 
     # 2. Replay / expired timestamp rejection (older than 300s)

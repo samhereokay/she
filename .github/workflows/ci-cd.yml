@@ -42,6 +42,10 @@ jobs:
           chmod +x scripts/check_no_cleartext_urls.sh
           ./scripts/check_no_cleartext_urls.sh
 
+      - name: Audit Android Manifests & Security Configs
+        run: |
+          python3 scripts/audit_manifests.py
+
       - name: Run Backend Test Suite
         env:
           SECRET_KEY: "test-environment-jwt-secret-key-32bytes-minimum-length-for-testing"

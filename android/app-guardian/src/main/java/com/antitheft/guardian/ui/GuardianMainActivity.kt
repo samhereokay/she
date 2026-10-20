@@ -22,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
-import android.app.admin.DevicePolicyManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -31,8 +30,9 @@ import android.graphics.Color
 import android.net.Uri
 import android.widget.CheckBox
 import androidx.appcompat.app.AlertDialog
-import com.antitheft.deviceowner.DeviceOwnerManager
-import com.antitheft.deviceowner.SystemGuidanceManager
+import com.antitheft.guardian.control.DeviceControl
+import com.antitheft.guardian.control.LiteDeviceControl
+import com.antitheft.guardian.guidance.SystemGuidanceManager
 import com.antitheft.common.util.ApkShareHelper
 import android.provider.Settings
 import java.util.Locale
@@ -41,7 +41,7 @@ class GuardianMainActivity : AppCompatActivity() {
 
     private lateinit var storageHelper: DirectBootStorageHelper
     private lateinit var captureManager: LocationCaptureManager
-    private val deviceOwnerManager = DeviceOwnerManager()
+    private val deviceControl: DeviceControl = LiteDeviceControl()
     private val guidanceManager = SystemGuidanceManager()
     private var isLockTaskActive = false
 
@@ -102,8 +102,8 @@ class GuardianMainActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = if (isStolen || isLockTaskActive) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<TextView>(R.id.tvEmergencyPhone)?.text = "Owner Emergency Contact: ${storageHelper.getTrustedPhoneNumber().ifBlank { "+1-555-0199" }}"
 
-        if (isStolen && deviceOwnerManager.isDeviceOwner(this) && !isLockTaskActive) {
-            val success = deviceOwnerManager.enterLockTaskStolenMode(this)
+        if (isStolen && deviceControl.isDeviceOwner(this) && !isLockTaskActive) {
+            val success = deviceControl.enterLockTaskStolenMode(this)
             if (success) {
                 isLockTaskActive = true
                 findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Kiosk Mode Active (Protected)"
@@ -156,39 +156,39 @@ class GuardianMainActivity : AppCompatActivity() {
             showPairingInputDialog()
         }
 
-        findViewById<Button>(R.id.btnEnforceRestrictions).setOnClickListener {
-            if (deviceOwnerManager.isDeviceOwner(this)) {
-                val res = deviceOwnerManager.applyTheftRestrictions(this)
-                Toast.makeText(this, "Enforced ${res.count { it.value }} restrictions", Toast.LENGTH_SHORT).show()
+        findViewById<Button>(R.id.btnEnforceRestrictions)?.setOnClickListener {
+            if (deviceControl.isDeviceOwner(this)) {
+                val res = deviceControl.applyTheftRestrictions(this)
+                Toast.makeText(this, "Restrictions enforced", Toast.LENGTH_SHORT).show()
                 refreshDashboardData()
             } else {
                 showProvisioningDialog()
             }
         }
 
-        findViewById<Button>(R.id.btnClearRestrictions).setOnClickListener {
-            if (!deviceOwnerManager.isDeviceOwner(this)) {
+        findViewById<Button>(R.id.btnClearRestrictions)?.setOnClickListener {
+            if (!deviceControl.isDeviceOwner(this)) {
                 Toast.makeText(this, "Device Owner not provisioned", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // Require owner authentication to clear lockdown
             requestOwnerAuth("Authenticate to Clear Lockdown") {
-                deviceOwnerManager.clearTheftRestrictions(this)
+                deviceControl.clearTheftRestrictions(this)
                 Toast.makeText(this, "Theft restrictions cleared by authenticated owner", Toast.LENGTH_SHORT).show()
                 refreshDashboardData()
             }
         }
 
-        findViewById<Button>(R.id.btnToggleLockTaskKiosk).setOnClickListener {
-            if (!deviceOwnerManager.isDeviceOwner(this)) {
+        findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.setOnClickListener {
+            if (!deviceControl.isDeviceOwner(this)) {
                 showProvisioningDialog()
                 return@setOnClickListener
             }
             if (!isLockTaskActive) {
-                val success = deviceOwnerManager.enterLockTaskStolenMode(this)
+                val success = deviceControl.enterLockTaskStolenMode(this)
                 if (success) {
                     isLockTaskActive = true
-                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Kiosk Mode Active (Protected)"
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Kiosk Mode Active (Protected)"
                     findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.VISIBLE
                     Toast.makeText(this, "Stolen Kiosk Mode ACTIVE (Dialer Permitted, Nav Suppressed)", Toast.LENGTH_LONG).show()
                 }
@@ -228,10 +228,10 @@ class GuardianMainActivity : AppCompatActivity() {
 
                         if (normalizedInput == expected) {
                             storageHelper.resetFailedRecoveryAttempts()
-                            deviceOwnerManager.exitLockTaskMode(this)
+                            deviceControl.exitLockTaskMode(this)
                             storageHelper.setStolenMode(false)
                             isLockTaskActive = false
-                            findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Lock-Task Kiosk Mode"
+                            findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Enter Lock-Task Kiosk Mode"
                             findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.GONE
                             Toast.makeText(this, "Recovery code verified. Kiosk mode EXITED.", Toast.LENGTH_LONG).show()
                         } else {
@@ -261,10 +261,6 @@ class GuardianMainActivity : AppCompatActivity() {
             )
         }
 
-        findViewById<Button>(R.id.btnGrantDeviceAdmin)?.setOnClickListener {
-            requestDeviceAdminActivation()
-        }
-
         findViewById<Button>(R.id.btnAdminGuide)?.setOnClickListener {
             showBrandSetupGuideDialog()
         }
@@ -274,22 +270,10 @@ class GuardianMainActivity : AppCompatActivity() {
     }
 
     private fun showProvisioningDialog() {
-        val cmd = deviceOwnerManager.getAdbProvisioningCommand(this)
-        val tv = android.widget.EditText(this).apply {
-            setText(cmd)
-            isFocusable = true
-            isClickable = true
-        }
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Provision Device Owner (ADB)")
-            .setMessage("To enable hardware-level anti-theft lockdown, run this ADB command from your PC (device must have no user accounts added):")
-            .setView(tv)
-            .setPositiveButton("Copy") { _, _ ->
-                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("AdbCmd", cmd))
-                Toast.makeText(this, "Command copied to clipboard", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Close", null)
+            .setTitle("Guardian Lite")
+            .setMessage("Guardian Lite runs with standard Android permissions and does not require Device Owner or Device Admin privileges. Enterprise lockdown is reserved for Part 2 (Hardened flavor).")
+            .setPositiveButton("OK", null)
             .show()
     }
 
@@ -348,36 +332,34 @@ class GuardianMainActivity : AppCompatActivity() {
         android.util.Log.i("GuardianDO", "Received Device Owner test action: $action")
         when (action) {
             "enforce_restrictions" -> {
-                val res = deviceOwnerManager.applyTheftRestrictions(this)
-                deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
-                Toast.makeText(this, "Enforced ${res.count { it.value }} restrictions", Toast.LENGTH_SHORT).show()
+                deviceControl.applyTheftRestrictions(this)
+                deviceControl.setLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
                 refreshDashboardData()
             }
             "clear_restrictions" -> {
-                deviceOwnerManager.clearTheftRestrictions(this)
-                deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, null)
-                Toast.makeText(this, "Restrictions cleared", Toast.LENGTH_SHORT).show()
+                deviceControl.clearTheftRestrictions(this)
+                deviceControl.setLockScreenInfo(this, null)
                 refreshDashboardData()
             }
             "enter_kiosk" -> {
-                val ok = deviceOwnerManager.enterLockTaskStolenMode(this)
+                val ok = deviceControl.enterLockTaskStolenMode(this)
                 if (ok) {
                     isLockTaskActive = true
-                    findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Kiosk Mode Active (Protected)"
+                    findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Kiosk Mode Active (Protected)"
                     findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.VISIBLE
                 }
             }
             "exit_kiosk" -> {
                 storageHelper.setStolenMode(false)
-                deviceOwnerManager.exitLockTaskMode(this)
+                deviceControl.exitLockTaskMode(this)
                 isLockTaskActive = false
-                findViewById<Button>(R.id.btnToggleLockTaskKiosk).text = "Enter Stolen Kiosk Mode"
+                findViewById<Button>(R.id.btnToggleLockTaskKiosk)?.text = "Enter Stolen Kiosk Mode"
                 findViewById<android.view.View>(R.id.cardEmergencyContact)?.visibility = android.view.View.GONE
                 refreshDashboardData()
             }
             "lock_now" -> {
-                deviceOwnerManager.setDeviceOwnerLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
-                deviceOwnerManager.lockNow(this)
+                deviceControl.setLockScreenInfo(this, "STOLEN DEVICE: Protected by AntiTheft Guardian. If found, call +1-555-0199.")
+                deviceControl.lockDevice(this)
             }
             "clear_pairing" -> {
                 if (!com.antitheft.guardian.BuildConfig.DEBUG) {
@@ -621,8 +603,8 @@ class GuardianMainActivity : AppCompatActivity() {
             val latest = db.locationDao().getLatestLocation()
             val pendingCount = db.locationDao().getPendingCount()
 
-            val isDO = deviceOwnerManager.isDeviceOwner(this@GuardianMainActivity)
-            val restrictions = deviceOwnerManager.getActiveRestrictions(this@GuardianMainActivity)
+            val isDO = deviceControl.isDeviceOwner(this@GuardianMainActivity)
+            val restrictions = deviceControl.getActiveRestrictions(this@GuardianMainActivity)
             val checklist = guidanceManager.evaluateSystemChecklist(this@GuardianMainActivity)
 
             withContext(Dispatchers.Main) {
@@ -682,33 +664,20 @@ class GuardianMainActivity : AppCompatActivity() {
 
                 tvQueueCount.text = "Offline Queue: $pendingCount pending"
 
-                // Update Tier 2 Device Admin Card
-                val isAdmin = deviceOwnerManager.isAdminActive(this@GuardianMainActivity)
-                val tvDeviceAdminBadge = findViewById<TextView>(R.id.tvDeviceAdminBadge)
-                val btnGrantDeviceAdmin = findViewById<Button>(R.id.btnGrantDeviceAdmin)
-                if (isAdmin) {
-                    tvDeviceAdminBadge?.text = "ADMIN: ACTIVE (TIER 2)"
-                    tvDeviceAdminBadge?.setBackgroundResource(R.drawable.bg_badge_success)
-                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#22C55E"))
-                    btnGrantDeviceAdmin?.text = "Admin Active (Protected)"
-                } else {
-                    tvDeviceAdminBadge?.text = "NOT GRANTED"
-                    tvDeviceAdminBadge?.setBackgroundResource(R.drawable.bg_badge_warning)
-                    tvDeviceAdminBadge?.setTextColor(Color.parseColor("#F59E0B"))
-                    btnGrantDeviceAdmin?.text = "Activate Admin (1-Tap)"
-                }
+                // Update Tier 2 OEM & System Guidance Card
+                findViewById<TextView>(R.id.tvLiteBadge)?.text = "LITE ACTIVE"
 
                 // Update Device Owner Card
                 val tvDeviceOwnerBadge = findViewById<TextView>(R.id.tvDeviceOwnerBadge)
                 val tvRestrictionsStatus = findViewById<TextView>(R.id.tvRestrictionsStatus)
                 if (isDO) {
-                    tvDeviceOwnerBadge.text = "DEVICE OWNER: ACTIVE (TIER 3)"
-                    tvDeviceOwnerBadge.setBackgroundResource(R.drawable.bg_badge_success)
-                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#22C55E"))
+                    tvDeviceOwnerBadge?.text = "DEVICE OWNER: ACTIVE (TIER 3)"
+                    tvDeviceOwnerBadge?.setBackgroundResource(R.drawable.bg_badge_success)
+                    tvDeviceOwnerBadge?.setTextColor(Color.parseColor("#22C55E"))
                 } else {
-                    tvDeviceOwnerBadge.text = "DEVICE OWNER: NOT PROVISIONED"
-                    tvDeviceOwnerBadge.setBackgroundResource(R.drawable.bg_badge_warning)
-                    tvDeviceOwnerBadge.setTextColor(Color.parseColor("#F59E0B"))
+                    tvDeviceOwnerBadge?.text = "DEVICE OWNER: NOT PROVISIONED"
+                    tvDeviceOwnerBadge?.setBackgroundResource(R.drawable.bg_badge_warning)
+                    tvDeviceOwnerBadge?.setTextColor(Color.parseColor("#F59E0B"))
                 }
 
                 val sb = StringBuilder()
@@ -717,7 +686,7 @@ class GuardianMainActivity : AppCompatActivity() {
                     val cleanKey = k.replace("no_", "").uppercase()
                     sb.append(" • ").append(cleanKey).append(": ").append(if (v) "ENFORCED" else "inactive").append("\n")
                 }
-                tvRestrictionsStatus.text = sb.toString().trimEnd()
+                tvRestrictionsStatus?.text = sb.toString().trimEnd()
 
                 // Update Tier 1 System Checklist
                 val cbFindHub = findViewById<CheckBox>(R.id.cbFindHub)
@@ -733,27 +702,6 @@ class GuardianMainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestDeviceAdminActivation() {
-        val adminComp = deviceOwnerManager.getAdminComponent(this)
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-        if (dpm != null && dpm.isAdminActive(adminComp)) {
-            Toast.makeText(this, "Device Admin is already ACTIVE on this handset.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        try {
-            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComp)
-                putExtra(
-                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                    "Activate AntiTheft Guardian Device Admin to enforce lock screen security, detect unauthorized access, and prevent app removal. Personal data is never erased."
-                )
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Could not launch admin activation: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun showBrandSetupGuideDialog() {
         val brands = arrayOf(
             "Auto-Detect: ${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }}",
@@ -761,12 +709,11 @@ class GuardianMainActivity : AppCompatActivity() {
             "Xiaomi / Redmi (MIUI / HyperOS)",
             "Realme / Oppo (ColorOS)",
             "Vivo / iQOO (Funtouch OS)",
-            "Motorola / Google Pixel (Stock Android)",
-            "Enterprise Device Owner (ADB Elevation)"
+            "Motorola / Google Pixel (Stock Android)"
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Device Admin & OEM Setup Guide")
+            .setTitle("OEM Background & Battery Guide")
             .setItems(brands) { _, which ->
                 when (which) {
                     0 -> showSpecificBrandGuide(Build.MANUFACTURER.lowercase())
@@ -775,65 +722,50 @@ class GuardianMainActivity : AppCompatActivity() {
                     3 -> showSpecificBrandGuide("oppo")
                     4 -> showSpecificBrandGuide("vivo")
                     5 -> showSpecificBrandGuide("motorola")
-                    6 -> showProvisioningDialog()
                 }
-            }
-            .setPositiveButton("Activate Admin Now") { _, _ ->
-                requestDeviceAdminActivation()
             }
             .setNegativeButton("Close", null)
             .show()
     }
-
     private fun showSpecificBrandGuide(brand: String) {
         val (title, instructions, settingsAction) = when {
             brand.contains("samsung") -> Triple(
                 "Samsung One UI Setup",
-                "1. Device Admin:\n" +
-                "   Settings -> Security and privacy -> More security settings -> Device admin apps -> Enable AntiTheft Guardian.\n\n" +
-                "2. Battery & Background Protection:\n" +
-                "   Settings -> Apps -> AntiTheft Guardian -> Battery -> Select 'Unrestricted'.\n\n" +
-                "3. Secure Power-Off:\n" +
+                "1. Battery & Background Protection:\n" +
+                "   Settings -> Apps -> SHE Guardian Lite -> Battery -> Select 'Unrestricted'.\n\n" +
+                "2. Secure Power-Off:\n" +
                 "   Settings -> Lock screen -> Secure lock settings -> Enable 'Lock network and security' so a thief cannot toggle Wi-Fi or power off without PIN.",
                 Settings.ACTION_SECURITY_SETTINGS
             )
             brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") -> Triple(
                 "Xiaomi / HyperOS / MIUI Setup",
-                "1. Device Admin:\n" +
-                "   Settings -> Passwords & security -> Privacy -> Device administrators -> Activate AntiTheft Guardian (complete 10s security prompt).\n\n" +
-                "2. Autostart & Background Protection:\n" +
-                "   Settings -> Apps -> Manage apps -> AntiTheft Guardian -> Enable 'Autostart'. In Battery Saver, select 'No restrictions'.\n\n" +
-                "3. Lock in Recents:\n" +
+                "1. Autostart & Background Protection:\n" +
+                "   Settings -> Apps -> Manage apps -> SHE Guardian Lite -> Enable 'Autostart'. In Battery Saver, select 'No restrictions'.\n\n" +
+                "2. Lock in Recents:\n" +
                 "   Open App Switcher -> Long press Guardian card -> Tap Lock icon to prevent memory cleaner closure.",
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS
             )
             brand.contains("oppo") || brand.contains("realme") || brand.contains("oneplus") -> Triple(
                 "Realme / Oppo / OnePlus Setup",
-                "1. Device Admin:\n" +
-                "   Settings -> Password & Security -> System security -> Device admin apps -> Enter Captcha -> Activate AntiTheft Guardian.\n\n" +
-                "2. Background Activity:\n" +
+                "1. Background Activity:\n" +
                 "   Settings -> Battery -> More settings -> App battery management -> Guardian -> Enable 'Allow background activity' & 'Allow auto-launch'.\n\n" +
-                "3. Require Password to Power Off:\n" +
+                "2. Require Password to Power Off:\n" +
                 "   Settings -> Password & Security -> System security -> Enable 'Require password to power off'.",
                 Settings.ACTION_SECURITY_SETTINGS
             )
             brand.contains("vivo") || brand.contains("iqoo") -> Triple(
                 "Vivo / iQOO Funtouch OS Setup",
-                "1. Device Admin:\n" +
-                "   Settings -> Security -> Device administrators -> Activate AntiTheft Guardian.\n\n" +
-                "2. High Background Power Consumption:\n" +
+                "1. High Background Power Consumption:\n" +
                 "   Settings -> Battery -> Background power consumption management -> Guardian -> Select 'High background power consumption'.\n\n" +
-                "3. iManager Autostart:\n" +
-                "   Open iManager app -> App manager -> Autostart -> Allow AntiTheft Guardian.",
+                "2. iManager Autostart:\n" +
+                "   Open iManager app -> App manager -> Autostart -> Allow SHE Guardian Lite.",
                 Settings.ACTION_SECURITY_SETTINGS
             )
             else -> Triple(
                 "Motorola / Pixel / Stock Android Setup",
-                "1. Device Admin:\n" +
-                "   Settings -> Security & privacy -> More security settings -> Device admin apps -> Enable AntiTheft Guardian.\n\n" +
-                "2. Battery Optimization (Unrestricted):\n" +
-                "   Settings -> Apps -> AntiTheft Guardian -> App battery usage -> Choose 'Unrestricted' so background GPS tracking is never paused.\n\n" +
-                "3. Lock Screen Security:\n" +
+                "1. Battery Optimization (Unrestricted):\n" +
+                "   Settings -> Apps -> SHE Guardian Lite -> App battery usage -> Choose 'Unrestricted' so background GPS tracking is never paused.\n\n" +
+                "2. Lock Screen Security:\n" +
                 "   Settings -> Security -> Screen lock -> Ensure 6+ digit PIN or strong alphanumeric passphrase is set.",
                 Settings.ACTION_SECURITY_SETTINGS
             )
@@ -853,9 +785,6 @@ class GuardianMainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     startActivity(Intent(Settings.ACTION_SETTINGS))
                 }
-            }
-            .setNeutralButton("Activate Admin (1-Tap)") { _, _ ->
-                requestDeviceAdminActivation()
             }
             .setNegativeButton("Close", null)
             .show()

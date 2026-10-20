@@ -3,7 +3,8 @@ package com.antitheft.guardian.commands
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.antitheft.deviceowner.DeviceOwnerManager
+import com.antitheft.guardian.control.DeviceControl
+import com.antitheft.guardian.control.LiteDeviceControl
 import com.antitheft.guardian.db.DirectBootStorageHelper
 import com.antitheft.guardian.location.LocationCaptureManager
 import com.antitheft.guardian.location.TrackingForegroundService
@@ -14,7 +15,7 @@ import kotlinx.coroutines.launch
 object CommandExecutionManager {
     private const val TAG = "CommandExecutionManager"
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val deviceOwnerManager = DeviceOwnerManager()
+    private val deviceControl: DeviceControl = LiteDeviceControl()
 
     fun executeCommand(
         context: Context,
@@ -81,13 +82,13 @@ object CommandExecutionManager {
     }
 
     fun executeLock(context: Context): Boolean {
-        Log.i(TAG, "Executing LOCK: enforcing restrictions and locking phone screen.")
-        if (deviceOwnerManager.isDeviceOwner(context)) {
-            deviceOwnerManager.applyTheftRestrictions(context)
+        Log.i(TAG, "Executing LOCK: checking device control support.")
+        if (deviceControl.isDeviceOwner(context)) {
+            deviceControl.applyTheftRestrictions(context)
             val info = "STOLEN DEVICE: Locked by owner. Return immediately."
-            deviceOwnerManager.setDeviceOwnerLockScreenInfo(context, info)
+            deviceControl.setLockScreenInfo(context, info)
         }
-        return deviceOwnerManager.lockNow(context)
+        return deviceControl.lockDevice(context)
     }
 
     fun executeStolenMode(context: Context, enabled: Boolean, parametersJson: String = "{}"): Boolean {
@@ -166,22 +167,13 @@ object CommandExecutionManager {
             }
 
             // Apply theft restrictions and kiosk if Device Owner
-            if (deviceOwnerManager.isDeviceOwner(context)) {
-                deviceOwnerManager.applyTheftRestrictions(context)
-                deviceOwnerManager.setDeviceOwnerLockScreenInfo(context, customMsg)
-                deviceOwnerManager.setLockTaskPackages(context, arrayOf(context.packageName))
-                try {
-                    val kioskIntent = Intent(context, com.antitheft.guardian.ui.GuardianMainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        putExtra("INTERNAL_ENTER_KIOSK", true)
-                    }
-                    context.startActivity(kioskIntent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start kiosk activity on stolen mode activation", e)
-                }
+            if (deviceControl.isDeviceOwner(context)) {
+                deviceControl.applyTheftRestrictions(context)
+                deviceControl.setLockScreenInfo(context, customMsg)
+                deviceControl.enterLockTaskStolenMode(context)
             }
             // Lock phone immediately on stolen mode activation
-            deviceOwnerManager.lockNow(context)
+            deviceControl.lockDevice(context)
             // Trigger an immediate fix
             executeLocate(context)
         } else {
@@ -189,18 +181,10 @@ object CommandExecutionManager {
             AlarmSoundManager.stopAlarm()
 
             // Clear theft restrictions upon de-escalation/recovery
-            if (deviceOwnerManager.isDeviceOwner(context)) {
-                deviceOwnerManager.clearTheftRestrictions(context)
-                deviceOwnerManager.setDeviceOwnerLockScreenInfo(context, null)
-                try {
-                    val exitKioskIntent = Intent(context, com.antitheft.guardian.ui.GuardianMainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        putExtra("INTERNAL_EXIT_KIOSK", true)
-                    }
-                    context.startActivity(exitKioskIntent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to dispatch exit kiosk intent", e)
-                }
+            if (deviceControl.isDeviceOwner(context)) {
+                deviceControl.clearTheftRestrictions(context)
+                deviceControl.setLockScreenInfo(context, null)
+                deviceControl.exitLockTaskMode(context)
             }
         }
 
@@ -213,25 +197,17 @@ object CommandExecutionManager {
         Log.i(TAG, "Executing verified UNPAIR command from registered owner. Clearing pairing credentials.")
         val storage = DirectBootStorageHelper(context)
         storage.clearPairing()
-        if (deviceOwnerManager.isDeviceOwner(context)) {
-            deviceOwnerManager.clearTheftRestrictions(context)
-            deviceOwnerManager.setDeviceOwnerLockScreenInfo(context, null)
-            try {
-                val exitKioskIntent = Intent(context, com.antitheft.guardian.ui.GuardianMainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra("INTERNAL_EXIT_KIOSK", true)
-                }
-                context.startActivity(exitKioskIntent)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to dispatch exit kiosk intent", e)
-            }
+        if (deviceControl.isDeviceOwner(context)) {
+            deviceControl.clearTheftRestrictions(context)
+            deviceControl.setLockScreenInfo(context, null)
+            deviceControl.exitLockTaskMode(context)
         }
         return true
     }
 
     fun executeClearDeviceOwner(context: Context): Boolean {
         Log.i(TAG, "Executing verified CLEAR_DEVICE_OWNER command: deprovisioning Device Owner.")
-        return deviceOwnerManager.clearDeviceOwner(context)
+        return deviceControl.clearDeviceOwner(context)
     }
 
     fun executeSendVerifySms(context: Context, parametersJson: String): Boolean {

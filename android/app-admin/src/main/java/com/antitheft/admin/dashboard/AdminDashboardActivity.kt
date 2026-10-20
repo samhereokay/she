@@ -33,6 +33,10 @@ import java.util.Locale
 import java.util.UUID
 import com.antitheft.admin.security.BaseSecureActivity
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.antitheft.admin.network.EmailConfirmRequest
 import com.antitheft.admin.network.PhoneConfirmRequest
 import com.antitheft.admin.network.PhoneStartRequest
@@ -43,6 +47,27 @@ import org.json.JSONObject
 class AdminDashboardActivity : BaseSecureActivity() {
 
     private val adminKeystore = AdminKeystoreManager()
+
+    private val smsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val sendGranted = permissions[Manifest.permission.SEND_SMS] == true
+        val receiveGranted = permissions[Manifest.permission.RECEIVE_SMS] == true
+        if (sendGranted && receiveGranted) {
+            Toast.makeText(this, "SMS permissions granted. Direct offline recovery armed.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "SMS permission declined. Manual copy/paste fallback enabled.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun requestSmsFallbackPermission(onGranted: () -> Unit = {}) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED) {
+            onGranted()
+        } else {
+            smsPermissionLauncher.launch(arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS))
+        }
+    }
     private var devicesList by mutableStateOf<List<DeviceDto>>(emptyList())
     private var userProfile by mutableStateOf<UserProfileDto?>(null)
     private var isLoading by mutableStateOf(false)
@@ -344,6 +369,7 @@ class AdminDashboardActivity : BaseSecureActivity() {
         val normalized = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(clean)
         val targetPhone = if (normalized.isNotBlank()) normalized else clean
 
+        requestSmsFallbackPermission()
         isPhoneVerifying = true
         phoneVerifyMessage = null
         lifecycleScope.launch {

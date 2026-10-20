@@ -325,6 +325,14 @@ fun AdminDashboardScreen(
     // iOS-Style Command Dispatch Bottom Sheet
     if (selectedDeviceForCommand != null) {
         val dev = selectedDeviceForCommand!!
+        val caps = dev.status_info?.capabilities ?: listOf("locate_sms", "live_gps", "siren", "ring", "battery_report")
+        val hasLocate = "live_gps" in caps || "locate_sms" in caps
+        val hasRing = "ring" in caps || "siren" in caps
+        val hasLock = "lock" in caps
+        val hasKiosk = "kiosk" in caps || "lock_task" in caps
+        val hasStolenMode = "stolen_mode" in caps || "lock" in caps
+        val hasDeviceOwner = "device_owner" in caps
+
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
             onDismissRequest = { selectedDeviceForCommand = null },
@@ -358,8 +366,9 @@ fun AdminDashboardScreen(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    val tierLabel = if (hasDeviceOwner) "Device Owner" else "Guardian Lite"
                     Text(
-                        text = "Hardware Keystore ECDSA Command Center",
+                        text = "Hardware Keystore ECDSA • $tierLabel",
                         color = SheTheme.colors.textSecondary,
                         fontSize = 12.sp
                     )
@@ -388,79 +397,89 @@ fun AdminDashboardScreen(
                                 onSendCommand(d, "TEST_MODE")
                             }
                         )
-                        IosDivider()
-                        IosActionSheetRow(
-                            title = "Satellite GPS Telemetry",
-                            subtitle = "Pings hardware GPS for fresh live satellite coordinates.",
-                            icon = Icons.Outlined.MyLocation,
-                            iconBg = Color(0xFF0284C7),
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "LOCATE")
-                            }
-                        )
+                        if (hasLocate) {
+                            IosDivider()
+                            IosActionSheetRow(
+                                title = "Satellite GPS Telemetry",
+                                subtitle = "Pings hardware GPS for fresh live satellite coordinates.",
+                                icon = Icons.Outlined.MyLocation,
+                                iconBg = Color(0xFF0284C7),
+                                onClick = {
+                                    val d = dev
+                                    selectedDeviceForCommand = null
+                                    onSendCommand(d, "LOCATE")
+                                }
+                            )
+                        }
                     }
                 }
 
                 // Group 2: ACOUSTIC & HARDWARE CONTROLS
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "ACOUSTIC & DISPLAY LOCK",
-                        color = SheTheme.colors.textTertiary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                    IosGroupedCard {
-                        IosActionSheetRow(
-                            title = "Maximum Siren Alarm",
-                            subtitle = "Loud acoustic emergency alarm overriding silent mode.",
-                            icon = Icons.Outlined.NotificationsActive,
-                            iconBg = Color(0xFF10B981),
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "RING")
-                            }
+                if (hasRing || hasLock || hasKiosk) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = if (hasLock || hasKiosk) "ACOUSTIC & DISPLAY LOCK" else "ACOUSTIC CONTROLS",
+                            color = SheTheme.colors.textTertiary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(start = 8.dp)
                         )
-                        IosDivider()
-                        IosActionSheetRow(
-                            title = "Silence Siren Alarm",
-                            subtitle = "Mutes active acoustic alarm on the handset.",
-                            icon = Icons.AutoMirrored.Outlined.VolumeOff,
-                            iconBg = Color(0xFF64748B),
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "STOP_RING")
+                        IosGroupedCard {
+                            if (hasRing) {
+                                IosActionSheetRow(
+                                    title = "Maximum Siren Alarm",
+                                    subtitle = "Loud acoustic emergency alarm overriding silent mode.",
+                                    icon = Icons.Outlined.NotificationsActive,
+                                    iconBg = Color(0xFF10B981),
+                                    onClick = {
+                                        val d = dev
+                                        selectedDeviceForCommand = null
+                                        onSendCommand(d, "RING")
+                                    }
+                                )
+                                IosDivider()
+                                IosActionSheetRow(
+                                    title = "Silence Siren Alarm",
+                                    subtitle = "Mutes active acoustic alarm on the handset.",
+                                    icon = Icons.AutoMirrored.Outlined.VolumeOff,
+                                    iconBg = Color(0xFF64748B),
+                                    onClick = {
+                                        val d = dev
+                                        selectedDeviceForCommand = null
+                                        onSendCommand(d, "STOP_RING")
+                                    }
+                                )
                             }
-                        )
-                        IosDivider()
-                        IosActionSheetRow(
-                            title = "Force Screen Lock",
-                            subtitle = "Instantly locks display and requires enterprise PIN.",
-                            icon = Icons.Outlined.Lock,
-                            iconBg = Color(0xFF6366F1),
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "LOCK")
+                            if (hasLock) {
+                                if (hasRing) IosDivider()
+                                IosActionSheetRow(
+                                    title = "Force Screen Lock",
+                                    subtitle = "Instantly locks display and requires enterprise PIN.",
+                                    icon = Icons.Outlined.Lock,
+                                    iconBg = Color(0xFF6366F1),
+                                    onClick = {
+                                        val d = dev
+                                        selectedDeviceForCommand = null
+                                        onSendCommand(d, "LOCK")
+                                    }
+                                )
                             }
-                        )
-                        IosDivider()
-                        IosActionSheetRow(
-                            title = "Release Kiosk Launcher",
-                            subtitle = "Releases stolen kiosk lock and restores default launcher.",
-                            icon = Icons.Outlined.LockOpen,
-                            iconBg = Color(0xFF0D9488),
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "EXIT_KIOSK")
+                            if (hasKiosk) {
+                                if (hasRing || hasLock) IosDivider()
+                                IosActionSheetRow(
+                                    title = "Release Kiosk Launcher",
+                                    subtitle = "Releases stolen kiosk lock and restores default launcher.",
+                                    icon = Icons.Outlined.LockOpen,
+                                    iconBg = Color(0xFF0D9488),
+                                    onClick = {
+                                        val d = dev
+                                        selectedDeviceForCommand = null
+                                        onSendCommand(d, "EXIT_KIOSK")
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                 }
 
@@ -475,19 +494,21 @@ fun AdminDashboardScreen(
                         modifier = Modifier.padding(start = 8.dp)
                     )
                     IosGroupedCard {
-                        IosActionSheetRow(
-                            title = "Real Stolen Lockdown",
-                            subtitle = "Full lockdown: continuous siren, kiosk, & SMS beacon.",
-                            icon = Icons.Outlined.WarningAmber,
-                            iconBg = Color(0xFFEF4444),
-                            isDestructive = true,
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "STOLEN_MODE")
-                            }
-                        )
-                        IosDivider()
+                        if (hasStolenMode) {
+                            IosActionSheetRow(
+                                title = "Real Stolen Lockdown",
+                                subtitle = "Full lockdown: continuous siren, kiosk, & SMS beacon.",
+                                icon = Icons.Outlined.WarningAmber,
+                                iconBg = Color(0xFFEF4444),
+                                isDestructive = true,
+                                onClick = {
+                                    val d = dev
+                                    selectedDeviceForCommand = null
+                                    onSendCommand(d, "STOLEN_MODE")
+                                }
+                            )
+                            IosDivider()
+                        }
                         IosActionSheetRow(
                             title = "Revoke Pairing Session",
                             subtitle = "Invalidates mutual ECDSA pairing keys.",
@@ -500,19 +521,21 @@ fun AdminDashboardScreen(
                                 onSendCommand(d, "UNPAIR")
                             }
                         )
-                        IosDivider()
-                        IosActionSheetRow(
-                            title = "Deprovision Device Owner",
-                            subtitle = "Permanent administrative reset (requires TOTP).",
-                            icon = Icons.Outlined.DeleteForever,
-                            iconBg = Color(0xFFDC2626),
-                            isDestructive = true,
-                            onClick = {
-                                val d = dev
-                                selectedDeviceForCommand = null
-                                onSendCommand(d, "CLEAR_DEVICE_OWNER")
-                            }
-                        )
+                        if (hasDeviceOwner) {
+                            IosDivider()
+                            IosActionSheetRow(
+                                title = "Deprovision Device Owner",
+                                subtitle = "Permanent administrative reset (requires TOTP).",
+                                icon = Icons.Outlined.DeleteForever,
+                                iconBg = Color(0xFFDC2626),
+                                isDestructive = true,
+                                onClick = {
+                                    val d = dev
+                                    selectedDeviceForCommand = null
+                                    onSendCommand(d, "CLEAR_DEVICE_OWNER")
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -710,12 +733,20 @@ private fun DeviceCardItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = device.device_alias,
-                        color = SheTheme.colors.textPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = device.device_alias,
+                            color = SheTheme.colors.textPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val isLite = !((device.status_info?.capabilities ?: emptyList()).contains("device_owner"))
+                        SheStatusChip(
+                            text = if (isLite) "LITE" else "OWNER",
+                            level = if (isLite) StatusLevel.INFO else StatusLevel.SUCCESS
+                        )
+                    }
                     Text(
                         text = "ID: ${device.id.take(16)}...",
                         color = SheTheme.colors.textTertiary,
@@ -775,6 +806,37 @@ private fun DeviceCardItem(
                         color = SheTheme.colors.textSecondary,
                         fontSize = 13.sp
                     )
+                }
+            }
+
+            val statusInfo = device.status_info
+            if (statusInfo?.battery_level != null || !statusInfo?.connectivity_type.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (statusInfo?.battery_level != null) {
+                        val batt = statusInfo.battery_level
+                        val battLevel = when {
+                            batt <= 15 -> StatusLevel.DANGER
+                            batt <= 30 -> StatusLevel.WARNING
+                            else -> StatusLevel.SUCCESS
+                        }
+                        SheStatusChip(
+                            text = "⚡ Battery $batt%",
+                            level = battLevel
+                        )
+                    }
+                    if (!statusInfo?.connectivity_type.isNullOrBlank()) {
+                        Text(
+                            text = "Net: ${statusInfo?.connectivity_type}",
+                            color = SheTheme.colors.textSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 

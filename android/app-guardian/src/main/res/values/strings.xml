@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">SHE Guardian</string>
+    <string name="app_name">SHE Guardian Lite</string>
     <string name="status_title">SHE Protection Status</string>
     <string name="status_active">Protection Active</string>
     <string name="tier1_title">Tier 1: OS Security Guidance Checklist</string>

@@ -272,6 +272,7 @@ class DeviceStatus(Base):
     sim_country = Column(String(8), nullable=True)
     sim_changed = Column(Boolean, default=False, nullable=False)
     permission_health = Column(Text, default="{}", nullable=False)  # JSON: sms, background_location, camera, battery_optimization, restricted_settings
+    capabilities = Column(Text, default="[]", nullable=False)  # JSON list: locate_sms, live_gps, siren, ring, etc.
     last_seen = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     last_sync_path = Column(String(16), default="online", nullable=False)  # "online" | "sms"
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

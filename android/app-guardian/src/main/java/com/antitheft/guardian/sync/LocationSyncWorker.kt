@@ -1,9 +1,15 @@
 package com.antitheft.guardian.sync
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.antitheft.guardian.crypto.KeystoreManager
 import com.antitheft.guardian.db.DirectBootStorageHelper
 import com.antitheft.guardian.db.GuardianDatabase
 import com.google.gson.Gson
@@ -96,6 +102,13 @@ class LocationSyncWorker(
                 db.locationDao().pruneSyncedLocations(fourteenDaysAgo)
             }
 
+            // Also transmit periodic signed heartbeat
+            try {
+                sendHeartbeat(applicationContext, httpClient, storageHelper, gson)
+            } catch (e: Exception) {
+                Log.d(TAG, "Heartbeat opportunistic dispatch: ${e.message}")
+            }
+
             Result.success()
         } catch (e: Exception) {
             val pinFailure = generateSequence(e as Throwable?) { it.cause }.any { cause ->
@@ -117,16 +130,113 @@ class LocationSyncWorker(
     companion object {
         private const val TAG = "LocationSyncWorker"
 
+        val LITE_CAPABILITIES = listOf(
+            "locate_sms",
+            "live_gps",
+            "siren",
+            "ring",
+            "battery_report",
+            "remote_photo"
+        )
+
+        suspend fun sendHeartbeatNow(context: Context): Boolean = withContext(Dispatchers.IO) {
+            try {
+                val storageHelper = DirectBootStorageHelper(context)
+                val httpClient = OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .build()
+                val gson = Gson()
+                sendHeartbeat(context, httpClient, storageHelper, gson)
+            } catch (e: Exception) {
+                Log.d(TAG, "sendHeartbeatNow exception: ${e.message}")
+                false
+            }
+        }
+
+        private fun sendHeartbeat(
+            context: Context,
+            httpClient: OkHttpClient,
+            storageHelper: DirectBootStorageHelper,
+            gson: Gson
+        ): Boolean {
+            val deviceId = storageHelper.getDeviceId()
+            val serverUrl = storageHelper.getServerUrl().trimEnd('/')
+            if (deviceId.isBlank() || serverUrl.isBlank()) return false
+
+            val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            val batteryStatus = context.registerReceiver(null, batteryFilter)
+            val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val batteryLevel = if (level >= 0 && scale > 0) (level * 100) / scale else 100
+
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val net = cm?.activeNetwork
+            val caps = if (net != null) cm.getNetworkCapabilities(net) else null
+            val connType = when {
+                caps == null -> "offline"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+                else -> "other"
+            }
+
+            val nowTs = System.currentTimeMillis() / 1000
+            val canonical = "$deviceId:$nowTs:$batteryLevel:$connType:False"
+            val keystore = KeystoreManager()
+            val sigBytes = keystore.signData(canonical.toByteArray(Charsets.UTF_8))
+            val sigBase64 = java.util.Base64.getEncoder().encodeToString(sigBytes)
+
+            val payload = mapOf(
+                "battery_level" to batteryLevel,
+                "connectivity_type" to connType,
+                "sim_changed" to false,
+                "capabilities" to LITE_CAPABILITIES,
+                "timestamp" to nowTs,
+                "signature" to sigBase64
+            )
+
+            val req = Request.Builder()
+                .url("$serverUrl/api/v1/devices/$deviceId/heartbeat")
+                .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
+                .build()
+
+            httpClient.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    Log.i(TAG, "Guardian heartbeat delivered successfully: battery=$batteryLevel%, conn=$connType")
+                    return true
+                } else {
+                    Log.w(TAG, "Guardian heartbeat rejected with code: ${resp.code}")
+                    return false
+                }
+            }
+        }
+
         suspend fun syncPendingLocationsNow(context: Context): Boolean = withContext(Dispatchers.IO) {
             try {
                 val storageHelper = DirectBootStorageHelper(context)
                 val db = GuardianDatabase.getInstance(context, storageHelper)
                 val pendingLocations = db.locationDao().getPendingLocations()
-                if (pendingLocations.isEmpty()) return@withContext true
 
                 val deviceId = storageHelper.getDeviceId()
                 val serverUrl = storageHelper.getServerUrl().trimEnd('/')
                 if (serverUrl.isBlank() || deviceId.isBlank()) return@withContext false
+
+                val httpClient = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .writeTimeout(30, TimeUnit.SECONDS)
+                    .retryOnConnectionFailure(true)
+                    .build()
+                val gson = Gson()
+
+                // Dispatch opportunistic heartbeat alongside location sync
+                try {
+                    sendHeartbeat(context, httpClient, storageHelper, gson)
+                } catch (_: Exception) {}
+
+                if (pendingLocations.isEmpty()) return@withContext true
 
                 val endpoint = "$serverUrl/api/v1/locations/batch"
                 val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
@@ -146,13 +256,6 @@ class LocationSyncWorker(
                     )
                 }
 
-                val httpClient = OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(30, TimeUnit.SECONDS)
-                    .writeTimeout(30, TimeUnit.SECONDS)
-                    .retryOnConnectionFailure(true)
-                    .build()
-                val gson = Gson()
                 val jsonBody = gson.toJson(mapOf("device_id" to deviceId, "events" to eventList))
                 val request = Request.Builder()
                     .url(endpoint)

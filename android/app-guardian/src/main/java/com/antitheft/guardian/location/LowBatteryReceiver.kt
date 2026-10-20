@@ -102,9 +102,12 @@ class LowBatteryReceiver : BroadcastReceiver() {
                     }
                 }
 
-                // Enqueue expedited backend sync
+                // Enqueue expedited backend sync and heartbeat
                 val captureManager = LocationCaptureManager(context)
                 captureManager.enqueueSyncWork()
+                try {
+                    com.antitheft.guardian.sync.LocationSyncWorker.sendHeartbeatNow(context)
+                } catch (_: Exception) {}
 
             } catch (e: Exception) {
                 Log.e(TAG, "Stage 2 execution exception", e)

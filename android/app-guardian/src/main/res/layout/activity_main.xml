@@ -301,9 +301,9 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Tier 2: Device Admin Permission & OEM Guide Card -->
+        <!-- OEM Background & Battery Guidance Card -->
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardDeviceAdmin"
+            android:id="@+id/cardOemGuide"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
@@ -329,21 +329,21 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="TIER 2: DEVICE ADMIN PERMISSION"
+                        android:text="TIER 2: OEM BACKGROUND &amp; BATTERY"
                         android:textColor="#F5F5F7"
                         android:textSize="13sp"
                         android:letterSpacing="0.05"
                         android:textStyle="bold" />
 
                     <TextView
-                        android:id="@+id/tvDeviceAdminBadge"
+                        android:id="@+id/tvLiteBadge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_warning"
+                        android:background="@drawable/bg_badge_success"
                         android:paddingHorizontal="10dp"
                         android:paddingVertical="4dp"
-                        android:text="NOT GRANTED"
-                        android:textColor="#F59E0B"
+                        android:text="LITE ACTIVE"
+                        android:textColor="#22C55E"
                         android:textSize="11sp"
                         android:textStyle="bold" />
                 </LinearLayout>
@@ -352,7 +352,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Grants hardware permission to lock the screen, block unauthorized app uninstall, and prevent thief bypass. Never erases personal data."
+                    android:text="Guardian Lite operates without Device Admin permissions, utilizing foreground location services and SMS beacons. Review OEM battery settings to ensure continuous protection."
                     android:textColor="#A1A1AA"
                     android:textSize="12sp" />
 
@@ -363,28 +363,14 @@
                     android:orientation="horizontal">
 
                     <Button
-                        android:id="@+id/btnGrantDeviceAdmin"
-                        android:layout_width="0dp"
-                        android:layout_height="44dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:backgroundTint="#FFFFFF"
-                        android:textColor="#000000"
-                        android:textStyle="bold"
-                        android:text="Activate Admin (1-Tap)"
-                        android:textSize="11sp"
-                        app:cornerRadius="8dp" />
-
-                    <Button
                         android:id="@+id/btnAdminGuide"
                         style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="44dp"
-                        android:layout_weight="1"
                         android:backgroundTint="#1C1C1E"
                         app:strokeColor="#2C2C2E"
                         app:strokeWidth="1dp"
-                        android:text="Brand Setup Guide"
+                        android:text="OEM &amp; Brand Setup Guide"
                         android:textColor="#F5F5F7"
                         android:textSize="11sp"
                         app:cornerRadius="8dp" />
@@ -459,11 +445,12 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Tier 3 Device Owner Card -->
+        <!-- Tier 3 Device Owner Card (Part 2: Hardened Flavor) -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
+            android:visibility="gone"
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"

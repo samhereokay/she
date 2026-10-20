@@ -86,6 +86,18 @@ data class DeviceLocationDto(
     val sequence_number: Long
 )
 
+data class DeviceStatusDto(
+    val battery_level: Int? = null,
+    val connectivity_type: String? = null,
+    val sim_operator: String? = null,
+    val sim_country: String? = null,
+    val sim_changed: Boolean = false,
+    val capabilities: List<String> = emptyList(),
+    val last_seen: String? = null,
+    val last_sync_path: String = "online",
+    val is_stale: Boolean = false
+)
+
 data class DeviceDto(
     val id: String,
     val device_alias: String,
@@ -95,7 +107,8 @@ data class DeviceDto(
     val pairing_id: String? = null,
     val confirmation_code: String? = null,
     val calculated_status: String, // LIVE, DELAYED, UNAVAILABLE
-    val last_location: DeviceLocationDto?
+    val last_location: DeviceLocationDto?,
+    val status_info: DeviceStatusDto? = null
 )
 
 data class DeviceListDto(val devices: List<DeviceDto>)

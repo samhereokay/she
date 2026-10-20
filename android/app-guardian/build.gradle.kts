@@ -9,7 +9,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.antitheft.guardian"
+        applicationId = "com.antitheft.guardian.lite"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -86,7 +86,6 @@ android {
 
 dependencies {
     implementation(project(":common-core"))
-    implementation(project(":device-owner"))
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
