@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import engine, Base
 from app.api.auth import router as auth_router
-from app.api.devices import router as devices_router
+from app.api.devices import router as devices_router, pairing_router
 from app.api.locations import router as locations_router
 from app.api.vault import router as vault_router
 from app.api.web import router as web_router
@@ -175,6 +175,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(auth_router)
 app.include_router(verify_router)
 app.include_router(devices_router)
+app.include_router(pairing_router)
 app.include_router(locations_router)
 app.include_router(vault_router)
 app.include_router(web_router)

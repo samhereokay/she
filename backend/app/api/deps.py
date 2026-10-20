@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -120,6 +121,36 @@ def get_pairing_token_user(
     Atomically claims JTI upon verification.
     """
     clean_token = token.strip().strip('"').strip("'")
+
+    # 1. Check database-backed PairingSession first (supports 5-minute single-use pairing sessions and short codes)
+    from app.db.models import PairingSession
+    pairing_sess = db.query(PairingSession).filter(
+        (PairingSession.session_token == clean_token) | (PairingSession.short_code == clean_token)
+    ).first()
+    if pairing_sess:
+        if pairing_sess.consumed_at is not None:
+            logger.warning(f"get_pairing_token_user: Pairing session {pairing_sess.id} already consumed")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Pairing session has already been consumed",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        now = datetime.now(timezone.utc)
+        expires = pairing_sess.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires < now:
+            logger.warning(f"get_pairing_token_user: Pairing session {pairing_sess.id} expired at {expires}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Pairing session has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        pairing_sess.consumed_at = now
+        db.commit()
+        return pairing_sess.user, {"sub": pairing_sess.user_id, "session_id": pairing_sess.id, "scope": "device_pairing"}
+
+    # 2. Fall back to JWT pairing token
     payload = verify_pairing_token(clean_token)
     if not payload or "sub" not in payload:
         logger.warning(f"get_pairing_token_user: Invalid, expired, or already-consumed token (token_len={len(clean_token)})")

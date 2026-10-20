@@ -980,8 +980,15 @@ def test_multiple_devices_pairing_and_deletion(client, test_keypair, pair_device
 
     # Pair Device 1
     dev1_id, _ = pair_device(client, token, "Phone 1", pem_public, "+15551112233", "secretmultitestkey111")
-    # Pair Device 2
-    dev2_id, _ = pair_device(client, token, "Phone 2", pem_public, "+15554445566", "secretmultitestkey222")
+    # Pair Device 2 (with distinct keypair for distinct physical phone)
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    priv_dev2 = ec.generate_private_key(ec.SECP256R1())
+    pem_dev2 = priv_dev2.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode("utf-8")
+    dev2_id, _ = pair_device(client, token, "Phone 2", pem_dev2, "+15554445566", "secretmultitestkey222")
 
     # Verify both devices appear in list
     list_resp = client.get("/api/v1/devices", headers=headers)

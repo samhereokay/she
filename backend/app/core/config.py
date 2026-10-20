@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     LOCATION_RETENTION_DAYS: int = int(os.getenv("LOCATION_RETENTION_DAYS", "30"))
 
     # Device Management Quotas
-    MAX_DEVICES_PER_USER: int = int(os.getenv("MAX_DEVICES_PER_USER", "10"))
+    MAX_DEVICES_PER_USER: int = int(os.getenv("MAX_DEVICES_PER_USER", "5"))
+    MAX_GUARDIANS_PER_ACCOUNT: int = int(os.getenv("MAX_GUARDIANS_PER_ACCOUNT", "5"))
+    STALE_DEVICE_THRESHOLD_MINUTES: int = int(os.getenv("STALE_DEVICE_THRESHOLD_MINUTES", "30"))
+    PAIRING_SESSION_TTL_MINUTES: int = int(os.getenv("PAIRING_SESSION_TTL_MINUTES", "5"))
 
     # Recovery Vault Storage Quotas (Per User)
     MAX_VAULT_ITEMS_PER_USER: int = int(os.getenv("MAX_VAULT_ITEMS_PER_USER", "100"))

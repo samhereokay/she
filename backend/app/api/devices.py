@@ -3,15 +3,30 @@ import json
 import time
 import hashlib
 import secrets
-from datetime import datetime, timezone
-from typing import Any, List, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.config import settings
+from app.core.ws_manager import ws_manager
 from app.db.session import get_db
-from app.db.models import User, ProtectedDevice, LocationEvent, AuditEvent, TrustedDevice, DeviceCommand, generate_uuid
+from app.db.models import (
+    User,
+    ProtectedDevice,
+    LocationEvent,
+    AuditEvent,
+    TrustedDevice,
+    DeviceCommand,
+    PairingSession,
+    DeviceStatus,
+    DeviceAuditLog,
+    generate_uuid,
+    utc_now
+)
 from app.schemas.device import (
     DevicePairRequest,
     DeviceResponse,
@@ -24,7 +39,18 @@ from app.schemas.device import (
     PairingConfirmRequest,
     PairingConfirmResponse,
     EmergencyCommandRequest,
-    EmergencyCommandResponse
+    EmergencyCommandResponse,
+    PairingSessionCreateRequest,
+    PairingSessionResponse,
+    GuardianPairRequest,
+    DeviceDetailResponse,
+    DeviceRosterResponse,
+    DeviceRenameRequest,
+    DeviceHeartbeatRequest,
+    DeviceUnpairRequest,
+    DeviceRevokeRequest,
+    DeviceAuditLogResponse,
+    DeviceStatusResponse
 )
 from app.schemas.location import LocationResponse
 from app.api.deps import get_current_user, get_verified_user, get_current_user_2fa, get_pairing_token_user
@@ -39,6 +65,7 @@ from app.core.security import (
 )
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
+pairing_router = APIRouter(prefix="/api/v1/pairing-sessions", tags=["Pairing Sessions"])
 
 
 def compute_device_status(last_location: LocationEvent) -> str:
@@ -66,106 +93,367 @@ def compute_device_status(last_location: LocationEvent) -> str:
         return "UNAVAILABLE"
 
 
-@router.post("/pair", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
+def compute_key_fingerprint(public_key_pem: str) -> str:
+    """Calculates SPKI SHA-256 fingerprint for public key."""
+    try:
+        pub = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        der = pub.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        return hashlib.sha256(der).hexdigest()
+    except Exception:
+        return hashlib.sha256(public_key_pem.encode("utf-8")).hexdigest()
+
+
+def derive_6digit_verification_code(admin_pem: str, guardian_pem: str) -> str:
+    """
+    Derives deterministic 6-digit mutual confirmation code from both ECDSA public keys.
+    Commutative: both Admin and Guardian calculate the exact same number without network transmission.
+    """
+    try:
+        pub_a = serialization.load_pem_public_key(admin_pem.encode("utf-8"))
+        der_a = pub_a.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    except Exception:
+        der_a = admin_pem.encode("utf-8")
+
+    try:
+        pub_g = serialization.load_pem_public_key(guardian_pem.encode("utf-8"))
+        der_g = pub_g.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    except Exception:
+        der_g = guardian_pem.encode("utf-8")
+
+    sorted_der = min(der_a, der_g) + max(der_a, der_g)
+    digest = hashlib.sha256(sorted_der).digest()
+    code_int = (int.from_bytes(digest[:4], "big") % 900000) + 100000
+    return f"{code_int:06d}"
+
+
+def verify_user_totp_code(user: User, code: str) -> bool:
+    """Verifies a 6-digit TOTP code against the owner's encrypted TOTP secret."""
+    if not user.totp_enabled or not user.totp_secret:
+        return False
+    secret = decrypt_totp_secret(user.totp_secret)
+    return verify_totp_code(secret, code)
+
+
+def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDetailResponse:
+    """Builds enriched DeviceDetailResponse with live status, hardware identity, and stale detection."""
+    latest_loc = (
+        db.query(LocationEvent)
+        .filter(LocationEvent.protected_device_id == dev.id)
+        .order_by(LocationEvent.sequence_number.desc())
+        .first()
+    )
+    loc_resp = LocationResponse.model_validate(latest_loc) if latest_loc else None
+    calc_status = compute_device_status(latest_loc)
+
+    status_rec = dev.status_record
+    if not status_rec:
+        status_rec = db.query(DeviceStatus).filter(DeviceStatus.device_id == dev.id).first()
+
+    now = datetime.now(timezone.utc)
+    if status_rec:
+        last_seen = status_rec.last_seen
+        if last_seen and last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        diff_mins = (now - last_seen).total_seconds() / 60.0 if last_seen else 9999
+        is_stale = diff_mins > settings.STALE_DEVICE_THRESHOLD_MINUTES
+
+        perm_health = {}
+        if status_rec.permission_health:
+            try:
+                perm_health = json.loads(status_rec.permission_health)
+            except Exception:
+                perm_health = {}
+
+        status_info = DeviceStatusResponse(
+            battery_level=status_rec.battery_level,
+            connectivity_type=status_rec.connectivity_type,
+            sim_operator=status_rec.sim_operator,
+            sim_country=status_rec.sim_country,
+            sim_changed=status_rec.sim_changed,
+            permission_health=perm_health,
+            last_seen=last_seen,
+            last_sync_path=status_rec.last_sync_path or "online",
+            is_stale=is_stale
+        )
+    else:
+        status_info = DeviceStatusResponse(
+            battery_level=None,
+            connectivity_type=None,
+            sim_operator=None,
+            sim_country=None,
+            sim_changed=False,
+            permission_health={},
+            last_seen=dev.created_at,
+            last_sync_path="online",
+            is_stale=True
+        )
+
+    return DeviceDetailResponse(
+        id=dev.id,
+        user_id=dev.user_id,
+        device_alias=dev.device_alias,
+        public_key_pem=dev.public_key_pem,
+        key_fingerprint=dev.key_fingerprint,
+        trusted_phone_number=dev.trusted_phone_number,
+        status=dev.status,
+        calculated_status=calc_status,
+        confirmation_code=dev.confirmation_code,
+        pairing_id=dev.pairing_id,
+        manufacturer=dev.manufacturer,
+        brand=dev.brand,
+        model=dev.model,
+        android_version=dev.android_version,
+        sdk_level=dev.sdk_level,
+        variant=dev.variant or "lite",
+        app_version=dev.app_version,
+        install_date=dev.install_date,
+        is_device_owner=bool(dev.is_device_owner),
+        is_possible_reinstall=bool(dev.is_possible_reinstall),
+        status_info=status_info,
+        last_location=loc_resp,
+        created_at=dev.created_at
+    )
+
+
+# -----------------------------------------------------------------------------
+# Pairing Session Endpoints (Admin -> Backend)
+# -----------------------------------------------------------------------------
+
+@pairing_router.post("", response_model=PairingSessionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/pairing-sessions", response_model=PairingSessionResponse, status_code=status.HTTP_201_CREATED)
+def create_pairing_session(
+    req: PairingSessionCreateRequest,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Initiate a 5-minute single-use pairing session from SHE Admin.
+    Strictly mandates TOTP two-factor authentication from account owner.
+    Generates a secure 32-byte session token and a 6-digit short code for manual entry.
+    """
+    if not current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Two-factor authentication (TOTP) must be enabled before pairing Guardian handsets."
+        )
+
+    if not verify_user_totp_code(current_user, req.totp_code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid TOTP verification code. Handset pairing session rejected."
+        )
+
+    # Purge old expired pairing sessions for this user to leave zero residue
+    db.query(PairingSession).filter(
+        PairingSession.user_id == current_user.id,
+        PairingSession.expires_at < utc_now()
+    ).delete()
+
+    session_token = secrets.token_hex(32)
+    short_code = "".join(secrets.choice("23456789ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(6))
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.PAIRING_SESSION_TTL_MINUTES)
+
+    session = PairingSession(
+        user_id=current_user.id,
+        session_token=session_token,
+        short_code=short_code,
+        expires_at=expires_at
+    )
+    db.add(session)
+
+    db.add(DeviceAuditLog(
+        user_id=current_user.id,
+        action="PAIRING_SESSION_CREATED",
+        actor_admin_id=req.admin_device_id,
+        details=f"Pairing session initiated with 5-minute TTL. Short code: {short_code[:2]}****"
+    ))
+    db.commit()
+    db.refresh(session)
+
+    return PairingSessionResponse(
+        session_id=session.id,
+        session_token=session.session_token,
+        short_code=session.short_code,
+        expires_in_seconds=settings.PAIRING_SESSION_TTL_MINUTES * 60
+    )
+
+
+# -----------------------------------------------------------------------------
+# Guardian Enrollment & Device Roster
+# -----------------------------------------------------------------------------
+
+@router.post("/pair", response_model=DeviceDetailResponse, status_code=status.HTTP_201_CREATED)
 def pair_device(
-    pair_in: DevicePairRequest,
+    pair_in: Union[GuardianPairRequest, DevicePairRequest],
     pairing_data: tuple[User, dict] = Depends(get_pairing_token_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
     Enroll a new Guardian phone with the authenticated owner.
-    STRICT SECURITY REQUIREMENT:
-    Must be authorized with a single-use, 5-minute register-only pairing token from the QR code.
-    General session tokens are strictly rejected.
-    Device is placed in PENDING_CONFIRMATION until the owner confirms the mutual confirmation code.
+    STRICT SECURITY REQUIREMENTS:
+    1. Authorized via single-use 5-minute pairing session or pairing token.
+    2. Enforces maximum 5 Guardian handsets per account.
+    3. Rejects duplicate device_id or duplicate public key fingerprints.
+    4. Detects reinstalls on matching phone models and flags previous record.
+    5. Records full hardware identity, variant, and initial telemetry.
     """
     current_user, token_payload = pairing_data
+    dev_id = getattr(pair_in, "device_id", None) or generate_uuid()
     pairing_hash = hashlib.sha256(pair_in.pairing_secret.encode("utf-8")).hexdigest()
     pairing_id = generate_uuid()
     confirmation_code = f"{secrets.randbelow(900) + 100}-{secrets.randbelow(900) + 100}"
-    
-    # Check device pairing quota per account
-    user_device_count = db.query(ProtectedDevice).filter(
+    fingerprint = compute_key_fingerprint(pair_in.public_key_pem)
+
+    # 1. Enforce max Guardian limit per account (default: 5)
+    active_count = db.query(ProtectedDevice).filter(
         ProtectedDevice.user_id == current_user.id,
-        ProtectedDevice.id != pair_in.device_id
+        ProtectedDevice.status != "REVOKED",
+        ProtectedDevice.id != dev_id
     ).count()
-    if user_device_count >= settings.MAX_DEVICES_PER_USER:
+
+    limit = min(settings.MAX_GUARDIANS_PER_ACCOUNT, getattr(settings, "MAX_DEVICES_PER_USER", settings.MAX_GUARDIANS_PER_ACCOUNT))
+    if active_count >= limit:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Account limit reached: You have reached the limit of {settings.MAX_DEVICES_PER_USER} protected devices. To pair another handset, delete or unpair an old device first."
+            detail=f"Account limit reached: You have reached the limit of {limit} protected devices. To pair another handset, delete or unpair an old device first."
         )
 
-    if pair_in.device_id:
-        existing = db.query(ProtectedDevice).filter(ProtectedDevice.id == pair_in.device_id).first()
-        if existing:
-            if existing.user_id != current_user.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device ID registered to another user")
-            existing.device_alias = pair_in.device_alias
-            existing.public_key_pem = pair_in.public_key_pem
-            existing.trusted_phone_number = pair_in.trusted_phone_number
-            existing.pairing_secret_hash = pairing_hash
-            existing.pairing_secret = encrypt_pairing_secret(pair_in.pairing_secret)
-            existing.pairing_id = pairing_id
-            existing.confirmation_code = confirmation_code
-            existing.status = "PENDING_CONFIRMATION"
-            db.commit()
-            db.refresh(existing)
-            device = existing
-        else:
-            device = ProtectedDevice(
-                id=pair_in.device_id,
-                user_id=current_user.id,
-                device_alias=pair_in.device_alias,
-                public_key_pem=pair_in.public_key_pem,
-                trusted_phone_number=pair_in.trusted_phone_number,
-                pairing_secret_hash=pairing_hash,
-                pairing_secret=encrypt_pairing_secret(pair_in.pairing_secret),
-                pairing_id=pairing_id,
-                confirmation_code=confirmation_code,
-                status="PENDING_CONFIRMATION"
+    # 2. Check for duplicate device_id
+    existing_by_id = db.query(ProtectedDevice).filter(ProtectedDevice.id == dev_id).first()
+    if existing_by_id:
+        if existing_by_id.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device ID registered to another user")
+        if existing_by_id.status == "ACTIVE":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Device ID '{dev_id}' is already paired and active. If replacing, remove or unpair the existing handset first."
             )
-            db.add(device)
-            db.commit()
-            db.refresh(device)
+
+    # 3. Check for duplicate key fingerprint across active devices
+    existing_by_key = db.query(ProtectedDevice).filter(
+        ProtectedDevice.key_fingerprint == fingerprint,
+        ProtectedDevice.status == "ACTIVE",
+        ProtectedDevice.id != dev_id
+    ).first()
+    if existing_by_key:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A handset with this exact cryptographic key pair is already registered and active."
+        )
+
+    # 4. Reinstall Detection: Same physical model & brand on account with new device_id
+    model_name = getattr(pair_in, "model", None)
+    brand_name = getattr(pair_in, "brand", None)
+    if model_name and brand_name:
+        prior_device = db.query(ProtectedDevice).filter(
+            ProtectedDevice.user_id == current_user.id,
+            ProtectedDevice.model == model_name,
+            ProtectedDevice.brand == brand_name,
+            ProtectedDevice.status != "REVOKED",
+            ProtectedDevice.id != dev_id
+        ).first()
+        if prior_device:
+            prior_device.is_possible_reinstall = True
+            db.add(DeviceAuditLog(
+                user_id=current_user.id,
+                device_id=prior_device.id,
+                action="POSSIBLE_REINSTALL_DETECTED",
+                details=f"New handset ({dev_id}) enrolled with matching model '{model_name}'. Flagged previous handset record as possible reinstall."
+            ))
+
+    # 5. Create or update ProtectedDevice record
+    if existing_by_id:
+        existing_by_id.device_alias = pair_in.device_alias
+        existing_by_id.public_key_pem = pair_in.public_key_pem
+        existing_by_id.key_fingerprint = fingerprint
+        existing_by_id.trusted_phone_number = pair_in.trusted_phone_number
+        existing_by_id.pairing_secret_hash = pairing_hash
+        existing_by_id.pairing_secret = encrypt_pairing_secret(pair_in.pairing_secret)
+        existing_by_id.pairing_id = pairing_id
+        existing_by_id.confirmation_code = confirmation_code
+        existing_by_id.status = "PENDING_CONFIRMATION"
+        existing_by_id.manufacturer = getattr(pair_in, "manufacturer", None)
+        existing_by_id.brand = getattr(pair_in, "brand", None)
+        existing_by_id.model = getattr(pair_in, "model", None)
+        existing_by_id.android_version = getattr(pair_in, "android_version", None)
+        existing_by_id.sdk_level = getattr(pair_in, "sdk_level", None)
+        existing_by_id.variant = getattr(pair_in, "variant", "lite")
+        existing_by_id.app_version = getattr(pair_in, "app_version", None)
+        existing_by_id.install_date = getattr(pair_in, "install_date", None)
+        existing_by_id.is_device_owner = getattr(pair_in, "is_device_owner", False)
+        device = existing_by_id
     else:
         device = ProtectedDevice(
+            id=dev_id,
             user_id=current_user.id,
             device_alias=pair_in.device_alias,
             public_key_pem=pair_in.public_key_pem,
+            key_fingerprint=fingerprint,
             trusted_phone_number=pair_in.trusted_phone_number,
             pairing_secret_hash=pairing_hash,
             pairing_secret=encrypt_pairing_secret(pair_in.pairing_secret),
             pairing_id=pairing_id,
             confirmation_code=confirmation_code,
-            status="PENDING_CONFIRMATION"
+            status="PENDING_CONFIRMATION",
+            manufacturer=getattr(pair_in, "manufacturer", None),
+            brand=getattr(pair_in, "brand", None),
+            model=getattr(pair_in, "model", None),
+            android_version=getattr(pair_in, "android_version", None),
+            sdk_level=getattr(pair_in, "sdk_level", None),
+            variant=getattr(pair_in, "variant", "lite"),
+            app_version=getattr(pair_in, "app_version", None),
+            install_date=getattr(pair_in, "install_date", None),
+            is_device_owner=getattr(pair_in, "is_device_owner", False),
+            is_possible_reinstall=False
         )
         db.add(device)
-        db.commit()
-        db.refresh(device)
-    
-    # Audit trail
-    audit = AuditEvent(
+
+    # 6. Initialize or update DeviceStatus record
+    status_rec = db.query(DeviceStatus).filter(DeviceStatus.device_id == device.id).first()
+    if not status_rec:
+        status_rec = DeviceStatus(device_id=device.id)
+        db.add(status_rec)
+
+    status_rec.battery_level = getattr(pair_in, "battery_level", None)
+    status_rec.connectivity_type = getattr(pair_in, "connectivity_type", None)
+    status_rec.sim_operator = getattr(pair_in, "sim_operator", None)
+    status_rec.sim_country = getattr(pair_in, "sim_country", None)
+    status_rec.sim_changed = getattr(pair_in, "sim_changed", False)
+    status_rec.permission_health = json.dumps(getattr(pair_in, "permission_health", {}) or {})
+    status_rec.last_seen = utc_now()
+    status_rec.last_sync_path = "online"
+
+    # 7. Audit log
+    db.add(DeviceAuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action="PAIR",
+        details=f"Handset '{device.device_alias}' ({device.id}) requested pairing. Model: {device.model or 'unknown'}, Variant: {device.variant}. Confirmation code: {confirmation_code}"
+    ))
+    db.add(AuditEvent(
         user_id=current_user.id,
         protected_device_id=device.id,
         event_type="DEVICE_PAIRING_REQUESTED",
         details=f"Device {device.device_alias} ({device.id}) requested enrollment. Confirmation code: {confirmation_code}"
-    )
-    db.add(audit)
+    ))
     db.commit()
-    
-    return DeviceResponse(
-        id=device.id,
-        user_id=device.user_id,
-        device_alias=device.device_alias,
-        public_key_pem=device.public_key_pem,
-        trusted_phone_number=device.trusted_phone_number,
-        status=device.status,
-        pairing_id=device.pairing_id,
-        confirmation_code=device.confirmation_code,
-        created_at=device.created_at,
-        last_location=None,
-        calculated_status="UNAVAILABLE"
-    )
+    db.refresh(device)
+
+    # 8. Notify active Admin WebSocket listeners about the new handset
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        loop.create_task(ws_manager.broadcast_location(device.id, {
+            "type": "HANDSET_ADDED",
+            "device_id": device.id,
+            "device_alias": device.device_alias,
+            "variant": device.variant,
+            "timestamp": int(time.time())
+        }))
+    except (RuntimeError, Exception):
+        pass
+
+    return build_device_detail_response(device, db)
 
 
 @router.get("/pending-confirmations", response_model=List[DeviceResponse])
@@ -238,13 +526,18 @@ def confirm_device_pairing(
     device.status = "ACTIVE"
     device.confirmation_code = None
 
-    audit = AuditEvent(
+    db.add(DeviceAuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action="PAIR_CONFIRMED",
+        details=f"Handset '{device.device_alias}' ({device.id}) enrollment confirmed by owner. Status ACTIVE."
+    ))
+    db.add(AuditEvent(
         user_id=current_user.id,
         protected_device_id=device.id,
         event_type="DEVICE_PAIRING_CONFIRMED",
         details=f"Device {device.device_alias} ({device.id}) enrollment confirmed by owner. Status ACTIVE."
-    )
-    db.add(audit)
+    ))
     db.commit()
 
     return PairingConfirmResponse(
@@ -254,44 +547,28 @@ def confirm_device_pairing(
     )
 
 
-@router.get("", response_model=DeviceListResponse)
+@router.get("", response_model=DeviceRosterResponse)
 def list_devices(
     current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
-    """List all protected devices owned by current user with live status indicators."""
-    devices = db.query(ProtectedDevice).filter(ProtectedDevice.user_id == current_user.id).all()
-    results = []
-    
-    for dev in devices:
-        latest_loc = (
-            db.query(LocationEvent)
-            .filter(LocationEvent.protected_device_id == dev.id)
-            .order_by(LocationEvent.sequence_number.desc())
-            .first()
-        )
-        
-        loc_resp = LocationResponse.model_validate(latest_loc) if latest_loc else None
-        calc_status = compute_device_status(latest_loc)
-        
-        results.append(
-            DeviceResponse(
-                id=dev.id,
-                user_id=dev.user_id,
-                device_alias=dev.device_alias,
-                public_key_pem=dev.public_key_pem,
-                trusted_phone_number=dev.trusted_phone_number,
-                status=dev.status,
-                created_at=dev.created_at,
-                last_location=loc_resp,
-                calculated_status=calc_status
-            )
-        )
-        
-    return DeviceListResponse(devices=results)
+    """
+    Authoritative device roster: Returns all active/pending handsets owned by user.
+    Includes hardware identity, battery, permission health, variant, and stale flag.
+    """
+    devices = db.query(ProtectedDevice).filter(
+        ProtectedDevice.user_id == current_user.id,
+        ProtectedDevice.status != "REVOKED"
+    ).all()
+    results = [build_device_detail_response(dev, db) for dev in devices]
+    return DeviceRosterResponse(
+        devices=results,
+        total_count=len(results),
+        max_devices_limit=settings.MAX_GUARDIANS_PER_ACCOUNT
+    )
 
 
-@router.get("/{device_id}", response_model=DeviceResponse)
+@router.get("/{device_id}", response_model=DeviceDetailResponse)
 def get_device(
     device_id: str,
     current_user: User = Depends(get_verified_user),
@@ -302,43 +579,159 @@ def get_device(
         ProtectedDevice.id == device_id,
         ProtectedDevice.user_id == current_user.id
     ).first()
-    
     if not device:
-        # Cross-user authorization: return 404
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-        
-    latest_loc = (
-        db.query(LocationEvent)
-        .filter(LocationEvent.protected_device_id == device.id)
-        .order_by(LocationEvent.sequence_number.desc())
-        .first()
-    )
-    
-    loc_resp = LocationResponse.model_validate(latest_loc) if latest_loc else None
-    calc_status = compute_device_status(latest_loc)
-    
-    return DeviceResponse(
-        id=device.id,
-        user_id=device.user_id,
-        device_alias=device.device_alias,
-        public_key_pem=device.public_key_pem,
-        trusted_phone_number=device.trusted_phone_number,
-        status=device.status,
-        created_at=device.created_at,
-        last_location=loc_resp,
-        calculated_status=calc_status
-    )
+    return build_device_detail_response(device, db)
 
 
-@router.delete("/{device_id}", status_code=status.HTTP_200_OK)
-def delete_device(
+@router.patch("/{device_id}", response_model=DeviceDetailResponse)
+def rename_device(
+    device_id: str,
+    req: DeviceRenameRequest,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Update handset nickname/alias with audit log record."""
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    old_alias = device.device_alias
+    device.device_alias = req.nickname.strip()
+    db.add(DeviceAuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action="RENAME",
+        details=f"Renamed handset from '{old_alias}' to '{device.device_alias}'"
+    ))
+    db.commit()
+    db.refresh(device)
+    return build_device_detail_response(device, db)
+
+
+@router.post("/{device_id}/sync")
+async def sync_device_status(
     device_id: str,
     current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Unpair and delete a protected handset from the owner's account.
-    Cleans up all associated recovery commands and location traces.
+    Trigger fresh status sync for a handset.
+    Online path: API plus WebSocket push to handset.
+    Offline path: Reports SMS STATUS command recommendation.
+    """
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    has_listeners = ws_manager.get_listener_count(device_id) > 0
+    path_used = "online" if has_listeners else "sms"
+
+    if has_listeners:
+        await ws_manager.broadcast_location(device.id, {
+            "type": "STATUS_REQUEST",
+            "device_id": device.id,
+            "timestamp": int(time.time())
+        })
+
+    status_rec = db.query(DeviceStatus).filter(DeviceStatus.device_id == device.id).first()
+    if status_rec:
+        status_rec.last_sync_path = path_used
+        db.commit()
+
+    db.add(DeviceAuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action="SYNC",
+        details=f"Handset status sync requested via {path_used} channel"
+    ))
+    db.commit()
+
+    return {
+        "status": "SYNC_REQUESTED",
+        "path_used": path_used,
+        "device": build_device_detail_response(device, db)
+    }
+
+
+@router.post("/{device_id}/unpair")
+def unpair_device_graceful(
+    device_id: str,
+    req: DeviceUnpairRequest,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Initiate graceful handset unpair: Requires TOTP plus Admin-signed UNPAIR command.
+    Queues UNPAIR command for handset to verify, wipe keys, stop services, and ack.
+    """
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    if not verify_user_totp_code(current_user, req.totp_code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid TOTP two-factor code. Graceful unpair rejected."
+        )
+
+    # Queue UNPAIR command in device_commands
+    cmd = DeviceCommand(
+        user_id=current_user.id,
+        trusted_device_id=req.trusted_device_id,
+        protected_device_id=device.id,
+        command_type="UNPAIR",
+        sequence_counter=req.sequence_counter,
+        expiry_epoch=req.expiry_epoch,
+        pairing_id=device.pairing_id,
+        parameters_json="{}",
+        admin_signature=req.admin_signature,
+        status="PENDING"
+    )
+    db.add(cmd)
+
+    db.add(DeviceAuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action="UNPAIR_GRACEFUL",
+        actor_admin_id=req.trusted_device_id,
+        details=f"Graceful unpair command queued (command_id: {cmd.id}). Queued for retry until acknowledged."
+    ))
+    db.commit()
+    db.refresh(cmd)
+
+    return {
+        "status": "QUEUED",
+        "command_id": cmd.id,
+        "command_type": "UNPAIR",
+        "device_id": device.id,
+        "message": "Graceful unpair command queued for delivery over online and SMS fallback channels."
+    }
+
+
+@router.delete("/{device_id}", status_code=status.HTTP_200_OK)
+def revoke_or_delete_device(
+    device_id: str,
+    request: Request,
+    totp_code: Optional[str] = None,
+    action: Optional[str] = None,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Remove or revoke handset:
+    - Revoke-only (force remove): for lost/stolen phones. Marks device REVOKED immediately,
+      terminating all control and tracking with explicit warning.
+    - Legacy unpair deletion: cascades cleanup when requested.
     """
     device = db.query(ProtectedDevice).filter(
         ProtectedDevice.id == device_id,
@@ -348,25 +741,142 @@ def delete_device(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protected device not found")
 
     alias = device.device_alias
-    # Cascade cleanup of commands and location events
-    db.query(DeviceCommand).filter(DeviceCommand.protected_device_id == device.id).delete()
-    db.query(LocationEvent).filter(LocationEvent.protected_device_id == device.id).delete()
-    db.delete(device)
+    code = totp_code or request.headers.get("x-totp-code")
 
-    audit = AuditEvent(
-        user_id=current_user.id,
-        protected_device_id=None,
-        event_type="DEVICE_UNPAIRED",
-        details=f"Device {alias} ({device_id}) was unpaired and deleted by owner."
-    )
-    db.add(audit)
+    # If owner has TOTP enabled, verify code
+    if current_user.totp_enabled:
+        if code and not verify_user_totp_code(current_user, code):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid TOTP two-factor code. Handset removal rejected."
+            )
+
+    is_revoke = (action == "revoke") or (request.query_params.get("action") == "revoke")
+
+    if is_revoke:
+        device.status = "REVOKED"
+        db.add(DeviceAuditLog(
+            user_id=current_user.id,
+            device_id=device.id,
+            action="REVOKE_FORCE",
+            details=f"Handset '{alias}' ({device_id}) was force-revoked by owner. Remote location and control terminated."
+        ))
+        db.commit()
+        return {
+            "status": "REVOKED",
+            "device_id": device_id,
+            "warning": "Handset has been force-revoked. Remote location, tracking, and recovery controls have been terminated. Re-pairing physically on the device is required to regain access.",
+            "message": f"Handset '{alias}' successfully revoked."
+        }
+    else:
+        # Full deletion cascade
+        db.query(DeviceCommand).filter(DeviceCommand.protected_device_id == device.id).delete()
+        db.query(LocationEvent).filter(LocationEvent.protected_device_id == device.id).delete()
+        db.delete(device)
+
+        db.add(DeviceAuditLog(
+            user_id=current_user.id,
+            device_id=None,
+            action="DELETE",
+            details=f"Handset '{alias}' ({device_id}) was permanently deleted from account."
+        ))
+        db.add(AuditEvent(
+            user_id=current_user.id,
+            protected_device_id=None,
+            event_type="DEVICE_UNPAIRED",
+            details=f"Device {alias} ({device_id}) was unpaired and deleted by owner."
+        ))
+        db.commit()
+
+        return {
+            "status": "deleted",
+            "device_id": device_id,
+            "message": f"Handset '{alias}' successfully unpaired and deleted."
+        }
+
+
+@router.post("/{device_id}/heartbeat")
+def device_heartbeat(
+    device_id: str,
+    req: DeviceHeartbeatRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Guardian handset signed heartbeat:
+    Guardian sends periodic battery, connectivity, permission health, and SIM status.
+    Cryptographically authenticated by Guardian's ECDSA private key.
+    """
+    device = db.query(ProtectedDevice).filter(ProtectedDevice.id == device_id).first()
+    if not device or device.status == "REVOKED":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found or revoked")
+
+    # Anti-replay timestamp check (5 minute window)
+    now_epoch = int(time.time())
+    if abs(now_epoch - req.timestamp) > 300:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Heartbeat timestamp outside clock skew tolerance window (max 300s)"
+        )
+
+    # Signature verification: sha256(device_id:timestamp:battery:connectivity:sim_changed)
+    canonical = f"{device_id}:{req.timestamp}:{req.battery_level}:{req.connectivity_type}:{req.sim_changed}".encode("utf-8")
+    try:
+        sig_bytes = base64.b64decode(req.signature)
+        valid = verify_ecdsa_p256_signature(device.public_key_pem, canonical, sig_bytes)
+    except Exception:
+        valid = False
+
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid cryptographic signature on heartbeat payload"
+        )
+
+    status_rec = db.query(DeviceStatus).filter(DeviceStatus.device_id == device.id).first()
+    if not status_rec:
+        status_rec = DeviceStatus(device_id=device.id)
+        db.add(status_rec)
+
+    status_rec.battery_level = req.battery_level
+    status_rec.connectivity_type = req.connectivity_type
+    if req.sim_operator:
+        status_rec.sim_operator = req.sim_operator
+    if req.sim_country:
+        status_rec.sim_country = req.sim_country
+    status_rec.sim_changed = req.sim_changed
+    if req.permission_health:
+        status_rec.permission_health = json.dumps(req.permission_health)
+    status_rec.last_seen = utc_now()
+    status_rec.last_sync_path = "online"
     db.commit()
 
     return {
-        "status": "deleted",
-        "device_id": device_id,
-        "message": f"Handset '{alias}' successfully unpaired and deleted."
+        "status": "HEARTBEAT_ACK",
+        "timestamp": now_epoch,
+        "device_status": device.status
     }
+
+
+@router.get("/{device_id}/audit-log", response_model=List[DeviceAuditLogResponse])
+def get_device_audit_log(
+    device_id: str,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Retrieve tamper-evident audit history for a specific handset."""
+    device = db.query(ProtectedDevice).filter(
+        ProtectedDevice.id == device_id,
+        ProtectedDevice.user_id == current_user.id
+    ).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    logs = db.query(DeviceAuditLog).filter(
+        DeviceAuditLog.device_id == device.id,
+        DeviceAuditLog.user_id == current_user.id
+    ).order_by(DeviceAuditLog.created_at.desc()).limit(100).all()
+
+    return logs
 
 
 @router.get("/{device_id}/sync-status")
