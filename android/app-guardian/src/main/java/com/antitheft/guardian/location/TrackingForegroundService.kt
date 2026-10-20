@@ -146,7 +146,21 @@ class TrackingForegroundService : Service() {
                     }
                     response.close()
                 } catch (e: Exception) {
-                    Log.d(TAG, "Command polling transient exception: ${e.message}")
+                    val pinFailure = generateSequence(e as Throwable?) { it.cause }.any { cause ->
+                        cause is java.security.cert.CertificateException &&
+                        (cause.message?.contains("Pin verification failed", ignoreCase = true) == true ||
+                         cause.message?.contains("checkPins", ignoreCase = true) == true)
+                    }
+                    if (pinFailure) {
+                        // Certificate pin verification failed. This is not a transient error.
+                        // The connection may be actively intercepted. Log at ERROR level so it
+                        // stands out in logcat and any log aggregation system.
+                        Log.e(TAG, "SECURITY: Certificate pin verification failed during command polling — " +
+                            "possible network interception. Backing off 60 s.", e)
+                        delay(60_000L)
+                    } else {
+                        Log.d(TAG, "Command polling transient exception: ${e.message}")
+                    }
                 }
 
                 val pollDelay = if (storageHelper.isStolenMode()) 5000L else 15000L

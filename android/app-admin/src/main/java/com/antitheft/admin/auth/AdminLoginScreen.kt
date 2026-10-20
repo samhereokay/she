@@ -282,7 +282,7 @@ fun AdminLoginScreen(
                     )
                     SheButton(
                         text = "USB",
-                        onClick = { serverUrl = "http://127.0.0.1:8000" },
+                        onClick = { serverUrl = "https://127.0.0.1" },
                         variant = if (serverUrl.contains("127.0.0.1")) SheButtonVariant.PRIMARY else SheButtonVariant.TONAL,
                         height = 36.dp,
                         cornerRadius = 10.dp,
@@ -297,7 +297,7 @@ fun AdminLoginScreen(
                     )
                     SheButton(
                         text = "Emulator",
-                        onClick = { serverUrl = "http://10.0.2.2:8000" },
+                        onClick = { serverUrl = "https://10.0.2.2" },
                         variant = if (serverUrl.contains("10.0.2.2")) SheButtonVariant.PRIMARY else SheButtonVariant.TONAL,
                         height = 36.dp,
                         cornerRadius = 10.dp,

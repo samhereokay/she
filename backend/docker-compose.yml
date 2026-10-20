@@ -37,13 +37,27 @@ services:
       SMTP_PORT: "1025"
       SMTP_FROM: no-reply@she.local
       VERIFY_SECRET: ${VERIFY_SECRET:-development-challenge-hmac-sha256-secret-minimum-32bytes}
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: antitheft-tls-proxy
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     restart: unless-stopped
 
   mailpit:
@@ -56,3 +70,6 @@ services:
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
+

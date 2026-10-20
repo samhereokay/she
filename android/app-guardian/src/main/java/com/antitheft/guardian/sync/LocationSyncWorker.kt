@@ -98,8 +98,19 @@ class LocationSyncWorker(
 
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Network exception during sync", e)
-            Result.retry()
+            val pinFailure = generateSequence(e as Throwable?) { it.cause }.any { cause ->
+                cause is java.security.cert.CertificateException &&
+                (cause.message?.contains("Pin verification failed", ignoreCase = true) == true ||
+                 cause.message?.contains("checkPins", ignoreCase = true) == true)
+            }
+            if (pinFailure) {
+                Log.e(TAG, "SECURITY: Certificate pin verification failed during location sync — " +
+                    "possible network interception. Retrying with exponential backoff.", e)
+                Result.retry()
+            } else {
+                Log.e(TAG, "Network exception during sync", e)
+                Result.retry()
+            }
         }
     }
 

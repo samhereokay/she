@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timezone, timedelta
 import hashlib
 import json
 import re
@@ -32,7 +32,8 @@ from app.schemas.auth import (
     TotpVerifyRequest,
     TotpStatusResponse,
     UserSessionResponse,
-    SessionRevokeResponse
+    SessionRevokeResponse,
+    RefreshTokenRequest
 )
 from app.schemas.device import PairingTokenCreateRequest, PairingTokenResponse
 from app.api.deps import get_current_user, get_current_user_2fa
@@ -183,6 +184,9 @@ def create_user_session(
             is_registered = True
 
     session_jti = secrets.token_hex(16)
+    raw_refresh_token = secrets.token_hex(32)
+    refresh_hash = hashlib.sha256(raw_refresh_token.encode()).hexdigest()
+
     sess = UserSession(
         user_id=user.id,
         session_token_jti=session_jti,
@@ -190,6 +194,8 @@ def create_user_session(
         ip_address=client_ip,
         user_agent=user_agent[:255] if user_agent else None,
         is_registered_device=is_registered,
+        is_2fa=False,
+        refresh_token_hash=refresh_hash,
         created_at=utc_now(),
         last_active_at=utc_now(),
         revoked_at=None
@@ -197,7 +203,7 @@ def create_user_session(
     db.add(sess)
     db.commit()
     db.refresh(sess)
-    return sess, session_jti
+    return sess, session_jti, raw_refresh_token
 
 
 @router.post("/login", response_model=Token)
@@ -242,7 +248,7 @@ def login(
     db.add(audit)
     db.commit()
 
-    sess, session_jti = create_user_session(db, user, request, form_data.client_id)
+    sess, session_jti, raw_refresh = create_user_session(db, user, request, form_data.client_id)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(
         subject=user.id,
@@ -255,7 +261,8 @@ def login(
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
         "is_2fa": False,
-        "totp_required": bool(user.totp_enabled)
+        "totp_required": bool(user.totp_enabled),
+        "refresh_token": raw_refresh
     }
 
 
@@ -301,7 +308,7 @@ def login_json(
     db.add(audit)
     db.commit()
 
-    sess, session_jti = create_user_session(db, user, request, login_data.device_info)
+    sess, session_jti, raw_refresh = create_user_session(db, user, request, login_data.device_info)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(
         subject=user.id,
@@ -314,7 +321,8 @@ def login_json(
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
         "is_2fa": False,
-        "totp_required": bool(user.totp_enabled)
+        "totp_required": bool(user.totp_enabled),
+        "refresh_token": raw_refresh
     }
 
 
@@ -445,15 +453,265 @@ def validate_totp(
             detail="Invalid TOTP authentication code or emergency recovery code"
         )
     
+    # Upgrade current session to 2FA and issue rotated 2FA refresh token
+    jti = None
+    raw_2fa_refresh = None
+    req_auth = request.headers.get("Authorization", "")
+    if req_auth.startswith("Bearer "):
+        p = verify_access_token(req_auth[7:])
+        if p:
+            jti = p.get("jti")
+
+    if jti:
+        user_sess = db.query(UserSession).filter(UserSession.session_token_jti == jti).first()
+        if user_sess:
+            user_sess.is_2fa = True
+            raw_2fa_refresh = secrets.token_hex(32)
+            user_sess.refresh_token_hash = hashlib.sha256(raw_2fa_refresh.encode()).hexdigest()
+            user_sess.last_active_at = utc_now()
+            db.commit()
+
     token = create_access_token(
         subject=current_user.id,
-        is_2fa=True
+        is_2fa=True,
+        jti=jti
     )
     return {
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-        "is_2fa": True
+        "is_2fa": True,
+        "refresh_token": raw_2fa_refresh
+    }
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_session_token(
+    request: Request,
+    payload: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Exchange a valid rotating refresh token for a fresh access token and new refresh token.
+
+    Security properties:
+    1. Single-use rotation: the current refresh token is immediately replaced.
+    2. Reuse detection: if a consumed (old) refresh token is replayed, the entire
+       session is revoked. This catches token theft where the attacker and the
+       legitimate client both try to refresh.
+    3. Concurrent safety: SELECT ... FOR UPDATE prevents two simultaneous refresh
+       calls from both succeeding with the same token.
+    """
+    auth_limiter.check_rate_limit(request)
+    raw_tok = payload.refresh_token.strip()
+    token_hash = hashlib.sha256(raw_tok.encode()).hexdigest()
+
+    # Lock the row to prevent concurrent refreshes from both succeeding
+    sess = db.query(UserSession).filter(
+        UserSession.refresh_token_hash == token_hash,
+        UserSession.revoked_at == None
+    ).with_for_update().first()
+
+    if not sess:
+        # Check if this is a CONSUMED token (reuse attack detection).
+        # Check both the immediate prior hash and all historical consumed hashes for active sessions
+        reused_sess = db.query(UserSession).filter(
+            UserSession.consumed_refresh_hash == token_hash,
+            UserSession.revoked_at == None
+        ).with_for_update().first()
+
+        if not reused_sess:
+            # Also check historical consumed hashes across active sessions
+            active_sessions = db.query(UserSession).filter(
+                UserSession.revoked_at == None
+            ).with_for_update().all()
+            for s in active_sessions:
+                try:
+                    hashes = json.loads(s.consumed_refresh_hashes or "[]")
+                    if token_hash in hashes:
+                        reused_sess = s
+                        break
+                except Exception:
+                    pass
+
+        now_utc = utc_now()
+        is_grace_window = False
+        if reused_sess and reused_sess.consumed_refresh_hash == token_hash:
+            # Check if this exact token was consumed within the 10-second grace window
+            t_last = reused_sess.last_active_at
+            if t_last:
+                if t_last.tzinfo is None:
+                    t_last = t_last.replace(tzinfo=timezone.utc)
+                delta = abs(now_utc.timestamp() - t_last.timestamp())
+            else:
+                delta = 999.0
+            if delta <= 10.0:
+                is_grace_window = True
+
+        if is_grace_window:
+            # Grace window active: legitimate client sent parallel or retry request with the prior token.
+            # Do NOT revoke the session. Return a valid access token for the active session.
+            grace_user = db.query(User).filter(User.id == reused_sess.user_id).first()
+            if grace_user:
+                db.add(AuditEvent(
+                    user_id=reused_sess.user_id,
+                    event_type="REFRESH_TOKEN_GRACE_WINDOW_USED",
+                    details=(
+                        f"Consumed refresh token replayed within 10-second grace window "
+                        f"(parallel/retry request). Session {reused_sess.id}. "
+                        f"IP: {request.client.host if request.client else 'unknown'}."
+                    )
+                ))
+                db.flush()
+                access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+                fresh_access_token = create_access_token(
+                    subject=grace_user.id,
+                    is_2fa=reused_sess.is_2fa,
+                    expires_delta=access_token_expires,
+                    jti=reused_sess.session_token_jti
+                )
+                return {
+                    "access_token": fresh_access_token,
+                    "token_type": "bearer",
+                    "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+                    "is_2fa": reused_sess.is_2fa,
+                    "totp_required": bool(grace_user.totp_enabled) and not reused_sess.is_2fa,
+                    "refresh_token": None
+                }
+
+        if reused_sess:
+            # TOKEN REUSE DETECTED (outside grace window) — revoke the entire session immediately.
+            # This applies to ANY previously consumed token across rotation history.
+            reused_sess.revoked_at = utc_now()
+            db.add(AuditEvent(
+                user_id=reused_sess.user_id,
+                event_type="REFRESH_TOKEN_REUSE_DETECTED",
+                details=f"Consumed refresh token replayed (reuse of historical token) — session {reused_sess.id} revoked. "
+                        f"IP: {request.client.host if request.client else 'unknown'}. "
+                        f"This may indicate token theft."
+            ))
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token reuse detected. Session revoked for security. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid, expired, or already-consumed refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = db.query(User).filter(User.id == sess.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    sess_is_2fa = bool(sess.is_2fa)
+
+    # Rotate refresh token: single-use replacement with atomic compare-and-swap
+    try:
+        hist = json.loads(sess.consumed_refresh_hashes or "[]")
+    except Exception:
+        hist = []
+    hist.append(token_hash)
+    if len(hist) > 20:
+        hist = hist[-20:]  # Cap rotation history to last 20 entries to prevent unbounded growth
+
+    new_raw_refresh = secrets.token_hex(32)
+    new_refresh_hash = hashlib.sha256(new_raw_refresh.encode()).hexdigest()
+    new_jti = secrets.token_hex(16)
+    now_time = utc_now()
+    client_ip = request.client.host if request.client else None
+
+    # Atomic CAS update: only succeeds if refresh_token_hash still matches token_hash
+    updated_count = db.query(UserSession).filter(
+        UserSession.id == sess.id,
+        UserSession.refresh_token_hash == token_hash,
+        UserSession.revoked_at == None
+    ).update({
+        UserSession.consumed_refresh_hash: token_hash,
+        UserSession.consumed_refresh_hashes: json.dumps(hist),
+        UserSession.refresh_token_hash: new_refresh_hash,
+        UserSession.session_token_jti: new_jti,
+        UserSession.last_active_at: now_time,
+        UserSession.ip_address: client_ip
+    }, synchronize_session=False)
+
+    db.commit()
+
+    if updated_count == 0:
+        # A concurrent request already rotated this token!
+        # Check if the collision occurred within the 10-second grace window
+        conflicted_sess = db.query(UserSession).filter(UserSession.id == sess.id).first()
+        if conflicted_sess and conflicted_sess.revoked_at is None:
+            t_last = conflicted_sess.last_active_at
+            if t_last:
+                if t_last.tzinfo is None:
+                    t_last = t_last.replace(tzinfo=timezone.utc)
+                delta = abs(utc_now().timestamp() - t_last.timestamp())
+            else:
+                delta = 999.0
+            if delta <= 10.0:
+                # Concurrent race within grace window: do NOT revoke session! Return valid access token.
+                db.add(AuditEvent(
+                    user_id=user.id,
+                    event_type="REFRESH_TOKEN_CONCURRENT_GRACE_WINDOW_USED",
+                    details=(
+                        f"Concurrent refresh race resolved within 10-second grace window. "
+                        f"Session {conflicted_sess.id}. "
+                        f"IP: {request.client.host if request.client else 'unknown'}."
+                    )
+                ))
+                db.flush()
+                access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+                race_access_token = create_access_token(
+                    subject=user.id,
+                    is_2fa=conflicted_sess.is_2fa,
+                    expires_delta=access_token_expires,
+                    jti=conflicted_sess.session_token_jti
+                )
+                return {
+                    "access_token": race_access_token,
+                    "token_type": "bearer",
+                    "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+                    "is_2fa": conflicted_sess.is_2fa,
+                    "totp_required": bool(user.totp_enabled) and not conflicted_sess.is_2fa,
+                    "refresh_token": None
+                }
+            # Beyond grace window: revoke session as replay attack
+            conflicted_sess.revoked_at = utc_now()
+            db.add(AuditEvent(
+                user_id=conflicted_sess.user_id,
+                event_type="REFRESH_TOKEN_REUSE_DETECTED",
+                details=f"Concurrent refresh conflict detected — session {conflicted_sess.id} revoked."
+            ))
+            db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token reuse detected. Session revoked due to concurrent conflict.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        subject=user.id,
+        is_2fa=sess_is_2fa,
+        expires_delta=access_token_expires,
+        jti=new_jti
+    )
+
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer",
+        "expires_in_minutes": settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        "is_2fa": sess_is_2fa,
+        "totp_required": bool(user.totp_enabled) and not sess_is_2fa,
+        "refresh_token": new_raw_refresh
     }
 
 

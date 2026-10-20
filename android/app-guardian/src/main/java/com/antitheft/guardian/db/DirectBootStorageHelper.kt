@@ -107,7 +107,7 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
     }
 
     fun getServerUrl(): String {
-        return prefs.getString(KEY_SERVER_URL, "http://10.0.2.2:8000") ?: "http://10.0.2.2:8000"
+        return prefs.getString(KEY_SERVER_URL, "https://she.up.railway.app") ?: "https://she.up.railway.app"
     }
 
     fun setServerUrl(url: String) {

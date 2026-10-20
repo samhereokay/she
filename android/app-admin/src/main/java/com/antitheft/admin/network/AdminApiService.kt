@@ -1,9 +1,16 @@
 package com.antitheft.admin.network
 
 import com.antitheft.admin.auth.AdminSessionManager
+import okhttp3.Authenticator
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.Route
 import okhttp3.logging.HttpLoggingInterceptor
+import com.google.gson.Gson
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
@@ -55,7 +62,12 @@ data class TokenResponse(
     val token_type: String,
     val is_2fa: Boolean = false,
     val totp_required: Boolean = false,
+    val refresh_token: String? = null,
     val recovery_codes: List<String>? = null
+)
+
+data class RefreshTokenRequest(
+    val refresh_token: String
 )
 
 data class TotpSetupResponse(
@@ -229,6 +241,9 @@ interface AdminApiService {
     @POST("auth/totp/validate")
     suspend fun validateTotp(@Body request: TotpValidateRequest): TokenResponse
 
+    @POST("auth/refresh")
+    suspend fun refreshToken(@Body request: RefreshTokenRequest): TokenResponse
+
     @POST("auth/pairing-token")
     suspend fun createPairingToken(@Body request: PairingTokenRequest): PairingTokenResponse
 
@@ -288,6 +303,8 @@ interface AdminApiService {
 }
 
 object ApiClient {
+    private val gson = Gson()
+
     fun create(sessionManager: AdminSessionManager): AdminApiService {
         val authInterceptor = Interceptor { chain ->
             val original = chain.request()
@@ -301,12 +318,91 @@ object ApiClient {
             chain.proceed(requestBuilder.build())
         }
 
+        val tokenAuthenticator = object : Authenticator {
+            override fun authenticate(route: Route?, response: Response): Request? {
+                val path = response.request.url.encodedPath
+                // Prevent infinite loop if auth endpoints themselves return 401
+                if (path.contains("auth/refresh") || path.contains("auth/login")) {
+                    return null
+                }
+
+                // Limit retry attempts to 2 to prevent cascading retries
+                if (responseCount(response) >= 2) {
+                    return null
+                }
+
+                synchronized(this) {
+                    val currentToken = sessionManager.getToken()
+                    val reqAuth = response.request.header("Authorization")
+                    val reqToken = reqAuth?.removePrefix("Bearer ")?.trim()
+
+                    // If token has already been refreshed by another concurrent call, retry immediately
+                    if (!currentToken.isNullOrBlank() && currentToken != reqToken) {
+                        return response.request.newBuilder()
+                            .header("Authorization", "Bearer $currentToken")
+                            .build()
+                    }
+
+                    val refreshToken = sessionManager.getRefreshToken() ?: return null
+
+                    try {
+                        val refreshClient = OkHttpClient.Builder()
+                            .connectTimeout(15, TimeUnit.SECONDS)
+                            .readTimeout(15, TimeUnit.SECONDS)
+                            .build()
+
+                        val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+                        val json = gson.toJson(mapOf("refresh_token" to refreshToken))
+                        val reqBody = json.toRequestBody(mediaType)
+
+                        val refreshReq = Request.Builder()
+                            .url(sessionManager.getServerUrl().trimEnd('/') + "/auth/refresh")
+                            .header("X-App-Client", "SHE-Admin-Android")
+                            .header("User-Agent", "SHE-Admin-Android/1.0")
+                            .post(reqBody)
+                            .build()
+
+                        val refreshCall = refreshClient.newCall(refreshReq).execute()
+                        if (refreshCall.isSuccessful) {
+                            val bodyStr = refreshCall.body?.string()
+                            if (!bodyStr.isNullOrBlank()) {
+                                val tokenResp = gson.fromJson(bodyStr, TokenResponse::class.java)
+                                sessionManager.saveToken(tokenResp.access_token)
+                                tokenResp.refresh_token?.let { sessionManager.saveRefreshToken(it) }
+
+                                return response.request.newBuilder()
+                                    .header("Authorization", "Bearer ${tokenResp.access_token}")
+                                    .build()
+                            }
+                        } else {
+                            if (refreshCall.code == 401) {
+                                sessionManager.clearSession()
+                            }
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                return null
+            }
+
+            private fun responseCount(response: Response): Int {
+                var result = 1
+                var prior = response.priorResponse
+                while (prior != null) {
+                    result++
+                    prior = prior.priorResponse
+                }
+                return result
+            }
+        }
+
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         }
 
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .authenticator(tokenAuthenticator)
             .addInterceptor(logging)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

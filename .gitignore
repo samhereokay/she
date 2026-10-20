@@ -30,6 +30,10 @@ local.properties
 *.keystore
 *.jks
 *.bundle
+certs/
+*.pem
+*.key
+*.crt
 
 # Local Build Tools
 .tools/

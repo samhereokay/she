@@ -491,13 +491,21 @@ class LiveTrackingActivity : BaseSecureActivity() {
 
         val wsBase = serverUrl
             .replaceFirst("https://", "wss://")
-            .replaceFirst("http://", "ws://")
+            .replaceFirst("http://", "wss://")
 
-        val wsUrl = "$wsBase/api/v1/ws/devices/$deviceId?token=$token"
+        val wsUrl = "$wsBase/api/v1/ws/devices/$deviceId"
         Log.i("LiveTracking", "Connecting WebSocket to: $wsUrl")
         updateStatusBadge("CONNECTING...", "#F59E0B", "#33F59E0B")
 
-        val request = Request.Builder().url(wsUrl).build()
+        val request = Request.Builder()
+            .url(wsUrl)
+            .apply {
+                if (token.isNotBlank()) {
+                    addHeader("Authorization", "Bearer $token")
+                    addHeader("Sec-WebSocket-Protocol", "she.v1, token.$token")
+                }
+            }
+            .build()
 
         webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -514,10 +522,33 @@ class LiveTrackingActivity : BaseSecureActivity() {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.w("LiveTracking", "WebSocket Failure: ${t.message}")
-                mainHandler.post {
-                    updateStatusBadge("RECONNECTING...", "#F59E0B", "#33F59E0B")
-                    scheduleReconnect()
+                val pinFailure = generateSequence(t as Throwable?) { it.cause }.any { cause ->
+                    cause is java.security.cert.CertificateException &&
+                    (cause.message?.contains("Pin verification failed", ignoreCase = true) == true ||
+                     cause.message?.contains("checkPins", ignoreCase = true) == true)
+                }
+                if (pinFailure) {
+                    Log.e("LiveTracking", "WebSocket pin failure: possible interception", t)
+                    mainHandler.post {
+                        updateStatusBadge("INTERCEPTED", "#EF4444", "#33EF4444")
+                        androidx.appcompat.app.AlertDialog.Builder(this@LiveTrackingActivity)
+                            .setTitle("Connection Security Alert")
+                            .setMessage(
+                                "Your connection may be monitored or intercepted.\n\n" +
+                                "The server's certificate does not match this app's trusted pins.\n\n" +
+                                "Get the official SHE Admin app only from:\n" +
+                                "https://she.up.railway.app/portal/releases"
+                            )
+                            .setPositiveButton("OK", null)
+                            .show()
+                        // Do NOT schedule reconnect — a pin failure is not a transient condition.
+                    }
+                } else {
+                    Log.w("LiveTracking", "WebSocket Failure: ${t.message}")
+                    mainHandler.post {
+                        updateStatusBadge("RECONNECTING...", "#F59E0B", "#33F59E0B")
+                        scheduleReconnect()
+                    }
                 }
             }
 

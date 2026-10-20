@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     String,
+    Integer,
     Float,
     BigInteger,
     DateTime,
@@ -46,6 +47,8 @@ class User(Base):
     vault_items = relationship("VaultItem", back_populates="user", cascade="all, delete-orphan")
     verification_challenges = relationship("VerificationChallenge", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    pairing_sessions = relationship("PairingSession", back_populates="user", cascade="all, delete-orphan")
+    device_audit_logs = relationship("DeviceAuditLog", back_populates="user", cascade="all, delete-orphan")
 
 
 class VerificationChallenge(Base):
@@ -96,8 +99,25 @@ class ProtectedDevice(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     status = Column(String(32), default="ACTIVE", nullable=False)  # ACTIVE, PENDING_CONFIRMATION, STOLEN, REVOKED
 
+    # Device Identity & Hardware Specs
+    key_fingerprint = Column(String(64), nullable=True, index=True)
+    manufacturer = Column(String(64), nullable=True)
+    brand = Column(String(64), nullable=True)
+    model = Column(String(64), nullable=True)
+    android_version = Column(String(32), nullable=True)
+    sdk_level = Column(Integer, nullable=True)
+
+    # Guardian Variant & Lifecycle
+    variant = Column(String(32), default="lite", nullable=False)  # "lite" | "hardened"
+    app_version = Column(String(32), nullable=True)
+    install_date = Column(DateTime(timezone=True), nullable=True)
+    is_device_owner = Column(Boolean, default=False, nullable=False)
+    is_possible_reinstall = Column(Boolean, default=False, nullable=False)
+
     user = relationship("User", back_populates="protected_devices")
     location_events = relationship("LocationEvent", back_populates="protected_device", cascade="all, delete-orphan")
+    status_record = relationship("DeviceStatus", uselist=False, back_populates="device", cascade="all, delete-orphan")
+    audit_logs = relationship("DeviceAuditLog", back_populates="device", cascade="all, delete-orphan")
 
 
 class LocationEvent(Base):
@@ -209,9 +229,71 @@ class UserSession(Base):
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(String(256), nullable=True)
     is_registered_device = Column(Boolean, default=False, nullable=False)
+    is_2fa = Column(Boolean, default=False, nullable=False)
+    refresh_token_hash = Column(String(64), nullable=True, index=True)
+    consumed_refresh_hash = Column(String(64), nullable=True, index=True)
+    consumed_refresh_hashes = Column(Text, default="[]", nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     last_active_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="sessions")
+
+
+class PairingSession(Base):
+    """
+    Temporary single-use pairing session created by Admin after TOTP verification.
+    Expires in 5 minutes. Bound to the owner account.
+    """
+    __tablename__ = "pairing_sessions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_token = Column(String(64), unique=True, index=True, nullable=False)
+    short_code = Column(String(8), unique=True, index=True, nullable=False)  # 6-digit code for manual entry
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user = relationship("User", back_populates="pairing_sessions")
+
+
+class DeviceStatus(Base):
+    """
+    Live status and health telemetry reported by Guardian handset on sync and heartbeat.
+    """
+    __tablename__ = "device_status"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    device_id = Column(String(36), ForeignKey("protected_devices.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    battery_level = Column(Integer, nullable=True)
+    connectivity_type = Column(String(32), nullable=True)  # "wifi", "cellular", "none"
+    sim_operator = Column(String(64), nullable=True)
+    sim_country = Column(String(8), nullable=True)
+    sim_changed = Column(Boolean, default=False, nullable=False)
+    permission_health = Column(Text, default="{}", nullable=False)  # JSON: sms, background_location, camera, battery_optimization, restricted_settings
+    last_seen = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    last_sync_path = Column(String(16), default="online", nullable=False)  # "online" | "sms"
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    device = relationship("ProtectedDevice", back_populates="status_record")
+
+
+class DeviceAuditLog(Base):
+    """
+    Tamper-evident audit log for Guardian device lifecycle:
+    Records who (user/admin), what (action), when (timestamp), and which Admin device.
+    """
+    __tablename__ = "device_audit_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id = Column(String(36), ForeignKey("protected_devices.id", ondelete="CASCADE"), nullable=True, index=True)
+    action = Column(String(64), nullable=False)  # PAIR, UNPAIR_GRACEFUL, REVOKE_FORCE, RENAME, SYNC
+    actor_admin_id = Column(String(64), nullable=True)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user = relationship("User", back_populates="device_audit_logs")
+    device = relationship("ProtectedDevice", back_populates="audit_logs")
 

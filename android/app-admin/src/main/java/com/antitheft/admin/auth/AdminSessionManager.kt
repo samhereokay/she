@@ -23,8 +23,17 @@ class AdminSessionManager(context: Context) {
         return secureStorage.getDecryptedString(KEY_TOKEN)
     }
 
+    fun saveRefreshToken(refreshToken: String) {
+        secureStorage.putEncryptedString(KEY_REFRESH_TOKEN, refreshToken)
+    }
+
+    fun getRefreshToken(): String? {
+        return secureStorage.getDecryptedString(KEY_REFRESH_TOKEN)
+    }
+
     fun clearSession() {
         secureStorage.putEncryptedString(KEY_TOKEN, null)
+        secureStorage.putEncryptedString(KEY_REFRESH_TOKEN, null)
     }
 
     fun isLoggedIn(): Boolean {
@@ -32,7 +41,7 @@ class AdminSessionManager(context: Context) {
     }
 
     fun getServerUrl(): String {
-        val defaultUrl = if (isEmulator()) "http://10.0.2.2:8000" else "http://127.0.0.1:8000"
+        val defaultUrl = if (isEmulator()) "https://10.0.2.2" else "https://she.up.railway.app"
         return secureStorage.getDecryptedString(KEY_SERVER_URL, defaultUrl) ?: defaultUrl
     }
 
@@ -120,6 +129,7 @@ class AdminSessionManager(context: Context) {
 
     companion object {
         private const val KEY_TOKEN = "access_token"
+        private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_TRUSTED_DEVICE_ID = "trusted_device_id"
         private const val KEY_COMMAND_SEQ = "command_sequence_counter"

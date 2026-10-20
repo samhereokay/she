@@ -54,10 +54,47 @@ app = FastAPI(
 )
 
 import logging
+import re
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 logger = logging.getLogger("uvicorn.error")
+
+
+class SensitiveDataFilter(logging.Filter):
+    """Redacts tokens, OTPs, recovery keys, and coordinates from all server log records."""
+    SENSITIVE_PATTERNS = [
+        (re.compile(r'(token=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(otp=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(code=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(secret=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(password=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(lat=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(lng=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(latitude=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(longitude=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'Bearer\s+[a-zA-Z0-9_\-\.]+', re.IGNORECASE), r'Bearer [REDACTED]'),
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            for pattern, replacement in self.SENSITIVE_PATTERNS:
+                record.msg = pattern.sub(replacement, record.msg)
+        if record.args:
+            cleaned_args = []
+            for arg in record.args:
+                if isinstance(arg, str):
+                    for pattern, replacement in self.SENSITIVE_PATTERNS:
+                        arg = pattern.sub(replacement, arg)
+                cleaned_args.append(arg)
+            record.args = tuple(cleaned_args)
+        return True
+
+
+# Install sensitive data filter on uvicorn and app loggers
+for log_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+    l = logging.getLogger(log_name)
+    l.addFilter(SensitiveDataFilter())
 
 # CORS Middleware with restricted origins (prevent wildcard credentials vulnerability)
 app.add_middleware(
@@ -71,7 +108,21 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    """Inject OWASP ASVS recommended security headers on all HTTP responses."""
+    """Inject OWASP ASVS and TLS migration recommended security headers on all HTTP responses."""
+    raw_proto = request.headers.get("x-forwarded-proto")
+    if raw_proto:
+        # Take the leftmost hop (client-facing protocol) in case of multiple proxies
+        proto = raw_proto.split(",")[0].strip().lower()
+    else:
+        proto = request.url.scheme.lower()
+
+    # 308 Permanent Redirect for plain HTTP when HTTPS enforcement is enabled.
+    # If proto or url scheme is already https, never redirect (prevents infinite loop behind TLS-terminating proxies)
+    if settings.ENFORCE_HTTPS and proto == "http" and request.url.scheme.lower() != "https" and not request.url.path.startswith("/health"):
+        # Reconstruct HTTPS URL preserving host, port, path, and query params
+        url = request.url.replace(scheme="https")
+        return RedirectResponse(url=str(url), status_code=308)
+
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -86,8 +137,24 @@ async def add_security_headers(request: Request, call_next):
         "img-src 'self' data: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com; "
         "connect-src 'self' wss: https:;"
     )
-    if settings.ENFORCE_HTTPS:
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
+    # Cache-Control: no-store on authenticated or sensitive API routes
+    auth_header = request.headers.get("Authorization")
+    is_sensitive_path = (
+        request.url.path.startswith("/auth/") or
+        request.url.path.startswith("/api/v1/devices") or
+        request.url.path.startswith("/api/v1/vault") or
+        request.url.path.startswith("/api/v1/locations") or
+        request.url.path.startswith("/api/v1/verify")
+    )
+    if auth_header or is_sensitive_path:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+        response.headers["Pragma"] = "no-cache"
+
+    # Enforce HSTS on all responses (no preload: we don't own the railway.app domain,
+    # and preload is hard to undo once submitted to browser lists)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
     return response
 
 

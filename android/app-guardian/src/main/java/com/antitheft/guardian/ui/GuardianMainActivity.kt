@@ -504,13 +504,13 @@ class GuardianMainActivity : AppCompatActivity() {
                     val effectiveServerUrl = if (serverUrl.contains("10.0.2.2")) {
                         try {
                             java.net.Socket().use { s ->
-                                s.connect(java.net.InetSocketAddress("127.0.0.1", 8000), 500)
-                                "http://127.0.0.1:8000"
+                                s.connect(java.net.InetSocketAddress("127.0.0.1", 443), 500)
+                                "https://127.0.0.1"
                             }
                         } catch (e: Exception) {
-                            serverUrl
+                            serverUrl.replace("http://", "https://")
                         }
-                    } else serverUrl
+                    } else serverUrl.replace("http://", "https://")
                     val pairEndpoint = effectiveServerUrl.trimEnd('/') + "/api/v1/devices/pair"
 
                     val reqBodyMap = mapOf(
@@ -595,8 +595,8 @@ class GuardianMainActivity : AppCompatActivity() {
                 android.util.Log.e("GuardianPairing", "Error applying pairing payload", e)
                 withContext(Dispatchers.Main) {
                     val msg = e.message ?: "Unknown error"
-                    val userTip = if (msg.contains("127.0.0.1")) {
-                        "Connection failed to 127.0.0.1:8000. For Wi-Fi pairing across two phones, generate QR with PC's IP (e.g. http://192.168.0.105:8000). For USB, run: adb reverse tcp:8000 tcp:8000"
+                    val userTip = if (msg.contains("127.0.0.1") || msg.contains("Connection refused")) {
+                        "Connection failed. Verify server URL (e.g. https://she.up.railway.app or local https://192.168.0.x). Ensure TLS is active."
                     } else {
                         "Pairing error: $msg"
                     }

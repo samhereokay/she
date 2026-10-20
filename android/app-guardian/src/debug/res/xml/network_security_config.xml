@@ -1,5 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Debug-only cleartext permitted for local development, emulator, and LAN testing -->
-    <base-config cleartextTrafficPermitted="true" />
+    <!-- Debug Base Config: Cleartext traffic is forbidden even in debug builds -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Certificate Pinning for Production Services (Identical pins across all 4 configs) -->
+    <domain-config>
+        <domain includeSubdomains="true">she.up.railway.app</domain>
+        <domain includeSubdomains="true">api.she.local</domain>
+        <pin-set expiration="2027-12-31">
+            <!-- Primary: Let's Encrypt intermediate YE2 (current issuer) -->
+            <pin digest="SHA-256">s/tdAOmUzd8syaTuqfgGvFcn6DzA5Cmb+Vby1ST+U3Y=</pin>
+            <!-- Backup 1: ISRG Root YE (cross-signed by Root X2) -->
+            <pin digest="SHA-256">sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=</pin>
+            <!-- Backup 2: ISRG Root X2 (cross-signed by Root X1) -->
+            <pin digest="SHA-256">diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=</pin>
+            <!-- Backup 3: ISRG Root X1 (ultimate trust anchor, self-signed) -->
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+            <!-- Backup 4 (Alternative CA Family): Google Trust Services GTS Root R1 -->
+            <pin digest="SHA-256">hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=</pin>
+            <!-- Backup 5 (Alternative CA Family): DigiCert Global Root G2 -->
+            <pin digest="SHA-256">i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=</pin>
+        </pin-set>
+    </domain-config>
+
+    <!-- Debug Overrides: Allow user-installed testing certificates (mkcert / dev proxy) on debug builds -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+            <certificates src="system" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>

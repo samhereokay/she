@@ -172,11 +172,11 @@ class PairDeviceActivity : BaseSecureActivity() {
                 }
 
                 val effectiveServerUrl = if (serverUrl.isNotBlank()) {
-                    serverUrl
+                    serverUrl.replace("http://", "https://")
                 } else if (sessionManager.getServerUrl().contains("10.0.2.2") && !sessionManager.isEmulator()) {
-                    "http://127.0.0.1:8000"
+                    "https://127.0.0.1"
                 } else {
-                    sessionManager.getServerUrl()
+                    sessionManager.getServerUrl().replace("http://", "https://")
                 }
 
                 val pairingPayload = mapOf(

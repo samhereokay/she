@@ -83,7 +83,12 @@ class Token(BaseModel):
     expires_in_minutes: int
     is_2fa: bool = False
     totp_required: bool = False
+    refresh_token: Optional[str] = None
     recovery_codes: Optional[list[str]] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=16, description="Single-use rotating refresh token")
 
 
 class TokenData(BaseModel):

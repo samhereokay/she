@@ -1,0 +1,97 @@
+{
+	# Global Caddy configuration
+	# Configurable ports: defaults to 80/443 for Docker & Prod, allows 8080/8443 for non-root local dev
+	http_port {$HTTP_PORT:80}
+	https_port {$HTTPS_PORT:443}
+	auto_https off
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*" ""
+				request>headers>Authorization delete
+				request>headers>Sec-Websocket-Protocol delete
+				request>headers>Cookie delete
+				resp_headers>Set-Cookie delete
+				resp_headers>Sec-Websocket-Protocol delete
+			}
+		}
+		level INFO
+	}
+}
+
+# -----------------------------------------------------------------------------
+# Plain HTTP: Refuse API traffic & 308 Permanent Redirect to HTTPS
+# -----------------------------------------------------------------------------
+:{$HTTP_PORT:80} {
+	# ACME HTTP-01 challenge pass-through handled automatically by Caddy
+	# All other requests are redirected to HTTPS with status code 308
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*" ""
+				request>headers>Authorization delete
+				request>headers>Sec-Websocket-Protocol delete
+				request>headers>Cookie delete
+				resp_headers>Set-Cookie delete
+				resp_headers>Sec-Websocket-Protocol delete
+			}
+		}
+		level INFO
+	}
+	redir https://{host}{uri} 308
+}
+
+# -----------------------------------------------------------------------------
+# TLS-Terminating HTTPS Reverse Proxy (Local Dev & Production)
+# -----------------------------------------------------------------------------
+api.she.local, localhost, 127.0.0.1, 10.0.2.2, {$PUBLIC_DOMAIN:she.up.railway.app} {
+	# Local Dev: uses mkcert certificate outside repo, otherwise internal CA
+	tls {$TLS_CERT:/home/sam/.local/share/she-dev-certs/dev-cert.pem} {$TLS_KEY:/home/sam/.local/share/she-dev-certs/dev-key.pem}
+
+	# Hardened Security & Anti-Sniff Headers (HSTS without preload per review)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "0"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Scrub query string and sensitive headers from access logs
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*" ""
+				request>headers>Authorization delete
+				request>headers>Sec-Websocket-Protocol delete
+				request>headers>Cookie delete
+				resp_headers>Set-Cookie delete
+				resp_headers>Sec-Websocket-Protocol delete
+			}
+		}
+		level INFO
+	}
+
+	# Reverse proxy to FastAPI application container
+	reverse_proxy {$API_UPSTREAM:127.0.0.1:8000} {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Port {server_port}
+		header_up Sec-WebSocket-Protocol {http.request.header.Sec-WebSocket-Protocol}
+
+		# WebSocket support: Caddy handles upgrade automatically
+		transport http {
+			keepalive 30s
+			compression off
+		}
+	}
+}

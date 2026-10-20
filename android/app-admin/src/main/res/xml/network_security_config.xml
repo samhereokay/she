@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Base Config: Cleartext traffic is strictly forbidden across all domains -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Certificate Pinning for Production Services
+         CRITICAL: We pin CA-side keys ONLY, never the leaf certificate.
+         Railway uses Let's Encrypt, which rotates leaf certs every ~90 days
+         with a new key. Pinning the leaf would break the app at renewal.
+
+         Current chain (verified 2026-10-20 via openssl s_client):
+           Leaf: *.up.railway.app  (issued by YE2)              — NOT pinned
+           Intermediate: YE2       (issued by Root YE)           — pinned (primary)
+           Cross-sign: Root YE     (issued by ISRG Root X2)      — pinned (backup 1)
+           Cross-sign: ISRG Root X2 (issued by ISRG Root X1)     — pinned (backup 2)
+           Root: ISRG Root X1 (self-signed, trust anchor)        — pinned (backup 3)
+
+         When Let's Encrypt rotates intermediates or the leaf renews,
+         the app keeps working because it trusts the CA keys above the leaf.
+
+         Pin rotation procedure:
+         1. Run: echo | openssl s_client -connect she.up.railway.app:443 -showcerts ...
+         2. Compute SPKI pins for each cert in the chain (see docs/security/pin-rotation.md)
+         3. Update this file with new intermediate pins, keep root pins as backup
+         4. Ship an app update BEFORE the old intermediate expires
+
+         Expiry set to 2027-12-31. After that date Android ignores pins entirely
+         (fails open). This is a conscious safety net: a missed pin rotation
+         degrades to normal CA validation rather than bricking the app.
+    -->
+    <domain-config>
+        <domain includeSubdomains="true">she.up.railway.app</domain>
+        <domain includeSubdomains="true">api.she.local</domain>
+        <pin-set expiration="2027-12-31">
+            <!-- Primary: Let's Encrypt intermediate YE2 (current issuer)
+                 Computed: openssl x509 -noout -pubkey | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
+                 Subject: C=US, O=Let's Encrypt, CN=YE2
+                 Issuer:  C=US, O=ISRG, CN=Root YE
+                 Valid:   2025-09-03 to 2028-09-02 -->
+            <pin digest="SHA-256">s/tdAOmUzd8syaTuqfgGvFcn6DzA5Cmb+Vby1ST+U3Y=</pin>
+            <!-- Backup 1: ISRG Root YE (cross-signed by Root X2)
+                 Subject: C=US, O=ISRG, CN=Root YE
+                 Valid:   2026-05-13 to 2032-09-02 -->
+            <pin digest="SHA-256">sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=</pin>
+            <!-- Backup 2: ISRG Root X2 (cross-signed by Root X1)
+                 Verified from chain AND from https://letsencrypt.org/certs/isrg-root-x2.pem
+                 SPKI pin matches: diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI= -->
+            <pin digest="SHA-256">diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=</pin>
+            <!-- Backup 3: ISRG Root X1 (ultimate trust anchor, self-signed)
+                 Verified from https://letsencrypt.org/certs/isrgrootx1.pem
+                 SPKI pin: C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M= -->
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+            <!-- Backup 4 (Alternative CA Family): Google Trust Services GTS Root R1
+                 Subject: CN=GTS Root R1, O=Google Trust Services LLC, C=US
+                 SPKI pin: hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc= -->
+            <pin digest="SHA-256">hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=</pin>
+            <!-- Backup 5 (Alternative CA Family): DigiCert Global Root G2
+                 Subject: CN=DigiCert Global Root G2, OU=www.digicert.com, O=DigiCert Inc, C=US
+                 SPKI pin: i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY= -->
+            <pin digest="SHA-256">i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>

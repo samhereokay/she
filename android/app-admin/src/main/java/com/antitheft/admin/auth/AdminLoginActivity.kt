@@ -89,6 +89,19 @@ class AdminLoginActivity : BaseSecureActivity() {
         handleIncomingLoginIntent(intent)
     }
 
+    /**
+     * Walk the full cause chain of [e] and return true if any throwable in the chain
+     * is a [java.security.cert.CertificateException] whose message contains "Pin verification failed"
+     * or "checkPins". This catches OkHttp's CertificatePinner wrapping the error inside an
+     * SSLHandshakeException, which itself wraps the CertificateException.
+     */
+    private fun isPinFailure(e: Throwable): Boolean =
+        generateSequence(e) { it.cause }.any { cause ->
+            cause is java.security.cert.CertificateException &&
+            (cause.message?.contains("Pin verification failed", ignoreCase = true) == true ||
+             cause.message?.contains("checkPins", ignoreCase = true) == true)
+        }
+
     private fun formatErrorMessage(e: Throwable, serverUrl: String): String {
         val serverDetail = if (e is retrofit2.HttpException) {
             try {
@@ -104,19 +117,24 @@ class AdminLoginActivity : BaseSecureActivity() {
             return serverDetail
         }
 
-        val msg = e.message ?: ""
-        val causeMsg = e.cause?.message ?: ""
-        val full = "$msg $causeMsg"
+        val full = generateSequence(e) { it.cause }.joinToString(" ") { it.message ?: "" }
         return when {
             full.contains("CLEARTEXT", ignoreCase = true) ->
                 "Network Security Policy Error: Cleartext HTTP is blocked in release builds. Use HTTPS (e.g. https://...)."
-            e is javax.net.ssl.SSLHandshakeException ||
-            e is java.security.cert.CertificateException ||
-            e is javax.net.ssl.SSLPeerUnverifiedException ||
-            full.contains("CertPathValidatorException", ignoreCase = true) ||
-            full.contains("SSL", ignoreCase = true) ->
+            isPinFailure(e) ->
+                "Your connection may be monitored or intercepted. " +
+                "The server's certificate does not match this app's trusted pins. " +
+                "Get the official SHE Admin app only from https://she.up.railway.app/portal/releases"
+            generateSequence(e) { it.cause }.any { it is java.security.cert.CertificateException ||
+                it is javax.net.ssl.SSLPeerUnverifiedException } ||
+            full.contains("CertPathValidatorException", ignoreCase = true) ->
                 "TLS/SSL Certificate Error: The certificate for $serverUrl is untrusted or self-signed. Use a valid HTTPS tunnel with a public CA."
-            e is java.net.ConnectException || full.contains("Failed to connect", ignoreCase = true) || full.contains("Connection refused", ignoreCase = true) ->
+            e is javax.net.ssl.SSLHandshakeException ||
+            full.contains("SSL", ignoreCase = true) ->
+                "TLS/SSL Error: Secure connection to $serverUrl failed."
+            e is java.net.ConnectException ||
+            full.contains("Failed to connect", ignoreCase = true) ||
+            full.contains("Connection refused", ignoreCase = true) ->
                 "Connection Refused: Cannot reach $serverUrl. Check server host, port, and network reachability."
             e is java.net.UnknownHostException ->
                 "DNS Error: Unable to resolve hostname for $serverUrl."
@@ -193,6 +211,7 @@ class AdminLoginActivity : BaseSecureActivity() {
                 val api = ApiClient.create(sessionManager)
                 val tokenResp = api.verifyTotp(TotpVerifyRequest(code.trim()))
                 sessionManager.saveToken(tokenResp.access_token)
+                tokenResp.refresh_token?.let { sessionManager.saveRefreshToken(it) }
                 totpSetupState = null
                 isLoading = false
 
@@ -322,6 +341,7 @@ class AdminLoginActivity : BaseSecureActivity() {
 
                 val tokenResp = api.login(LoginRequest(username = username.trim(), password = password, device_info = deviceInfo))
                 sessionManager.saveToken(tokenResp.access_token)
+                tokenResp.refresh_token?.let { sessionManager.saveRefreshToken(it) }
                 isLoading = false
 
                 if (tokenResp.totp_required) {
@@ -348,6 +368,7 @@ class AdminLoginActivity : BaseSecureActivity() {
                 val api = ApiClient.create(sessionManager)
                 val finalToken = api.validateTotp(TotpValidateRequest(code.trim()))
                 sessionManager.saveToken(finalToken.access_token)
+                finalToken.refresh_token?.let { sessionManager.saveRefreshToken(it) }
                 isLoading = false
                 show2faLoginDialog = false
                 Toast.makeText(this@AdminLoginActivity, "2FA Authenticated successfully", Toast.LENGTH_SHORT).show()

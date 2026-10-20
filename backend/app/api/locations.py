@@ -247,6 +247,35 @@ async def websocket_device_location_stream(
     - On connect: sends INITIAL_STATE with last known location + recent historical trail.
     - Streams live LOCATION_UPDATE events as they are ingested from physical handsets.
     """
+    selected_subprotocol = None
+    # 1. Retrieve subprotocols from ASGI scope (standard for uvicorn/wsproto) or fallback to raw header
+    raw_subprotocols = list(websocket.scope.get("subprotocols") or [])
+    if not raw_subprotocols:
+        raw_header = websocket.headers.get("sec-websocket-protocol", "")
+        raw_subprotocols = [s.strip() for s in raw_header.split(",") if s.strip()]
+
+    if not token:
+        # Prefer header/subprotocol-based authentication to eliminate tokens from query strings
+        for sub in raw_subprotocols:
+            if sub.startswith("token."):
+                token = sub[6:].strip()
+                break
+            elif sub.startswith("bearer."):
+                token = sub[7:].strip()
+                break
+
+    # Never echo raw JWT in Sec-WebSocket-Protocol handshake response.
+    # If client offered "she.v1", select it as the clean protocol identifier; otherwise None.
+    if "she.v1" in raw_subprotocols:
+        selected_subprotocol = "she.v1"
+    else:
+        selected_subprotocol = None
+
+    if not token:
+        auth_hdr = websocket.headers.get("authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            token = auth_hdr[7:].strip()
+
     if not token:
         token = websocket.query_params.get("token")
 
@@ -274,7 +303,6 @@ async def websocket_device_location_stream(
             ProtectedDevice.id == device_id,
             ProtectedDevice.user_id == user.id
         ).first()
-
         if not device:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Device not found or unauthorized")
             return
@@ -307,7 +335,7 @@ async def websocket_device_location_stream(
         ]
 
     # Register and accept WebSocket connection
-    connected = await ws_manager.connect(device_id, websocket)
+    connected = await ws_manager.connect(device_id, websocket, subprotocol=selected_subprotocol)
     if not connected:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Max concurrent connections reached for device")
         return

@@ -37,6 +37,11 @@ jobs:
         run: |
           python3 -m compileall backend/app backend/tests
 
+      - name: Audit Sources for Cleartext URLs
+        run: |
+          chmod +x scripts/check_no_cleartext_urls.sh
+          ./scripts/check_no_cleartext_urls.sh
+
       - name: Run Backend Test Suite
         env:
           SECRET_KEY: "test-environment-jwt-secret-key-32bytes-minimum-length-for-testing"
@@ -44,6 +49,13 @@ jobs:
           ALLOW_PUBLIC_REGISTRATION: "False"
         run: |
           PYTHONPATH=backend pytest backend/tests/ -v --durations=10
+
+      - name: Run PostgreSQL CAS Concurrency Test
+        env:
+          SECRET_KEY: "test-environment-jwt-secret-key-32bytes-minimum-length-for-testing"
+          TOTP_ENCRYPTION_KEY: "test-environment-totp-encryption-key-32bytes-for-testing"
+        run: |
+          PYTHONPATH=backend python3 scripts/test_pg_concurrency.py
 
   docker-build:
     name: Container Build Verification

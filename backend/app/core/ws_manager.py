@@ -17,13 +17,16 @@ class LocationWebSocketManager:
     def __init__(self):
         self._active_connections: Dict[str, Set[WebSocket]] = {}
 
-    async def connect(self, device_id: str, websocket: WebSocket) -> bool:
+    async def connect(self, device_id: str, websocket: WebSocket, subprotocol: str = None) -> bool:
         """Register and accept an authenticated WebSocket connection if under limits."""
         if device_id in self._active_connections and len(self._active_connections[device_id]) >= MAX_CONNECTIONS_PER_DEVICE:
             logger.warning(f"Rejecting WS connection for device {device_id}: Max connection limit ({MAX_CONNECTIONS_PER_DEVICE}) reached.")
             return False
 
-        await websocket.accept()
+        if subprotocol:
+            await websocket.accept(subprotocol=subprotocol)
+        else:
+            await websocket.accept()
         if device_id not in self._active_connections:
             self._active_connections[device_id] = set()
         self._active_connections[device_id].add(websocket)
