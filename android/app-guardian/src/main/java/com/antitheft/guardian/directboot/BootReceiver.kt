@@ -17,11 +17,13 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action
-        if (action != Intent.ACTION_LOCKED_BOOT_COMPLETED && action != Intent.ACTION_BOOT_COMPLETED) {
+        val isBoot = action == Intent.ACTION_LOCKED_BOOT_COMPLETED || action == Intent.ACTION_BOOT_COMPLETED
+        val isUpdate = action == Intent.ACTION_MY_PACKAGE_REPLACED
+        if (!isBoot && !isUpdate) {
             return
         }
 
-        Log.i(TAG, "Boot event received: $action. Direct Boot aware resumption active.")
+        Log.i(TAG, "Persistence event received: $action. Direct Boot aware resumption active.")
 
         val storageHelper = DirectBootStorageHelper(context)
         Log.i(TAG, "Device unlocked state: ${storageHelper.isUserUnlocked}")
@@ -29,6 +31,16 @@ class BootReceiver : BroadcastReceiver() {
         val keystoreManager = com.antitheft.guardian.crypto.KeystoreManager()
         val secInfo = keystoreManager.getSecurityInfo(context)
         Log.i(TAG, "Direct Boot Keystore Security: insideHardware=${secInfo.isInsideSecureHardware}, level=${secInfo.securityLevel}, strongBox=${secInfo.hasStrongBoxFeature}")
+
+        // If user storage is unlocked or on app update / boot completed, start foreground tracking service
+        if (action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED || storageHelper.isUserUnlocked) {
+            try {
+                com.antitheft.guardian.location.TrackingForegroundService.start(context)
+                Log.i(TAG, "TrackingForegroundService started successfully.")
+            } catch (e: Exception) {
+                Log.w(TAG, "TrackingForegroundService start deferred: ${e.message}")
+            }
+        }
 
         // Capture initial boot fix and trigger sync
         val pendingResult = goAsync()

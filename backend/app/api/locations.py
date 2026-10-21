@@ -138,6 +138,10 @@ async def ingest_location_batch(
             continue
             
         # Insert verified location fix
+        now_utc = datetime.now(timezone.utc)
+        skew_seconds = abs((now_utc - event.capture_time).total_seconds())
+        has_large_skew = skew_seconds > 600
+
         loc_record = LocationEvent(
             protected_device_id=device.id,
             latitude=event.latitude,
@@ -146,13 +150,22 @@ async def ingest_location_batch(
             altitude=event.altitude,
             velocity=event.velocity,
             capture_time=event.capture_time,
-            server_receipt_time=datetime.now(timezone.utc),
+            server_receipt_time=now_utc,
             sequence_number=event.sequence_number,
             signature=event.signature
         )
         
         try:
             db.add(loc_record)
+            if has_large_skew:
+                logger.warning(f"Device {device.id} reported large clock skew: {skew_seconds}s difference.")
+                audit = AuditEvent(
+                    user_id=device.user_id,
+                    protected_device_id=device.id,
+                    event_type="CLOCK_SKEW_WARNING",
+                    details=f"Large clock skew ({int(skew_seconds)}s) detected on sequence {event.sequence_number}. Client: {event.capture_time.isoformat()}, Server: {now_utc.isoformat()}."
+                )
+                db.add(audit)
             db.commit()
             acknowledged_seqs.append(event.sequence_number)
             
@@ -167,6 +180,7 @@ async def ingest_location_batch(
                 "velocity": loc_record.velocity,
                 "capture_time": loc_record.capture_time.isoformat() if loc_record.capture_time else None,
                 "server_receipt_time": loc_record.server_receipt_time.isoformat() if loc_record.server_receipt_time else None,
+                "clock_skew_flag": has_large_skew,
                 "sequence_number": loc_record.sequence_number
             })
         except IntegrityError:

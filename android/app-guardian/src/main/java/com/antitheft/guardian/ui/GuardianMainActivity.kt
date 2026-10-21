@@ -265,6 +265,14 @@ class GuardianMainActivity : AppCompatActivity() {
             showBrandSetupGuideDialog()
         }
 
+        findViewById<Button>(R.id.btnOnboardingGuide)?.setOnClickListener {
+            showHonestOnboardingDialog()
+        }
+
+        findViewById<Button>(R.id.btnRestrictedSettingsGuide)?.setOnClickListener {
+            showRestrictedSettingsGuide()
+        }
+
         handleIncomingPairingIntent(intent)
         handleIncomingDeviceOwnerIntent(intent)
     }
@@ -819,12 +827,75 @@ class GuardianMainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
-                // Background location must be requested separately on Android 10+
-                backgroundLocationLauncher.launch(
-                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                )
+                // Two-step guided flow: Educate owner before triggering system permission dialog
+                AlertDialog.Builder(this)
+                    .setTitle("Allow 'Allow all the time' for Anti-Theft Protection")
+                    .setMessage(
+                        "To track and recover this phone if it is stolen or lost while the screen is locked or the app is closed, SHE Guardian requires 'Allow all the time' location access.\n\n" +
+                        "On the next system screen, please select 'Allow all the time'."
+                    )
+                    .setPositiveButton("Continue") { _, _ ->
+                        backgroundLocationLauncher.launch(
+                            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                        )
+                    }
+                    .setNegativeButton("Not Now", null)
+                    .show()
             }
         }
+    }
+
+    private fun showHonestOnboardingDialog() {
+        val theftProtectionAvailable = Build.VERSION.SDK_INT >= 34
+        val theftLockMsg = if (theftProtectionAvailable) {
+            "• Android Theft Detection Lock:\n" +
+            "  Your device may support Google's native Theft Detection Lock (AI-based snatch detection) and Offline Device Lock. Check Settings -> Google -> All Services -> Theft Protection to enable it alongside SHE."
+        } else {
+            "• System Theft Protection Fallback:\n" +
+            "  Ensure a strong 6+ digit lock screen PIN is configured, and verify Google Find My Device is active."
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("SHE Guardian Lite: Capabilities & Limits")
+            .setMessage(
+                "WHAT SHE GUARDIAN LITE DOES:\n" +
+                "• Continuous GPS and network location tracking with visible notification.\n" +
+                "• Hardware Keystore tamper-evident cryptographic signing.\n" +
+                "• Offline recovery via Direct Boot SMS (answers locate/siren commands before phone unlock).\n" +
+                "• Maximum volume acoustic siren on alarm stream overriding silent mode.\n" +
+                "• Battery level reporting and low-battery emergency location beacon.\n\n" +
+                "WHAT LITE CANNOT DO (LIMITATIONS):\n" +
+                "• Cannot prevent a thief from turning off the phone or removing the SIM.\n" +
+                "• Cannot block uninstallation if the thief knows your device screen lock PIN.\n" +
+                "• Cannot prevent factory reset from the bootloader/recovery menu (Device Owner required in Part 2).\n" +
+                "• Never 100% theft-proof. SHE reduces recovery latency and increases recovery probability.\n\n" +
+                theftLockMsg
+            )
+            .setPositiveButton("Understood", null)
+            .show()
+    }
+
+    private fun showRestrictedSettingsGuide() {
+        AlertDialog.Builder(this)
+            .setTitle("Android 13+ Restricted Settings Guide")
+            .setMessage(
+                "On Android 13 and newer, sideloaded applications may have certain permissions greyed out with 'Restricted setting'.\n\n" +
+                "To unblock them:\n" +
+                "1. Open device Settings -> Apps -> SHE Guardian Lite.\n" +
+                "2. Tap the three dots (⋮) in the top-right corner.\n" +
+                "3. Tap 'Allow restricted settings' and confirm your PIN or fingerprint.\n" +
+                "4. Return to SHE Guardian Lite and grant the requested permission."
+            )
+            .setPositiveButton("Open App Settings") { _, _ ->
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun startTrackingService() {

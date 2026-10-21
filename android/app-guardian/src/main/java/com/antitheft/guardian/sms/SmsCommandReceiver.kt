@@ -76,8 +76,14 @@ class SmsCommandReceiver : BroadcastReceiver() {
                                         )
                                         val smsManager = context.getSystemService(SmsManager::class.java)
                                             ?: SmsManager.getDefault()
-                                        smsManager.sendTextMessage(replyPhone, null, responsePdu, null, null)
-                                        Log.i(TAG, "Dispatched locate response via SMS strictly to trusted phone: $replyPhone.")
+                                        val parts = smsManager.divideMessage(responsePdu)
+                                        if (parts.size > 1) {
+                                            smsManager.sendMultipartTextMessage(replyPhone, null, parts, null, null)
+                                        } else {
+                                            smsManager.sendTextMessage(replyPhone, null, responsePdu, null, null)
+                                        }
+                                        val ageSec = (System.currentTimeMillis() / 1000) - locEntity.captureTimeUtc
+                                        Log.i(TAG, "Dispatched locate response via SMS strictly to trusted phone: $replyPhone (fix age: ${ageSec}s, parts: ${parts.size}).")
                                     }
                                 }
                             } catch (e: Exception) {

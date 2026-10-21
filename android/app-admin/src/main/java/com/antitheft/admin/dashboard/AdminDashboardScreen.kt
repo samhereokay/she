@@ -794,11 +794,36 @@ private fun DeviceCardItem(
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
+                        val capturedLocal = formatUtcToLocal(loc.capture_time)
+                        val receivedLocal = formatUtcToLocal(loc.server_receipt_time)
                         Text(
-                            text = "Captured: ${loc.capture_time ?: "N/A"}",
+                            text = "Captured: $capturedLocal",
                             color = SheTheme.colors.textTertiary,
                             fontSize = 11.sp
                         )
+                        if (!loc.server_receipt_time.isNullOrBlank()) {
+                            Text(
+                                text = "Received: $receivedLocal",
+                                color = SheTheme.colors.textTertiary,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        val isSkewed = try {
+                            val capInstant = java.time.Instant.parse(loc.capture_time)
+                            val recInstant = java.time.Instant.parse(loc.server_receipt_time)
+                            java.lang.Math.abs(recInstant.epochSecond - capInstant.epochSecond) > 600
+                        } catch (_: Exception) { false }
+
+                        if (isSkewed) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "⚠️ Large clock skew: phone clock shifted",
+                                color = SheTheme.colors.danger,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 } else {
                     Text(
@@ -835,6 +860,48 @@ private fun DeviceCardItem(
                             color = SheTheme.colors.textSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            val permHealth = statusInfo?.permission_health
+            val healthIssues = mutableListOf<String>()
+            if (permHealth != null) {
+                if (permHealth["fine_location"] == false || permHealth["background_location"] == false) {
+                    healthIssues.add("Location permission revoked")
+                }
+                if (permHealth["notifications"] == false) {
+                    healthIssues.add("Notifications disabled")
+                }
+                if (permHealth["battery_optimization_ignored"] == false) {
+                    healthIssues.add("Battery optimization active (background kill risk)")
+                }
+                if (permHealth["secure_lock_screen"] == false) {
+                    healthIssues.add("No secure lock screen PIN set")
+                }
+            }
+
+            if (healthIssues.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SheTheme.colors.dangerContainer.copy(alpha = 0.5f))
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = "⚠️ HANDSET HEALTH WARNING:",
+                        color = SheTheme.colors.danger,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    healthIssues.forEach { issue ->
+                        Text(
+                            text = "• $issue",
+                            color = SheTheme.colors.danger,
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -914,6 +981,18 @@ private fun DeviceCardItem(
                 modifier = Modifier.fillMaxWidth()
             )
         }
+    }
+}
+
+private fun formatUtcToLocal(isoTimestamp: String?): String {
+    if (isoTimestamp.isNullOrBlank()) return "N/A"
+    return try {
+        val instant = java.time.Instant.parse(isoTimestamp)
+        val zone = java.time.ZoneId.systemDefault()
+        val local = java.time.ZonedDateTime.ofInstant(instant, zone)
+        local.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, HH:mm:ss z"))
+    } catch (_: Exception) {
+        isoTimestamp
     }
 }
 

@@ -188,11 +188,38 @@ class LocationSyncWorker(
             val sigBytes = keystore.signData(canonical.toByteArray(Charsets.UTF_8))
             val sigBase64 = java.util.Base64.getEncoder().encodeToString(sigBytes)
 
+            val fineLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val bgLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else true
+            val smsGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.RECEIVE_SMS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val notifsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            val batteryOptIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+            val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+            val secureLockScreen = keyguardManager?.isDeviceSecure ?: false
+
+            val permHealth = mapOf(
+                "fine_location" to fineLocation,
+                "background_location" to bgLocation,
+                "sms" to smsGranted,
+                "notifications" to notifsEnabled,
+                "battery_optimization_ignored" to batteryOptIgnored,
+                "secure_lock_screen" to secureLockScreen
+            )
+
             val payload = mapOf(
                 "battery_level" to batteryLevel,
                 "connectivity_type" to connType,
                 "sim_changed" to false,
                 "capabilities" to LITE_CAPABILITIES,
+                "permission_health" to permHealth,
                 "timestamp" to nowTs,
                 "signature" to sigBase64
             )

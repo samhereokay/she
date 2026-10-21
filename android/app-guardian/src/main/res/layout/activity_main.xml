@@ -360,17 +360,45 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
+                    android:orientation="vertical">
 
                     <Button
-                        android:id="@+id/btnAdminGuide"
+                        android:id="@+id/btnOnboardingGuide"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="match_parent"
                         android:layout_height="44dp"
                         android:backgroundTint="#1C1C1E"
                         app:strokeColor="#2C2C2E"
                         app:strokeWidth="1dp"
-                        android:text="OEM &amp; Brand Setup Guide"
+                        android:text="Capabilities &amp; Honest Limits"
+                        android:textColor="#F5F5F7"
+                        android:textSize="11sp"
+                        app:cornerRadius="8dp" />
+
+                    <Button
+                        android:id="@+id/btnAdminGuide"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
+                        android:text="OEM &amp; Brand Battery Guide"
+                        android:textColor="#F5F5F7"
+                        android:textSize="11sp"
+                        app:cornerRadius="8dp" />
+
+                    <Button
+                        android:id="@+id/btnRestrictedSettingsGuide"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:backgroundTint="#1C1C1E"
+                        app:strokeColor="#2C2C2E"
+                        app:strokeWidth="1dp"
+                        android:text="Android 13+ Restricted Settings Guide"
                         android:textColor="#F5F5F7"
                         android:textSize="11sp"
                         app:cornerRadius="8dp" />

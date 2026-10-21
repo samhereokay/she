@@ -93,6 +93,7 @@ data class DeviceStatusDto(
     val sim_country: String? = null,
     val sim_changed: Boolean = false,
     val capabilities: List<String> = emptyList(),
+    val permission_health: Map<String, Boolean>? = null,
     val last_seen: String? = null,
     val last_sync_path: String = "online",
     val is_stale: Boolean = false

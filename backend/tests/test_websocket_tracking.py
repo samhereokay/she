@@ -206,3 +206,88 @@ def test_websocket_tracking_live_broadcast_on_ingest(test_keypair):
         assert abs(broadcast_msg["longitude"] - lng) < 0.00001
         assert broadcast_msg["sequence_number"] == seq
         assert broadcast_msg["accuracy"] == acc
+
+
+def test_clock_skew_flagged_and_audited(test_keypair):
+    client = TestClient(app)
+    private_key, public_pem = test_keypair
+
+    # Register and pair
+    client.post("/auth/register", json={
+        "username": "skew_user",
+        "email": "skew@example.com",
+        "password": "Password123!Safe"
+    })
+    token = enroll_totp_and_get_2fa_token(client, client.post("/auth/login/json", json={"username": "skew_user", "password": "Password123!Safe"}).json()["access_token"])
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Pair device
+    pt_resp = client.post("/auth/pairing-token", headers=headers, json={})
+    pt = pt_resp.json()["pairing_token"]
+
+    pair_resp = client.post(
+        "/api/v1/devices/pair",
+        headers={"Authorization": f"Bearer {pt}"},
+        json={
+            "device_alias": "Skew Phone",
+            "public_key_pem": public_pem,
+            "trusted_phone_number": "+15551234567",
+            "pairing_secret": "skewsecret1234567890abcdef123"
+        }
+    )
+    dev_data = pair_resp.json()
+    device_id = dev_data["id"]
+    client.post(
+        f"/api/v1/devices/{device_id}/confirm-pairing",
+        headers=headers,
+        json={"confirmation_code": dev_data["confirmation_code"]}
+    )
+
+    with client.websocket_connect(f"/api/v1/ws/devices/{device_id}?token={token}") as ws:
+        ws.receive_json() # INITIAL_STATE
+
+        # Submit fix with 2 hours clock skew in the past
+        skewed_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        epoch = int(skewed_time.timestamp())
+        lat, lng, acc, seq = 28.61393, 77.22950, 10.0, 1
+
+        canonical_bytes = format_canonical_location_string(
+            device_id=device_id,
+            sequence_number=seq,
+            capture_timestamp_sec=epoch,
+            latitude=lat,
+            longitude=lng,
+            accuracy=acc
+        )
+        sig = private_key.sign(canonical_bytes, ec.ECDSA(hashes.SHA256()))
+
+        batch_payload = {
+            "device_id": device_id,
+            "events": [{
+                "sequence_number": seq,
+                "latitude": lat,
+                "longitude": lng,
+                "accuracy": acc,
+                "capture_time": skewed_time.isoformat(),
+                "signature": base64.b64encode(sig).decode("utf-8")
+            }]
+        }
+
+        resp = client.post("/api/v1/locations/batch", json=batch_payload)
+        assert resp.status_code == 200
+        assert resp.json()["acknowledged_sequences"] == [seq]
+
+        msg = ws.receive_json()
+        assert msg["type"] == "LOCATION_UPDATE"
+        assert msg["clock_skew_flag"] is True
+
+        # Check AuditEvent
+        from app.db.session import SessionLocal
+        from app.db.models import AuditEvent
+        with SessionLocal() as db:
+            audit = db.query(AuditEvent).filter(
+                AuditEvent.protected_device_id == device_id,
+                AuditEvent.event_type == "CLOCK_SKEW_WARNING"
+            ).first()
+            assert audit is not None
+            assert "Large clock skew" in audit.details

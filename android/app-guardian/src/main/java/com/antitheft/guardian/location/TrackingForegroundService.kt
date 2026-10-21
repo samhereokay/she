@@ -60,7 +60,15 @@ class TrackingForegroundService : Service() {
 
         createNotificationChannel()
         val notification = buildForegroundNotification()
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
 
         setupLocationUpdates()
         setupCommandPolling()
@@ -70,8 +78,8 @@ class TrackingForegroundService : Service() {
     private fun setupLocationUpdates() {
         val storage = DirectBootStorageHelper(this)
         val isStolen = storage.isStolenMode()
-        val intervalMs = if (isStolen) 15000L else 60000L
-        val minIntervalMs = if (isStolen) 10000L else 30000L
+        val intervalMs = if (isStolen) 5000L else 60000L
+        val minIntervalMs = if (isStolen) 2000L else 30000L
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(minIntervalMs)
@@ -185,8 +193,11 @@ class TrackingForegroundService : Service() {
 
     private fun buildForegroundNotification(): Notification {
         val isStolen = DirectBootStorageHelper(this).isStolenMode()
-        val title = if (isStolen) "EMERGENCY RECOVERY ACTIVE" else "Guardian Protection Active"
-        val text = if (isStolen) "Emergency high-cadence tracking active." else "Autonomous anti-theft tracking is active."
+        val title = if (isStolen) "EMERGENCY RECOVERY ACTIVE" else "SHE Guardian Protection Active"
+        val text = if (isStolen)
+            "Emergency 5-second tracking active for device recovery."
+        else
+            "SHE Guardian is actively monitoring location in the background for anti-theft recovery."
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
