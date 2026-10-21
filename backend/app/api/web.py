@@ -26,17 +26,20 @@ def find_asset_path(relative_path: str) -> str:
 
 
 GUARDIAN_RELEASE_APK = find_asset_path("android/app-guardian/build/outputs/apk/direct/release/app-guardian-direct-release.apk")
+GUARDIAN_DIST_APK = find_asset_path("dist/apk/app-guardian-direct-release.apk")
+GUARDIAN_STATIC_APK = find_asset_path("backend/static/she-guardian.apk")
 GUARDIAN_DEBUG_APK = find_asset_path("android/app-guardian/build/outputs/apk/direct/debug/app-guardian-direct-debug.apk")
-GUARDIAN_APK_PATH = GUARDIAN_RELEASE_APK if os.path.exists(GUARDIAN_RELEASE_APK) else GUARDIAN_DEBUG_APK
 
 ADMIN_RELEASE_APK = find_asset_path("android/app-admin/build/outputs/apk/release/app-admin-release.apk")
+ADMIN_DIST_APK = find_asset_path("dist/apk/app-admin-release.apk")
+ADMIN_STATIC_APK = find_asset_path("backend/static/she-admin.apk")
 ADMIN_DEBUG_APK = find_asset_path("android/app-admin/build/outputs/apk/debug/app-admin-debug.apk")
-ADMIN_APK_PATH = ADMIN_RELEASE_APK if os.path.exists(ADMIN_RELEASE_APK) else ADMIN_DEBUG_APK
 
 LOGO_PATH = find_asset_path("backend/static/logo.png")
 FAVICON_PATH = find_asset_path("backend/static/favicon.ico")
-STATIC_GUARDIAN_PATH = find_asset_path("backend/static/she-guardian.apk")
-STATIC_ADMIN_PATH = find_asset_path("backend/static/she-admin.apk")
+STATIC_GUARDIAN_PATH = GUARDIAN_STATIC_APK
+STATIC_ADMIN_PATH = ADMIN_STATIC_APK
+
 
 
 def get_latest_telemetry_snapshot():
@@ -63,20 +66,22 @@ def get_file_sha256(filepath: str) -> str:
         return "LOCAL BUILD PENDING (Run Gradle to compile)"
 
 
+GUARDIAN_APK_PATH = GUARDIAN_RELEASE_APK
+ADMIN_APK_PATH = ADMIN_RELEASE_APK
+
+
 def get_effective_guardian_apk() -> str:
-    if os.path.exists(GUARDIAN_APK_PATH):
-        return GUARDIAN_APK_PATH
-    if os.path.exists(STATIC_GUARDIAN_PATH):
-        return STATIC_GUARDIAN_PATH
-    return GUARDIAN_APK_PATH
+    for path in [GUARDIAN_RELEASE_APK, GUARDIAN_DIST_APK, GUARDIAN_STATIC_APK, GUARDIAN_DEBUG_APK]:
+        if path and os.path.exists(path):
+            return path
+    return GUARDIAN_STATIC_APK
 
 
 def get_effective_admin_apk() -> str:
-    if os.path.exists(ADMIN_APK_PATH):
-        return ADMIN_APK_PATH
-    if os.path.exists(STATIC_ADMIN_PATH):
-        return STATIC_ADMIN_PATH
-    return ADMIN_APK_PATH
+    for path in [ADMIN_RELEASE_APK, ADMIN_DIST_APK, ADMIN_STATIC_APK, ADMIN_DEBUG_APK]:
+        if path and os.path.exists(path):
+            return path
+    return ADMIN_STATIC_APK
 
 
 # -----------------------------------------------------------------------------
@@ -1387,7 +1392,7 @@ async def render_releases_page():
                         Binary Details:
                     </div>
                     <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.75rem;">
-                        File: <code>she-guardian.apk</code> &bull; Size: ~33.7 MB &bull; Arch: ARM64-v8a / x86_64
+                        File: <code>she-guardian.apk</code> &bull; Size: ~35 MB &bull; Arch: ARM64-v8a / x86_64
                     </div>
 
                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1419,7 +1424,7 @@ async def render_releases_page():
                         Binary Details:
                     </div>
                     <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.75rem;">
-                        File: <code>she-admin.apk</code> &bull; Size: ~32.0 MB &bull; Arch: ARM64-v8a / x86_64
+                        File: <code>she-admin.apk</code> &bull; Size: ~36 MB &bull; Arch: ARM64-v8a / x86_64
                     </div>
 
                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1619,11 +1624,11 @@ async def render_landing_page():
                     Runs Direct Boot tracking in Device Encrypted Storage, offline AT1 SMS beacons, remote sirens, and device owner kiosk restrictions.
                 </p>
                 <a href="/releases/download/she-guardian.apk" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem; text-decoration: none;">
-                    {SVG_DOWNLOAD} Download SHE Guardian APK (33.7 MB)
+                    {SVG_DOWNLOAD} Download SHE Guardian APK (35 MB)
                 </a>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Compile via Gradle:</div>
-                <div class="code-block">./gradlew :app-guardian:assembleDirectDebug</div>
-                <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 0.75rem;">Local Debug Checksum:</div>
+                <div class="code-block">./gradlew :app-guardian:assembleDirectRelease</div>
+                <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 0.75rem;">SHA-256 Checksum:</div>
                 <div class="code-block" style="font-size: 0.72rem;">{guardian_sha}</div>
                 <a href="/docs/setup-order" class="btn btn-secondary" style="width: 100%; justify-content: center; margin-top: 0.5rem;">
                     Guardian Setup Runbook &rarr;
@@ -1644,11 +1649,11 @@ async def render_landing_page():
                     Monitors live GPS fixes, dispatches signed HMAC commands, and manages zero-knowledge client-side encrypted vault secrets.
                 </p>
                 <a href="/releases/download/she-admin.apk" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem; text-decoration: none;">
-                    {SVG_DOWNLOAD} Download SHE Admin APK (32.0 MB)
+                    {SVG_DOWNLOAD} Download SHE Admin APK (36 MB)
                 </a>
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Compile via Gradle:</div>
-                <div class="code-block">./gradlew :app-admin:assembleDebug</div>
-                <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 0.75rem;">Local Debug Checksum:</div>
+                <div class="code-block">./gradlew :app-admin:assembleRelease</div>
+                <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 0.75rem;">SHA-256 Checksum:</div>
                 <div class="code-block" style="font-size: 0.72rem;">{admin_sha}</div>
                 <a href="/docs/setup-order" class="btn btn-secondary" style="width: 100%; justify-content: center; margin-top: 0.5rem;">
                     Admin Setup Runbook &rarr;
