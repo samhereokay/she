@@ -508,7 +508,16 @@ class GuardianMainActivity : AppCompatActivity() {
                         "device_alias" to (storageHelper.getDeviceAlias() ?: "Guardian Pixel"),
                         "public_key_pem" to guardianPubPem,
                         "trusted_phone_number" to (if (!trustedPhoneNumber.isNullOrBlank() && trustedPhoneNumber.length >= 3) trustedPhoneNumber else "+15551234567"),
-                        "pairing_secret" to (pairingSecretHex ?: "")
+                        "pairing_secret" to (pairingSecretHex ?: ""),
+                        "manufacturer" to android.os.Build.MANUFACTURER,
+                        "brand" to android.os.Build.BRAND,
+                        "model" to android.os.Build.MODEL,
+                        "android_version" to android.os.Build.VERSION.RELEASE,
+                        "sdk_level" to android.os.Build.VERSION.SDK_INT,
+                        "variant" to "lite",
+                        "app_version" to "1.0",
+                        "is_device_owner" to false,
+                        "capabilities" to listOf("locate_sms", "live_gps", "siren", "ring", "battery_report")
                     )
                     val reqJson = com.google.gson.Gson().toJson(reqBodyMap)
                     val mediaType = "application/json; charset=utf-8".toMediaType()

@@ -510,15 +510,27 @@ fun AdminDashboardScreen(
                             IosDivider()
                         }
                         IosActionSheetRow(
-                            title = "Revoke Pairing Session",
-                            subtitle = "Invalidates mutual ECDSA pairing keys.",
+                            title = "Graceful Handset Unpair",
+                            subtitle = "Dispatches signed UNPAIR command with offline SMS fallback and retries.",
                             icon = Icons.Outlined.LinkOff,
-                            iconBg = Color(0xFFF43F5E),
-                            isDestructive = true,
+                            iconBg = Color(0xFFF59E0B),
                             onClick = {
                                 val d = dev
                                 selectedDeviceForCommand = null
                                 onSendCommand(d, "UNPAIR")
+                            }
+                        )
+                        IosDivider()
+                        IosActionSheetRow(
+                            title = "Force Revoke Handset",
+                            subtitle = "For lost/stolen phones. Terminates control immediately (requires TOTP).",
+                            icon = Icons.Outlined.DeleteForever,
+                            iconBg = Color(0xFFEF4444),
+                            isDestructive = true,
+                            onClick = {
+                                val d = dev
+                                selectedDeviceForCommand = null
+                                onSendCommand(d, "REVOKE")
                             }
                         )
                         if (hasDeviceOwner) {
@@ -745,6 +757,22 @@ private fun DeviceCardItem(
                         SheStatusChip(
                             text = if (isLite) "LITE" else "OWNER",
                             level = if (isLite) StatusLevel.INFO else StatusLevel.SUCCESS
+                        )
+                        if (device.is_possible_reinstall) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            SheStatusChip(
+                                text = "REINSTALL?",
+                                level = StatusLevel.WARNING
+                            )
+                        }
+                    }
+                    val hwDesc = listOfNotNull(device.brand, device.model).joinToString(" ")
+                    if (hwDesc.isNotBlank()) {
+                        Text(
+                            text = "$hwDesc (Android ${device.android_version ?: "N/A"})",
+                            color = SheTheme.colors.textSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                     Text(
@@ -1600,12 +1628,13 @@ private fun IosCommandDispatchDialog(
                             "LOCK" -> Icons.Outlined.Lock
                             "EXIT_KIOSK" -> Icons.Outlined.LockOpen
                             "UNPAIR" -> Icons.Outlined.LinkOff
+                            "REVOKE" -> Icons.Outlined.DeleteForever
                             else -> Icons.Outlined.Security
                         },
                         contentDescription = null,
                         tint = when {
                             isTestMode -> Color(0xFF8B5CF6)
-                            isDestructive -> SheTheme.colors.danger
+                            isDestructive || cmd == "REVOKE" -> SheTheme.colors.danger
                             else -> SheTheme.colors.accent
                         },
                         modifier = Modifier.size(22.dp)
@@ -1617,9 +1646,11 @@ private fun IosCommandDispatchDialog(
                             "TEST_MODE" -> "Simulated Drill (Test Mode)"
                             "STOLEN_MODE" -> "Real Stolen Lockdown"
                             "CLEAR_DEVICE_OWNER" -> "Clear Device Owner"
+                            "UNPAIR" -> "Graceful Unpair"
+                            "REVOKE" -> "Force Revoke Handset"
                             else -> "Confirm: $cmd"
                         },
-                        color = if (isDestructive) SheTheme.colors.danger else SheTheme.colors.textPrimary,
+                        color = if (isDestructive || cmd == "REVOKE") SheTheme.colors.danger else SheTheme.colors.textPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1637,6 +1668,30 @@ private fun IosCommandDispatchDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 when {
+                    cmd == "REVOKE" -> {
+                        SheCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            backgroundColor = SheTheme.colors.dangerContainer.copy(alpha = 0.3f),
+                            borderColor = SheTheme.colors.danger,
+                            cornerRadius = 14.dp
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "TERMINATE CONTROL (LOST/STOLEN PHONE)",
+                                    color = SheTheme.colors.danger,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Marks this handset REVOKED immediately. All remote tracking, location history, and control will be permanently terminated. Use when phone is lost or sold.",
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    }
                     isTestMode -> {
                         SheCard(
                             modifier = Modifier.fillMaxWidth(),

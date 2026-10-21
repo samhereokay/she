@@ -489,6 +489,32 @@ class AdminDashboardActivity : BaseSecureActivity() {
                 val signatureDer = adminKeystore.signCommand(canonicalBytes)
                 val signatureBase64 = Base64.getEncoder().encodeToString(signatureDer)
 
+                if (commandType == "UNPAIR") {
+                    // Graceful Unpair: invokes /api/v1/devices/{id}/unpair with TOTP + Admin signature
+                    val unpairReq = com.antitheft.admin.network.DeviceUnpairRequest(
+                        totp_code = totpCode.trim(),
+                        admin_signature = signatureBase64,
+                        sequence_counter = seqCounter,
+                        expiry_epoch = expiryEpochSec,
+                        trusted_device_id = trustedDevId
+                    )
+                    val unpairResp = api.unpairDevice(targetDeviceId, unpairReq)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@AdminDashboardActivity, "Graceful unpair queued: ${unpairResp["status"]}", Toast.LENGTH_LONG).show()
+                    }
+                    refreshDashboardData()
+                    return@launch
+                } else if (commandType == "REVOKE") {
+                    // Force Revoke: invokes DELETE /api/v1/devices/{id}?action=revoke with TOTP header
+                    val revokeResp = api.revokeDevice(targetDeviceId, "revoke", totpCode.trim())
+                    withContext(Dispatchers.Main) {
+                        val warn = revokeResp["warning"] as? String ?: "Device force-revoked."
+                        Toast.makeText(this@AdminDashboardActivity, warn, Toast.LENGTH_LONG).show()
+                    }
+                    refreshDashboardData()
+                    return@launch
+                }
+
                 val req = CommandDispatchRequest(
                     command_id = cmdId,
                     pairing_id = pairingId,

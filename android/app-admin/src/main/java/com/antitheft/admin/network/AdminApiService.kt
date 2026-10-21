@@ -99,6 +99,25 @@ data class DeviceStatusDto(
     val is_stale: Boolean = false
 )
 
+data class DeviceAuditLogDto(
+    val id: String,
+    val device_id: String? = null,
+    val action: String,
+    val actor_admin_id: String? = null,
+    val details: String? = null,
+    val created_at: String
+)
+
+data class DeviceRenameRequest(val nickname: String)
+
+data class DeviceUnpairRequest(
+    val totp_code: String,
+    val admin_signature: String,
+    val sequence_counter: Long,
+    val expiry_epoch: Long,
+    val trusted_device_id: String? = null
+)
+
 data class DeviceDto(
     val id: String,
     val device_alias: String,
@@ -109,10 +128,23 @@ data class DeviceDto(
     val confirmation_code: String? = null,
     val calculated_status: String, // LIVE, DELAYED, UNAVAILABLE
     val last_location: DeviceLocationDto?,
-    val status_info: DeviceStatusDto? = null
+    val status_info: DeviceStatusDto? = null,
+    val manufacturer: String? = null,
+    val brand: String? = null,
+    val model: String? = null,
+    val android_version: String? = null,
+    val sdk_level: Int? = null,
+    val variant: String? = "lite",
+    val app_version: String? = null,
+    val key_fingerprint: String? = null,
+    val is_possible_reinstall: Boolean = false
 )
 
-data class DeviceListDto(val devices: List<DeviceDto>)
+data class DeviceListDto(
+    val devices: List<DeviceDto>,
+    val total_count: Int = 0,
+    val max_devices_limit: Int = 5
+)
 
 data class TotpValidateRequest(val code: String)
 
@@ -281,6 +313,25 @@ interface AdminApiService {
 
     @GET("api/v1/devices/{id}/locations")
     suspend fun getDeviceLocations(@Path("id") id: String): List<DeviceLocationDto>
+
+    @retrofit2.http.PATCH("api/v1/devices/{id}")
+    suspend fun renameDevice(@Path("id") id: String, @Body request: DeviceRenameRequest): DeviceDto
+
+    @POST("api/v1/devices/{id}/sync")
+    suspend fun syncDevice(@Path("id") id: String): Map<String, Any>
+
+    @POST("api/v1/devices/{id}/unpair")
+    suspend fun unpairDevice(@Path("id") id: String, @Body request: DeviceUnpairRequest): Map<String, Any>
+
+    @retrofit2.http.DELETE("api/v1/devices/{id}")
+    suspend fun revokeDevice(
+        @Path("id") id: String,
+        @retrofit2.http.Query("action") action: String = "revoke",
+        @retrofit2.http.Header("x-totp-code") totpCode: String
+    ): Map<String, Any>
+
+    @GET("api/v1/devices/{id}/audit-log")
+    suspend fun getDeviceAuditLog(@Path("id") id: String): List<DeviceAuditLogDto>
 
     @POST("api/v1/devices/commands/dispatch")
     suspend fun dispatchCommand(@Body request: CommandDispatchRequest): CommandDispatchResponse
