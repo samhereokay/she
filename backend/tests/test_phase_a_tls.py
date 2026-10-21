@@ -154,69 +154,91 @@ def test_refresh_token_issuance_and_single_use_rotation(client, monkeypatch):
     assert bogus_resp.status_code == 401
 
 
-def test_concurrent_refresh_token_race_safety(client, monkeypatch):
+def test_concurrent_refresh_token_race_safety(monkeypatch):
     """
     Verifies concurrency safety: two simultaneous refresh requests using the exact same
     refresh token cannot both succeed. Row-locking (.with_for_update()) ensures
     one request succeeds (200) and the concurrent racer is safely rejected (401).
+    Runs against isolated user-space PostgreSQL instance to verify real transactional row-locking.
     """
     import concurrent.futures
+    import tempfile
+    import pgserver
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.db.session import Base, get_db
+    import app.db.session as db_session_mod
+    from fastapi.testclient import TestClient
 
+    tmp_dir = tempfile.mkdtemp()
+    srv = pgserver.get_server(tmp_dir)
+    pg_uri = srv.get_uri().replace("postgresql://", "postgresql+psycopg2://")
+
+    pg_engine = create_engine(pg_uri, pool_size=10, max_overflow=5)
+    PgSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=pg_engine)
+    Base.metadata.create_all(bind=pg_engine)
+
+    def override_pg_db():
+        db = PgSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_pg_db
+    monkeypatch.setattr(db_session_mod, "SessionLocal", PgSessionLocal)
     monkeypatch.setattr(settings, "ALLOW_PUBLIC_REGISTRATION", True)
 
-    client.post("/auth/register", json={
-        "username": "race_user",
-        "email": "race@example.com",
-        "password": "Password123!Race"
-    })
-    login_resp = client.post("/auth/login/json", json={
-        "username": "race_user",
-        "password": "Password123!Race"
-    })
-    ref_tok = login_resp.json()["refresh_token"]
+    try:
+        client = TestClient(app)
+        client.post("/auth/register", json={
+            "username": "race_user",
+            "email": "race@example.com",
+            "password": "Password123!Race"
+        })
+        login_resp = client.post("/auth/login/json", json={
+            "username": "race_user",
+            "password": "Password123!Race"
+        })
+        ref_tok = login_resp.json()["refresh_token"]
 
-    results = []
-    def do_refresh():
-        # Dedicated client per worker to avoid thread-unsafe shared connection usage in SQLite test environment
-        from fastapi.testclient import TestClient
-        c = TestClient(app)
-        return c.post("/auth/refresh", json={"refresh_token": ref_tok})
+        results = []
+        def do_refresh():
+            c = TestClient(app)
+            return c.post("/auth/refresh", json={"refresh_token": ref_tok})
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f1 = executor.submit(do_refresh)
-        f2 = executor.submit(do_refresh)
-        results = [f1.result(), f2.result()]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            f1 = executor.submit(do_refresh)
+            f2 = executor.submit(do_refresh)
+            results = [f1.result(), f2.result()]
 
-    status_codes = sorted([r.status_code for r in results])
-    # Both callers get 200 OK because the 10-second grace window protects concurrent races/retries
-    # from prematurely revoking the session, returning valid access tokens to both!
-    assert status_codes == [200, 200], f"Expected [200, 200], got {status_codes}"
-    for r in results:
-        data = r.json()
-        assert "access_token" in data
-        # recovery_codes must be null/absent on refresh (only issued on initial registration/login)
-        assert data.get("recovery_codes") is None
+        status_codes = sorted([r.status_code for r in results])
+        assert status_codes == [200, 200], f"Expected [200, 200], got {status_codes}"
+        for r in results:
+            data = r.json()
+            assert "access_token" in data
+            assert data.get("recovery_codes") is None
 
-    # Exactly one request won the CAS race and received the new refresh token;
-    # the second request was handled via grace window and received refresh_token == None!
-    refresh_tokens = [r.json().get("refresh_token") for r in results]
-    assert None in refresh_tokens, "Grace window caller must receive refresh_token=None"
-    new_tok = next(tok for tok in refresh_tokens if tok is not None)
+        refresh_tokens = [r.json().get("refresh_token") for r in results]
+        assert None in refresh_tokens, "Grace window caller must receive refresh_token=None"
+        new_tok = next(tok for tok in refresh_tokens if tok is not None)
 
-    # Rotate again to create a 2-generation-old historical token
-    gen2_resp = client.post("/auth/refresh", json={"refresh_token": new_tok})
-    assert gen2_resp.status_code == 200
-    gen3_tok = gen2_resp.json()["refresh_token"]
+        # Rotate again to create a 2-generation-old historical token
+        gen2_resp = client.post("/auth/refresh", json={"refresh_token": new_tok})
+        assert gen2_resp.status_code == 200
+        gen3_tok = gen2_resp.json()["refresh_token"]
 
-    # Replaying the first token (ref_tok) now: it is >1 generation old in history!
-    # It must be REJECTED with 401 and the session revoked!
-    replay_resp = client.post("/auth/refresh", json={"refresh_token": ref_tok})
-    assert replay_resp.status_code == 401
-    assert "reuse detected" in replay_resp.json()["detail"].lower()
+        # Replaying the first token (ref_tok) now: it is >1 generation old in history!
+        # It must be REJECTED with 401 and the session revoked!
+        replay_resp = client.post("/auth/refresh", json={"refresh_token": ref_tok})
+        assert replay_resp.status_code == 401
+        assert "reuse detected" in replay_resp.json()["detail"].lower()
 
-    # Confirm session is completely revoked: even the latest gen3_tok is now rejected!
-    after_revoke = client.post("/auth/refresh", json={"refresh_token": gen3_tok})
-    assert after_revoke.status_code == 401
+        # Confirm session is completely revoked: even the latest gen3_tok is now rejected!
+        after_revoke = client.post("/auth/refresh", json={"refresh_token": gen3_tok})
+        assert after_revoke.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_cas_race_grace_window_enforces_10s_expiry(client, monkeypatch):

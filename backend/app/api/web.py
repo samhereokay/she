@@ -1932,9 +1932,9 @@ async def render_landing_page():
                     </li>
                 </ul>
 
-                <h4>2. Why It Is Impossible to Send Spam or Malicious Links</h4>
+                <h4>2. How SHE Restricts SMS Transmission</h4>
                 <p>
-                    A malicious SMS app typically sends spam to premium-rate numbers or contacts. SHE prevents this at the architecture level:
+                    A malicious SMS app typically sends spam to premium-rate numbers or contacts. SHE mitigates this at the architecture level:
                 </p>
                 <ul style="margin-left: 1.5rem; margin-bottom: 1.25rem; color: #d1d5db;">
                     <li style="margin-bottom: 0.6rem;">
@@ -2130,7 +2130,7 @@ async def render_user_guide():
                     </tr>
                     <tr>
                         <td><strong>Recovery Vault</strong></td>
-                        <td>Does not store vault secrets (prevents theft leak)</td>
+                        <td>Does not store vault secrets (mitigates handset theft leak)</td>
                         <td>Zero-knowledge AES-256-GCM vault decryptor</td>
                     </tr>
                 </tbody>

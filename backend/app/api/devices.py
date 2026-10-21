@@ -760,10 +760,10 @@ def revoke_or_delete_device(
 
     # If owner has TOTP enabled, verify code
     if current_user.totp_enabled:
-        if code and not verify_user_totp_code(current_user, code):
+        if not code or not verify_user_totp_code(current_user, code):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid TOTP two-factor code. Handset removal rejected."
+                detail="Invalid or missing TOTP two-factor code. Handset removal rejected."
             )
 
     is_revoke = (action == "revoke") or (request.query_params.get("action") == "revoke")

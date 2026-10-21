@@ -9,7 +9,8 @@ enum class SmsProcessStatus {
     DROPPED_REPLAY,
     DROPPED_EXPIRED,
     DROPPED_MALFORMED,
-    DROPPED_CHANNEL_RESTRICTED
+    DROPPED_CHANNEL_RESTRICTED,
+    DROPPED_WRONG_SENDER
 }
 
 data class SmsProcessResult(
@@ -21,15 +22,29 @@ data class SmsProcessResult(
 /**
  * Pure business logic processor for inbound AT1 SMS commands.
  * Enforces cryptographic HMAC verification, monotonic inbound anti-replay sequence checks,
- * and expiration window validation against InboundSmsStorage.
+ * sender address validation, and expiration window validation against InboundSmsStorage.
  */
 object SmsCommandProcessor {
 
     fun processInboundPdu(
         body: String,
         storage: InboundSmsStorage,
-        nowEpochSec: Long = System.currentTimeMillis() / 1000L
+        nowEpochSec: Long = System.currentTimeMillis() / 1000L,
+        senderAddress: String? = null
     ): SmsProcessResult {
+        // 0. Sender validation if senderAddress provided
+        val trustedPhone = storage.getTrustedPhoneNumber()
+        if (!senderAddress.isNullOrBlank() && trustedPhone.isNotBlank()) {
+            val normSender = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(senderAddress)
+            val normTrusted = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(trustedPhone)
+            if (normSender.isNotBlank() && normTrusted.isNotBlank() && normSender != normTrusted) {
+                return SmsProcessResult(
+                    status = SmsProcessStatus.DROPPED_WRONG_SENDER,
+                    reason = "Sender address '$senderAddress' does not match registered trusted phone '$trustedPhone'"
+                )
+            }
+        }
+
         val sharedSecret = storage.getPairingSecret()
         val command = SmsPduSerializer.parseInboundCommand(body, sharedSecret)
             ?: return SmsProcessResult(

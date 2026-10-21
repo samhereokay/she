@@ -1011,8 +1011,13 @@ def test_multiple_devices_pairing_and_deletion(client, test_keypair, pair_device
     assert conf_resp.status_code == 200
     assert conf_resp.json()["status"] == "ACTIVE"
 
-    # Delete Device 1
-    del_resp = client.delete(f"/api/v1/devices/{dev1_id}", headers=headers)
+    # Delete Device 1 (requires fresh TOTP code)
+    from conftest import get_user_current_totp
+    totp = get_user_current_totp(token)
+    del_resp = client.delete(
+        f"/api/v1/devices/{dev1_id}",
+        headers={**headers, "x-totp-code": totp}
+    )
     assert del_resp.status_code == 200
     assert del_resp.json()["status"] == "deleted"
 

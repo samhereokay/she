@@ -110,6 +110,26 @@ def enroll_totp_and_get_2fa_token(client, token_1fa):
     return token_1fa
 
 
+def get_user_current_totp(token):
+    from app.core.security import verify_access_token, decrypt_totp_secret
+    from app.db.models import User
+    import base64, time, struct, hmac, hashlib
+    payload = verify_access_token(token)
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.id == payload["sub"]).first()
+        secret = decrypt_totp_secret(user.totp_secret)
+        key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
+        counter = int(time.time() // 30)
+        msg = struct.pack(">Q", counter)
+        h = hmac.new(key, msg, hashlib.sha1).digest()
+        idx = h[-1] & 0x0F
+        code_int = struct.unpack(">I", h[idx:idx + 4])[0] & 0x7FFFFFFF
+        return f"{code_int % 1000000:06d}"
+    finally:
+        db.close()
+
+
 def pair_device_helper(client, token, alias, pubkey, phone, secret, device_id=None):
     from app.core.security import verify_access_token
     from app.db.models import User, utc_now

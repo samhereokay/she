@@ -473,57 +473,74 @@ def test_signed_guardian_heartbeat(client, keypair, monkeypatch):
     assert "Invalid cryptographic signature" in forged_resp.json()["detail"]
 
 
-def test_graceful_unpair_and_force_revoke(client, keypair, monkeypatch):
-    """Verifies graceful unpair queuing and force-revoke termination with explicit warnings."""
+def test_fresh_totp_required_on_add_unpair_and_revoke(client, keypair, monkeypatch):
+    """Verifies that missing, expired, or invalid TOTP is strictly rejected on add, unpair, and revoke."""
     monkeypatch.setattr(settings, "ALLOW_PUBLIC_REGISTRATION", True)
     priv_key, pub_pem = keypair
 
     client.post("/auth/register", json={
-        "username": "unpair_user",
-        "email": "unpair@example.com",
+        "username": "totp_enforce_user",
+        "email": "totpenforce@example.com",
         "password": "Password123!"
     })
-    token = enroll_totp_and_get_2fa_token(client, client.post("/auth/login/json", json={"username": "unpair_user", "password": "Password123!"}).json()["access_token"])
-    sess = client.post("/api/v1/pairing-sessions", headers={"Authorization": f"Bearer {token}"}, json={"totp_code": get_current_totp_code(client, token)}).json()["session_token"]
-    dev_id = "018f45a1-7c3d-711e-9d21-555555555555"
+    token = enroll_totp_and_get_2fa_token(client, client.post("/auth/login/json", json={"username": "totp_enforce_user", "password": "Password123!"}).json()["access_token"])
+
+    # 1. ADD / PAIR: Missing or invalid TOTP rejected
+    bad_sess_resp = client.post(
+        "/api/v1/pairing-sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"totp_code": "000000"}  # Invalid TOTP
+    )
+    assert bad_sess_resp.status_code == 400
+    assert "Invalid TOTP" in bad_sess_resp.json()["detail"]
+
+    # Valid TOTP succeeds to create pairing session
+    valid_totp = get_current_totp_code(client, token)
+    sess_token = client.post(
+        "/api/v1/pairing-sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"totp_code": valid_totp}
+    ).json()["session_token"]
+
+    dev_id = "018f45a1-7c3d-711e-9d21-666666666666"
     client.post(
         "/api/v1/devices/pair",
-        headers={"Authorization": f"Bearer {sess}"},
+        headers={"Authorization": f"Bearer {sess_token}"},
         json={
             "device_id": dev_id,
-            "device_alias": "Handset to Remove",
+            "device_alias": "TOTP Handset",
             "public_key_pem": pub_pem,
-            "trusted_phone_number": "+15551112222",
+            "trusted_phone_number": "+15551113333",
             "pairing_secret": "AABBCCDDEEFF00112233445566778899"
         }
     )
 
-    # 1. Graceful unpair: Requires valid TOTP
-    totp = get_current_totp_code(client, token)
-    unpair_resp = client.post(
+    # 2. UNPAIR: Invalid or missing TOTP rejected
+    bad_unpair = client.post(
         f"/api/v1/devices/{dev_id}/unpair",
         headers={"Authorization": f"Bearer {token}"},
         json={
-            "totp_code": totp,
+            "totp_code": "111111",  # Invalid TOTP
             "admin_signature": "MEQCIAz7x...",
             "sequence_counter": 1,
             "expiry_epoch": int(time.time()) + 3600
         }
     )
-    assert unpair_resp.status_code == 200
-    assert unpair_resp.json()["status"] == "QUEUED"
-    assert unpair_resp.json()["command_type"] == "UNPAIR"
+    assert bad_unpair.status_code == 400
+    assert "Invalid TOTP" in bad_unpair.json()["detail"]
 
-    # 2. Force Revoke (lost/stolen handset)
-    totp2 = get_current_totp_code(client, token)
-    revoke_resp = client.delete(
+    # 3. REVOKE: Invalid or missing TOTP rejected
+    bad_revoke = client.delete(
         f"/api/v1/devices/{dev_id}?action=revoke",
-        headers={"Authorization": f"Bearer {token}", "x-totp-code": totp2}
+        headers={"Authorization": f"Bearer {token}", "x-totp-code": "999999"}
     )
-    assert revoke_resp.status_code == 200
-    assert revoke_resp.json()["status"] == "REVOKED"
-    assert "terminated" in revoke_resp.json()["warning"]
+    assert bad_revoke.status_code == 400
+    assert "Invalid or missing TOTP" in bad_revoke.json()["detail"]
 
-    # Verify device no longer appears in active roster
-    roster = client.get("/api/v1/devices", headers={"Authorization": f"Bearer {token}"}).json()
-    assert dev_id not in [d["id"] for d in roster["devices"]]
+    no_totp_revoke = client.delete(
+        f"/api/v1/devices/{dev_id}?action=revoke",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert no_totp_revoke.status_code == 400
+    assert "Invalid or missing TOTP" in no_totp_revoke.json()["detail"]
+

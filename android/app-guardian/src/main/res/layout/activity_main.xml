@@ -525,7 +525,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Prevents factory reset, safe boot, and unauthorized uninstallation. Engages tamper-proof kiosk mode on theft."
+                    android:text="Lite mode: does not block factory reset or app uninstall. Device Owner provisioning required in Part 2."
                     android:textColor="#A1A1AA"
                     android:textSize="12sp" />
 
@@ -600,6 +600,16 @@
                     android:layout_marginTop="4dp"
                     android:text="Show Provisioning ADB Command"
                     android:textColor="#A1A1AA"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnPrivacyPolicy"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Privacy Policy &amp; Telemetry Notice (docs/PRIVACY.md)"
+                    android:textColor="#3B82F6"
                     android:textSize="12sp" />
 
             </LinearLayout>

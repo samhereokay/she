@@ -284,4 +284,73 @@ class SmsCommandProcessorSecurityTest {
         // Storage monotonic sequence must NOT advance
         assertEquals(0L, mockStorage.getLastInboundSmsSequence())
     }
+
+    @Test
+    fun testMalformedInboundCommandDropped() {
+        val malformedBodies = listOf(
+            "GARBAGE_PAYLOAD_NOT_SHE",
+            "AT1:CMD:",
+            "AT1:CMD:INVALID_PARTS",
+            "AT1:CMD:LOCATE:NOT_A_NUMBER:1770000300:ABCDEF",
+            "AT1:CMD:RING:5:NOT_A_TIMESTAMP:ABCDEF",
+            "AT1:UNKNOWN:LOCATE:1:1770000300:ABCDEF"
+        )
+
+        for (body in malformedBodies) {
+            val result = SmsCommandProcessor.processInboundPdu(
+                body = body,
+                storage = mockStorage
+            )
+            assertEquals(
+                "Malformed body '$body' must result in DROPPED_MALFORMED",
+                SmsProcessStatus.DROPPED_MALFORMED,
+                result.status
+            )
+        }
+    }
+
+    @Test
+    fun testWrongSenderAddressDropped() {
+        mockStorage.trustedPhone = "+15550199"
+        val nowEpoch = 1770000000L
+        val expiryEpoch = nowEpoch + 300L
+        val seq = 1L
+
+        val validPdu = SmsPduSerializer.formatInboundCommand(
+            commandType = "LOCATE",
+            sequenceNumber = seq,
+            expiryEpochSec = expiryEpoch,
+            sharedSecretKeyBytes = testSharedSecret
+        )
+
+        // 1. From exact trusted phone -> ACCEPTED
+        val trustedResult = SmsCommandProcessor.processInboundPdu(
+            body = validPdu,
+            storage = mockStorage,
+            nowEpochSec = nowEpoch,
+            senderAddress = "+15550199"
+        )
+        assertEquals(SmsProcessStatus.ACCEPTED, trustedResult.status)
+
+        // Advance seq for next test
+        val nextSeq = 2L
+        val pdu2 = SmsPduSerializer.formatInboundCommand(
+            commandType = "LOCATE",
+            sequenceNumber = nextSeq,
+            expiryEpochSec = expiryEpoch,
+            sharedSecretKeyBytes = testSharedSecret
+        )
+
+        // 2. From wrong sender phone -> DROPPED_WRONG_SENDER
+        val wrongSenderResult = SmsCommandProcessor.processInboundPdu(
+            body = pdu2,
+            storage = mockStorage,
+            nowEpochSec = nowEpoch,
+            senderAddress = "+19998887777" // Attacker phone
+        )
+        assertEquals(SmsProcessStatus.DROPPED_WRONG_SENDER, wrongSenderResult.status)
+        assertTrue(wrongSenderResult.reason.contains("does not match registered trusted phone"))
+        // Storage counter must NOT advance on wrong sender
+        assertEquals(1L, mockStorage.getLastInboundSmsSequence())
+    }
 }

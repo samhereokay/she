@@ -41,7 +41,8 @@ class SmsCommandReceiver : BroadcastReceiver() {
                         continue
                     }
 
-                    val result = SmsCommandProcessor.processInboundPdu(body, storageHelper)
+                    val senderAddress = sms.originatingAddress
+                    val result = SmsCommandProcessor.processInboundPdu(body, storageHelper, senderAddress = senderAddress)
                     if (result.status != SmsProcessStatus.ACCEPTED || result.command == null) {
                         Log.w(TAG, "Inbound SMS rejected: ${result.status} (${result.reason}). Dropping.")
                         continue

@@ -51,7 +51,7 @@ android {
 
     val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
     val keystoreFile = file(keystorePath)
-    val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "sheantitheft2026"
+    val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
 
     signingConfigs {
         create("release") {
