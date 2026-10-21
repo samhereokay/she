@@ -60,6 +60,9 @@ def upgrade() -> None:
                    existing_type=sa.VARCHAR(length=64),
                    type_=sa.Text(),
                    existing_nullable=True)
+        op.drop_index(op.f('ix_users_email'), table_name='users')
+        op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=False)
+
     else:
         with op.batch_alter_table('users', schema=None) as batch_op:
             batch_op.alter_column('totp_secret',
