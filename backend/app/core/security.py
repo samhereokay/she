@@ -3,6 +3,7 @@ import hmac
 import hashlib
 import uuid
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, Any
 
@@ -166,6 +167,50 @@ def verify_totp_code(secret_b32: str, code: str, valid_windows: int = 1) -> bool
         if hmac.compare_digest(expected_code, clean_code):
             return True
     return False
+
+
+_consumed_totp_lock = threading.Lock()
+_consumed_totp_codes: dict[str, float] = {}
+
+
+def consume_totp_code(user_id: str, code: str, ttl_seconds: int = 90) -> bool:
+    """
+    Enforces single-use consumption of TOTP codes per user to prevent replay attacks (RFC 6238 / NIST SP 800-63B).
+    Returns True if the code has not been consumed yet, and marks it consumed until TTL expires.
+    Returns False if the code was already consumed within the validity window.
+    """
+    clean_code = str(code).strip()
+    key = f"{user_id}:{clean_code}"
+    now = time.time()
+    with _consumed_totp_lock:
+        expired_keys = [k for k, exp in _consumed_totp_codes.items() if exp < now]
+        for k in expired_keys:
+            del _consumed_totp_codes[k]
+
+        if key in _consumed_totp_codes:
+            return False
+        _consumed_totp_codes[key] = now + ttl_seconds
+        return True
+
+
+def is_totp_code_consumed(user_id: str, code: str) -> bool:
+    """Checks whether a code has already been consumed for a given user."""
+    clean_code = str(code).strip()
+    key = f"{user_id}:{clean_code}"
+    now = time.time()
+    with _consumed_totp_lock:
+        if key in _consumed_totp_codes:
+            if _consumed_totp_codes[key] >= now:
+                return True
+            else:
+                del _consumed_totp_codes[key]
+        return False
+
+
+def clear_consumed_totp_codes() -> None:
+    """Utility to clear consumed codes (used primarily in test suites)."""
+    with _consumed_totp_lock:
+        _consumed_totp_codes.clear()
 
 
 def create_access_token(

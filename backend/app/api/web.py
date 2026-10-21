@@ -1312,30 +1312,35 @@ async def download_admin_apk():
     )
 
 
+GITHUB_RELEASES_URL = "https://github.com/samhereokay/she/releases/latest"
+
+
 @router.get("/releases/download/she-guardian.apk")
 async def download_release_guardian():
-    """Serve verified signed SHE Guardian APK binary."""
+    """Serve verified signed SHE Guardian APK binary or redirect to GitHub Releases."""
     apk_path = get_effective_guardian_apk()
-    if not os.path.exists(apk_path):
-        raise HTTPException(status_code=404, detail="Release APK binary not found on server.")
-    return FileResponse(
-        apk_path,
-        media_type="application/vnd.android.package-archive",
-        filename="she-guardian-v0.3.0.apk"
-    )
+    if os.path.exists(apk_path):
+        return FileResponse(
+            apk_path,
+            media_type="application/vnd.android.package-archive",
+            filename="she-guardian-v0.3.0.apk"
+        )
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=GITHUB_RELEASES_URL, status_code=307)
 
 
 @router.get("/releases/download/she-admin.apk")
 async def download_release_admin():
-    """Serve verified signed SHE Admin Companion APK binary."""
+    """Serve verified signed SHE Admin Companion APK binary or redirect to GitHub Releases."""
     apk_path = get_effective_admin_apk()
-    if not os.path.exists(apk_path):
-        raise HTTPException(status_code=404, detail="Release APK binary not found on server.")
-    return FileResponse(
-        apk_path,
-        media_type="application/vnd.android.package-archive",
-        filename="she-admin-v0.3.0.apk"
-    )
+    if os.path.exists(apk_path):
+        return FileResponse(
+            apk_path,
+            media_type="application/vnd.android.package-archive",
+            filename="she-admin-v0.3.0.apk"
+        )
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=GITHUB_RELEASES_URL, status_code=307)
 
 
 @router.get("/releases", response_class=HTMLResponse)

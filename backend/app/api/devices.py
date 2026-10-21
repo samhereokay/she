@@ -59,6 +59,7 @@ from app.core.security import (
     create_canonical_command_bytes,
     decrypt_totp_secret,
     verify_totp_code,
+    consume_totp_code,
     encrypt_pairing_secret,
     decrypt_pairing_secret,
     compute_truncated_hmac
@@ -126,12 +127,17 @@ def derive_6digit_verification_code(admin_pem: str, guardian_pem: str) -> str:
     return f"{code_int:06d}"
 
 
-def verify_user_totp_code(user: User, code: str) -> bool:
-    """Verifies a 6-digit TOTP code against the owner's encrypted TOTP secret."""
+def verify_user_totp_code(user: User, code: str, consume: bool = True) -> bool:
+    """Verifies a 6-digit TOTP code against the owner's encrypted TOTP secret and enforces single-use replay protection."""
     if not user.totp_enabled or not user.totp_secret:
         return False
+    clean_code = str(code).strip()
     secret = decrypt_totp_secret(user.totp_secret)
-    return verify_totp_code(secret, code)
+    if not verify_totp_code(secret, clean_code):
+        return False
+    if consume:
+        return consume_totp_code(str(user.id), clean_code)
+    return True
 
 
 def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDetailResponse:

@@ -36,9 +36,12 @@ android {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
 
-    val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "${rootDir}/release.keystore"
-    val keystoreFile = file(keystorePath)
+    val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH")
+        ?: (project.findProperty("RELEASE_KEYSTORE_PATH") as? String)
+        ?: "${System.getProperty("user.home")}/.android/release.keystore"
+    val keystoreFile = if (file(keystorePath).exists()) file(keystorePath) else file("${rootDir}/release.keystore")
     val releasePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+        ?: (project.findProperty("RELEASE_KEYSTORE_PASSWORD") as? String)
 
     signingConfigs {
         create("release") {

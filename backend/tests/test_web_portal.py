@@ -113,15 +113,21 @@ def test_releases_page_and_binary_downloads():
     assert get_file_sha256(get_effective_admin_apk()) in resp_r.text
 
     # Binary release downloads
-    resp_g = client.get("/releases/download/she-guardian.apk")
-    assert resp_g.status_code == 200
-    assert "application/vnd.android.package-archive" in resp_g.headers["content-type"]
-    assert len(resp_g.content) > 30_000_000
+    resp_g = client.get("/releases/download/she-guardian.apk", follow_redirects=False)
+    if resp_g.status_code == 200:
+        assert "application/vnd.android.package-archive" in resp_g.headers["content-type"]
+        assert len(resp_g.content) > 30_000_000
+    else:
+        assert resp_g.status_code == 307
+        assert "github.com/samhereokay/she/releases" in resp_g.headers["location"]
 
-    resp_a = client.get("/releases/download/she-admin.apk")
-    assert resp_a.status_code == 200
-    assert "application/vnd.android.package-archive" in resp_a.headers["content-type"]
-    assert len(resp_a.content) > 30_000_000
+    resp_a = client.get("/releases/download/she-admin.apk", follow_redirects=False)
+    if resp_a.status_code == 200:
+        assert "application/vnd.android.package-archive" in resp_a.headers["content-type"]
+        assert len(resp_a.content) > 30_000_000
+    else:
+        assert resp_a.status_code == 307
+        assert "github.com/samhereokay/she/releases" in resp_a.headers["location"]
 
 
 def test_2fa_and_recovery_guide_route():

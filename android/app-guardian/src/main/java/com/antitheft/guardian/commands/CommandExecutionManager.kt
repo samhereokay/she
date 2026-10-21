@@ -226,12 +226,27 @@ object CommandExecutionManager {
                 return false
             }
 
+            // CRITICAL SECURITY ENFORCEMENT: SEND_VERIFY_SMS can ONLY target the handset's configured owner number.
+            val storage = com.antitheft.guardian.db.DirectBootStorageHelper(context)
+            val configuredOwnerPhone = storage.getRawTrustedPhoneNumber()
+            if (configuredOwnerPhone.isBlank()) {
+                Log.w(TAG, "SEND_VERIFY_SMS rejected: no trusted owner phone number configured on handset.")
+                return false
+            }
+
+            val normalizedTo = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(to)
+            val normalizedOwner = com.antitheft.common.protocol.PhoneNumberNormalizer.normalizeToE164(configuredOwnerPhone)
+            if (normalizedTo != normalizedOwner) {
+                Log.w(TAG, "SEND_VERIFY_SMS rejected: recipient $normalizedTo does not match configured owner number $normalizedOwner.")
+                return false
+            }
+
             val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
                 ?: android.telephony.SmsManager.getDefault()
-            smsManager.sendTextMessage(to, null, body, null, null)
+            smsManager.sendTextMessage(normalizedTo, null, body, null, null)
 
             // CRITICAL SECURITY INVARIANT: NEVER log the message body (contains OTP)
-            Log.i(TAG, "SEND_VERIFY_SMS: Verification challenge SMS dispatched successfully.")
+            Log.i(TAG, "SEND_VERIFY_SMS: Verification challenge SMS dispatched successfully to owner.")
             true
         } catch (e: Exception) {
             Log.e(TAG, "SEND_VERIFY_SMS dispatch failed", e)

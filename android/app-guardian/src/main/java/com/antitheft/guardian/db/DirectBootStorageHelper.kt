@@ -106,6 +106,10 @@ class DirectBootStorageHelper(context: Context) : InboundSmsStorage {
             .apply()
     }
 
+    fun getRawTrustedPhoneNumber(): String {
+        return prefs.getString(KEY_TRUSTED_PHONE, "") ?: ""
+    }
+
     fun getServerUrl(): String {
         return prefs.getString(KEY_SERVER_URL, "https://she.up.railway.app") ?: "https://she.up.railway.app"
     }

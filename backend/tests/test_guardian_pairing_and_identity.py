@@ -22,10 +22,10 @@ def keypair():
     return priv, pub_pem
 
 
-def get_current_totp_code(client, token_1fa):
-    """Helper to retrieve current valid TOTP code for user."""
-    from app.core.security import verify_access_token, decrypt_totp_secret, generate_totp_secret
-    from app.db.models import User, utc_now
+def get_current_totp_code(client, token_1fa, offset_seconds: int = 0):
+    """Helper to retrieve a valid TOTP code for user. If offset_seconds is 0, finds an unconsumed code within valid windows."""
+    from app.core.security import verify_access_token, decrypt_totp_secret, is_totp_code_consumed
+    from app.db.models import User
     from conftest import TestingSessionLocal
     import struct
     import hmac
@@ -37,13 +37,23 @@ def get_current_totp_code(client, token_1fa):
         user = db.query(User).filter(User.id == payload["sub"]).first()
         secret = decrypt_totp_secret(user.totp_secret)
         key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
-        counter = int(time.time() // 30)
-        msg = struct.pack(">Q", counter)
-        h = hmac.new(key, msg, hashlib.sha1).digest()
-        offset = h[-1] & 0x0F
-        truncated = struct.unpack(">I", h[offset:offset + 4])[0] & 0x7FFFFFFF
-        code = truncated % 1000000
-        return f"{code:06d}"
+
+        def code_for_offset(secs):
+            counter = int((time.time() + secs) // 30)
+            msg = struct.pack(">Q", counter)
+            h = hmac.new(key, msg, hashlib.sha1).digest()
+            offset = h[-1] & 0x0F
+            truncated = struct.unpack(">I", h[offset:offset + 4])[0] & 0x7FFFFFFF
+            return f"{truncated % 1000000:06d}"
+
+        if offset_seconds != 0:
+            return code_for_offset(offset_seconds)
+
+        for candidate_offset in [0, 30, -30]:
+            candidate = code_for_offset(candidate_offset)
+            if not is_totp_code_consumed(str(user.id), candidate):
+                return candidate
+        return code_for_offset(0)
     finally:
         db.close()
 
@@ -515,6 +525,35 @@ def test_fresh_totp_required_on_add_unpair_and_revoke(client, keypair, monkeypat
         }
     )
 
+    # 1b. REPLAY PREVENTION: Reusing exact same valid TOTP code for pairing session is rejected
+    replay_sess = client.post(
+        "/api/v1/pairing-sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"totp_code": valid_totp}
+    )
+    assert replay_sess.status_code == 400
+    assert "Invalid" in replay_sess.json()["detail"] or "used" in replay_sess.json()["detail"]
+
+    # 1c. REPLAY PREVENTION CROSS-ACTION: Reusing pairing TOTP for unpair is rejected
+    replay_unpair = client.post(
+        f"/api/v1/devices/{dev_id}/unpair",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "totp_code": valid_totp,
+            "admin_signature": "MEQCIAz7x...",
+            "sequence_counter": 1,
+            "expiry_epoch": int(time.time()) + 3600
+        }
+    )
+    assert replay_unpair.status_code == 400
+
+    # 1d. REPLAY PREVENTION CROSS-ACTION: Reusing pairing TOTP for revoke is rejected
+    replay_revoke = client.delete(
+        f"/api/v1/devices/{dev_id}?action=revoke",
+        headers={"Authorization": f"Bearer {token}", "x-totp-code": valid_totp}
+    )
+    assert replay_revoke.status_code == 400
+
     # 2. UNPAIR: Invalid or missing TOTP rejected
     bad_unpair = client.post(
         f"/api/v1/devices/{dev_id}/unpair",
@@ -528,6 +567,28 @@ def test_fresh_totp_required_on_add_unpair_and_revoke(client, keypair, monkeypat
     )
     assert bad_unpair.status_code == 400
     assert "Invalid TOTP" in bad_unpair.json()["detail"]
+
+    # Valid fresh TOTP for unpair succeeds
+    fresh_totp_unpair = get_current_totp_code(client, token)
+    assert fresh_totp_unpair != valid_totp
+    good_unpair = client.post(
+        f"/api/v1/devices/{dev_id}/unpair",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "totp_code": fresh_totp_unpair,
+            "admin_signature": "MEQCIAz7x...",
+            "sequence_counter": 1,
+            "expiry_epoch": int(time.time()) + 3600
+        }
+    )
+    assert good_unpair.status_code == 200
+
+    # Replaying unpair's TOTP code for revoke is rejected
+    replay_unpair_totp_on_revoke = client.delete(
+        f"/api/v1/devices/{dev_id}?action=revoke",
+        headers={"Authorization": f"Bearer {token}", "x-totp-code": fresh_totp_unpair}
+    )
+    assert replay_unpair_totp_on_revoke.status_code == 400
 
     # 3. REVOKE: Invalid or missing TOTP rejected
     bad_revoke = client.delete(
@@ -543,4 +604,14 @@ def test_fresh_totp_required_on_add_unpair_and_revoke(client, keypair, monkeypat
     )
     assert no_totp_revoke.status_code == 400
     assert "Invalid or missing TOTP" in no_totp_revoke.json()["detail"]
+
+    # Fresh TOTP for revoke succeeds
+    fresh_totp_revoke = get_current_totp_code(client, token)
+    assert fresh_totp_revoke != valid_totp and fresh_totp_revoke != fresh_totp_unpair
+    good_revoke = client.delete(
+        f"/api/v1/devices/{dev_id}?action=revoke",
+        headers={"Authorization": f"Bearer {token}", "x-totp-code": fresh_totp_revoke}
+    )
+    assert good_revoke.status_code == 200
+    assert good_revoke.json()["status"] == "REVOKED"
 
