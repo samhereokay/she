@@ -49,6 +49,7 @@ class User(Base):
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     pairing_sessions = relationship("PairingSession", back_populates="user", cascade="all, delete-orphan")
     device_audit_logs = relationship("DeviceAuditLog", back_populates="user", cascade="all, delete-orphan")
+    consumed_totp_codes = relationship("ConsumedTotpCode", back_populates="user", cascade="all, delete-orphan")
 
 
 class VerificationChallenge(Base):
@@ -66,6 +67,23 @@ class VerificationChallenge(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     user = relationship("User", back_populates="verification_challenges")
+
+
+class ConsumedTotpCode(Base):
+    """Tracks consumed single-use TOTP codes per user to prevent replay attacks across multiple workers and restarts."""
+    __tablename__ = "consumed_totp_codes"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash = Column(String(64), nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "code_hash", name="uq_user_consumed_totp_code"),
+    )
+
+    user = relationship("User", back_populates="consumed_totp_codes")
 
 
 class TrustedDevice(Base):

@@ -6,7 +6,7 @@ This document details how **SHE (Sentinel for Handheld Equipment)** handles inbo
 
 ## 1. Zero-Retention Inbound SMS Filter
 
-Android applications holding the `RECEIVE_SMS` permission intercept incoming SMS broadcasts sent by the operating system. To protect user privacy against unauthorized interception of personal messages, banking OTPs, or two-factor codes, SHE implements a **strict zero-retention privacy filter**:
+Under the Android telephony architecture, Guardian receives all incoming SMS broadcasts via the system `RECEIVE_SMS` broadcast receiver and discards non-command messages immediately. To protect user privacy against unauthorized interception of personal messages, banking OTPs, or private communications, SHE implements a **strict zero-retention privacy filter**:
 
 * **Pre-Filter by Header**:
   In [`SmsCommandReceiver.kt`](file:///home/sam/Documents/she/android/app-guardian/src/main/java/com/antitheft/guardian/sms/SmsCommandReceiver.kt#L38-L42), inbound messages are evaluated in memory:
@@ -15,7 +15,7 @@ Android applications holding the `RECEIVE_SMS` permission intercept incoming SMS
       continue
   }
   ```
-  Any SMS that does not strictly begin with the `AT1:CMD:` protocol prefix is immediately discarded from memory without parsing.
+  Any SMS that does not strictly begin with the `AT1:CMD:` protocol prefix is immediately discarded from memory without parsing. Guardian receives all incoming SMS broadcasts and discards non-command messages immediately in-memory without processing, saving, or transmitting them.
 * **No Content Logging**:
   Inbound SMS body content is **never logged**, stored in databases, or forwarded to backend servers. Log output records only metadata for valid commands (e.g., `Authenticated command received: LOCATE (Seq: 5)`).
 * **Non-Interfering Delivery**:

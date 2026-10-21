@@ -37,7 +37,8 @@ class SmsCommandReceiver : BroadcastReceiver() {
 
                     // Zero-retention privacy filter: Immediately discard non-SHE messages.
                     // Guarantees banking OTPs, personal texts, and carrier alerts are never processed or held.
-                    if (!body.trim().startsWith("AT1:CMD:")) {
+                    val trimmedBody = body.trim()
+                    if (!trimmedBody.startsWith("CMD:") && !trimmedBody.startsWith("AT1:CMD:")) {
                         continue
                     }
 

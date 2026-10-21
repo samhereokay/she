@@ -51,7 +51,7 @@ def get_current_totp_code(client, token_1fa, offset_seconds: int = 0):
 
         for candidate_offset in [0, 30, -30]:
             candidate = code_for_offset(candidate_offset)
-            if not is_totp_code_consumed(str(user.id), candidate):
+            if not is_totp_code_consumed(db, str(user.id), candidate):
                 return candidate
         return code_for_offset(0)
     finally:
@@ -614,4 +614,62 @@ def test_fresh_totp_required_on_add_unpair_and_revoke(client, keypair, monkeypat
     )
     assert good_revoke.status_code == 200
     assert good_revoke.json()["status"] == "REVOKED"
+
+
+def test_consumed_totp_store_survives_worker_restarts_and_multi_worker(client, monkeypatch):
+    """
+    Item 7: Verifies that consumed TOTP codes are persisted to the database (consumed_totp_codes),
+    ensuring that replay rejection survives worker process restarts and functions across multi-worker deployments.
+    """
+    monkeypatch.setattr(settings, "ALLOW_PUBLIC_REGISTRATION", True)
+    from conftest import TestingSessionLocal
+    from app.db.models import User, ConsumedTotpCode
+    from app.core.security import consume_totp_code, is_totp_code_consumed
+
+    client.post("/auth/register", json={
+        "username": "worker_totp_user",
+        "email": "worker_totp@example.com",
+        "password": "Password123!"
+    })
+    token = enroll_totp_and_get_2fa_token(
+        client,
+        client.post("/auth/login/json", json={"username": "worker_totp_user", "password": "Password123!"}).json()["access_token"]
+    )
+    code = get_current_totp_code(client, token)
+
+    db1 = TestingSessionLocal()
+    try:
+        user = db1.query(User).filter(User.username == "worker_totp_user").first()
+        user_id = str(user.id)
+
+        # Worker 1 consumes the TOTP code
+        consumed_worker1 = consume_totp_code(db1, user_id, code)
+        assert consumed_worker1 is True, "First consumption of fresh TOTP code in Worker 1 must succeed"
+
+        # Worker 1 verifies it is recorded in DB
+        assert is_totp_code_consumed(db1, user_id, code) is True
+    finally:
+        db1.close()  # Worker 1 process terminates / connection closed
+
+    # Worker 2 process starts up with independent DB session
+    db2 = TestingSessionLocal()
+    try:
+        # Worker 2 attempts to consume the exact same code
+        consumed_worker2 = consume_totp_code(db2, user_id, code)
+        assert consumed_worker2 is False, "Replay in Worker 2 must be rejected by persistent database record"
+
+        # Verify database table contains the record
+        record = db2.query(ConsumedTotpCode).filter(ConsumedTotpCode.user_id == user_id).first()
+        assert record is not None
+        assert record.code_hash is not None
+
+        # Replay attempt via HTTP API to create pairing session rejected
+        replay_resp = client.post(
+            "/api/v1/pairing-sessions",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"totp_code": code}
+        )
+        assert replay_resp.status_code == 400
+    finally:
+        db2.close()
 

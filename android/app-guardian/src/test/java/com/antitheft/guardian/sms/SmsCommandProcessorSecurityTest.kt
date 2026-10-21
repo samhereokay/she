@@ -353,4 +353,34 @@ class SmsCommandProcessorSecurityTest {
         // Storage counter must NOT advance on wrong sender
         assertEquals(1L, mockStorage.getLastInboundSmsSequence())
     }
+
+    @Test
+    fun testInboundSmsContentNeverLoggedOrLeaked() {
+        // Privacy invariant test: Verify SmsCommandProcessor and PDU serialization
+        // never expose raw SMS body or contents in error reasons, statuses, or exceptions.
+        val privatePersonalSms = "Your bank OTP is 849201. Do not share this with anyone."
+        val result = SmsCommandProcessor.processInboundPdu(
+            body = privatePersonalSms,
+            storage = mockStorage
+        )
+        assertEquals(SmsProcessStatus.DROPPED_MALFORMED, result.status)
+        assertFalse(
+            "Privacy violation: Inbound SMS content leaked into result reason!",
+            result.reason.contains("849201") || result.reason.contains("bank OTP")
+        )
+        assertNull(result.command)
+
+        val tamperedCommand = "CMD:LOCATE|1|1770000000|deadbeef1234"
+        val tamperedResult = SmsCommandProcessor.processInboundPdu(
+            body = tamperedCommand,
+            storage = mockStorage
+        )
+        assertEquals(SmsProcessStatus.DROPPED_HMAC_FAILURE, tamperedResult.status)
+        assertFalse(
+            "Privacy violation: Secret material leaked in failure reason!",
+            tamperedResult.reason.contains("deadbeef1234")
+        )
+    }
 }
+
+

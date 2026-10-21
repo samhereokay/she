@@ -127,8 +127,8 @@ def derive_6digit_verification_code(admin_pem: str, guardian_pem: str) -> str:
     return f"{code_int:06d}"
 
 
-def verify_user_totp_code(user: User, code: str, consume: bool = True) -> bool:
-    """Verifies a 6-digit TOTP code against the owner's encrypted TOTP secret and enforces single-use replay protection."""
+def verify_user_totp_code(user: User, code: str, db: Optional[Session] = None, consume: bool = True) -> bool:
+    """Verifies a 6-digit TOTP code against the owner's encrypted TOTP secret and enforces database-backed single-use replay protection."""
     if not user.totp_enabled or not user.totp_secret:
         return False
     clean_code = str(code).strip()
@@ -136,7 +136,7 @@ def verify_user_totp_code(user: User, code: str, consume: bool = True) -> bool:
     if not verify_totp_code(secret, clean_code):
         return False
     if consume:
-        return consume_totp_code(str(user.id), clean_code)
+        return consume_totp_code(db, str(user.id), clean_code)
     return True
 
 
@@ -254,7 +254,7 @@ def create_pairing_session(
             detail="Two-factor authentication (TOTP) must be enabled before pairing Guardian handsets."
         )
 
-    if not verify_user_totp_code(current_user, req.totp_code):
+    if not verify_user_totp_code(current_user, req.totp_code, db=db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid TOTP verification code. Handset pairing session rejected."
@@ -699,7 +699,7 @@ def unpair_device_graceful(
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
-    if not verify_user_totp_code(current_user, req.totp_code):
+    if not verify_user_totp_code(current_user, req.totp_code, db=db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid TOTP two-factor code. Graceful unpair rejected."
@@ -766,10 +766,10 @@ def revoke_or_delete_device(
 
     # If owner has TOTP enabled, verify code
     if current_user.totp_enabled:
-        if not code or not verify_user_totp_code(current_user, code):
+        if not code or not verify_user_totp_code(current_user, code, db=db):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or missing TOTP two-factor code. Handset removal rejected."
+                detail="Invalid or missing TOTP verification code. Handset revocation strictly mandates fresh 2FA."
             )
 
     is_revoke = (action == "revoke") or (request.query_params.get("action") == "revoke")

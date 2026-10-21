@@ -33,18 +33,45 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.alter_column('device_commands', 'trusted_device_id',
-               existing_type=sa.VARCHAR(length=36),
-               nullable=True)
-    op.drop_constraint(op.f('device_status_device_id_key'), 'device_status', type_='unique')
-    op.drop_index(op.f('ix_device_status_device_id'), table_name='device_status')
-    op.create_index(op.f('ix_device_status_device_id'), 'device_status', ['device_id'], unique=True)
-    op.alter_column('users', 'totp_secret',
-               existing_type=sa.VARCHAR(length=64),
-               type_=sa.Text(),
-               existing_nullable=True)
-    op.drop_index(op.f('ix_users_email'), table_name='users')
-    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=False)
+    # Use batch_alter_table for SQLite compatibility while remaining fully functional on PostgreSQL
+    with op.batch_alter_table('device_commands', schema=None) as batch_op:
+        batch_op.alter_column('trusted_device_id',
+                   existing_type=sa.VARCHAR(length=36),
+                   nullable=True)
+
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
+
+    if not is_sqlite:
+        op.drop_constraint(op.f('device_status_device_id_key'), 'device_status', type_='unique')
+        op.drop_index(op.f('ix_device_status_device_id'), table_name='device_status')
+        op.create_index(op.f('ix_device_status_device_id'), 'device_status', ['device_id'], unique=True)
+        op.alter_column('users', 'totp_secret',
+                   existing_type=sa.VARCHAR(length=64),
+                   type_=sa.Text(),
+                   existing_nullable=True)
+        op.drop_index(op.f('ix_users_email'), table_name='users')
+        op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=False)
+    else:
+        with op.batch_alter_table('users', schema=None) as batch_op:
+            batch_op.alter_column('totp_secret',
+                       existing_type=sa.VARCHAR(length=64),
+                       type_=sa.Text(),
+                       existing_nullable=True)
+
+    op.create_table('consumed_totp_codes',
+        sa.Column('id', sa.String(length=36), nullable=False),
+        sa.Column('user_id', sa.String(length=36), nullable=False),
+        sa.Column('code_hash', sa.String(length=64), nullable=False),
+        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('consumed_at', sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('user_id', 'code_hash', name='uq_user_consumed_totp_code')
+    )
+    op.create_index(op.f('ix_consumed_totp_codes_code_hash'), 'consumed_totp_codes', ['code_hash'], unique=False)
+    op.create_index(op.f('ix_consumed_totp_codes_expires_at'), 'consumed_totp_codes', ['expires_at'], unique=False)
+    op.create_index(op.f('ix_consumed_totp_codes_user_id'), 'consumed_totp_codes', ['user_id'], unique=False)
     # ### end Alembic commands ###
 
 
@@ -64,4 +91,8 @@ def downgrade() -> None:
                existing_type=sa.VARCHAR(length=36),
                nullable=False)
     op.drop_table('bug_reports')
+    op.drop_index(op.f('ix_consumed_totp_codes_user_id'), table_name='consumed_totp_codes')
+    op.drop_index(op.f('ix_consumed_totp_codes_expires_at'), table_name='consumed_totp_codes')
+    op.drop_index(op.f('ix_consumed_totp_codes_code_hash'), table_name='consumed_totp_codes')
+    op.drop_table('consumed_totp_codes')
     # ### end Alembic commands ###

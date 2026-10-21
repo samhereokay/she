@@ -169,48 +169,102 @@ def verify_totp_code(secret_b32: str, code: str, valid_windows: int = 1) -> bool
     return False
 
 
-_consumed_totp_lock = threading.Lock()
-_consumed_totp_codes: dict[str, float] = {}
+def hash_totp_code(user_id: str, code: str) -> str:
+    """Computes a SHA-256 fingerprint of the user and code."""
+    return hashlib.sha256(f"{user_id}:{code.strip()}".encode("utf-8")).hexdigest()
 
 
-def consume_totp_code(user_id: str, code: str, ttl_seconds: int = 90) -> bool:
+def consume_totp_code(db: Any, user_id: str, code: str, ttl_seconds: int = 90) -> bool:
     """
-    Enforces single-use consumption of TOTP codes per user to prevent replay attacks (RFC 6238 / NIST SP 800-63B).
-    Returns True if the code has not been consumed yet, and marks it consumed until TTL expires.
-    Returns False if the code was already consumed within the validity window.
+    Enforces database-backed single-use consumption of TOTP codes per user to prevent replay attacks
+    across multiple worker processes and server restarts (RFC 6238 / NIST SP 800-63B).
     """
+    if db is None:
+        from app.db.session import SessionLocal
+        with SessionLocal() as session:
+            return _consume_totp_code_tx(session, user_id, code, ttl_seconds)
+    return _consume_totp_code_tx(db, user_id, code, ttl_seconds)
+
+
+def _consume_totp_code_tx(db: Any, user_id: str, code: str, ttl_seconds: int = 90) -> bool:
+    from app.db.models import ConsumedTotpCode, utc_now
+    from sqlalchemy.exc import IntegrityError
     clean_code = str(code).strip()
-    key = f"{user_id}:{clean_code}"
-    now = time.time()
-    with _consumed_totp_lock:
-        expired_keys = [k for k, exp in _consumed_totp_codes.items() if exp < now]
-        for k in expired_keys:
-            del _consumed_totp_codes[k]
+    c_hash = hash_totp_code(user_id, clean_code)
+    now = utc_now()
 
-        if key in _consumed_totp_codes:
-            return False
-        _consumed_totp_codes[key] = now + ttl_seconds
+    # 1. Check if already consumed and still unexpired
+    existing = db.query(ConsumedTotpCode).filter(
+        ConsumedTotpCode.user_id == user_id,
+        ConsumedTotpCode.code_hash == c_hash,
+        ConsumedTotpCode.expires_at >= now
+    ).first()
+    if existing:
+        return False
+
+    # 2. Prune old expired codes for this user
+    try:
+        db.query(ConsumedTotpCode).filter(
+            ConsumedTotpCode.user_id == user_id,
+            ConsumedTotpCode.expires_at < now
+        ).delete()
+    except Exception:
+        pass
+
+    # 3. Insert new consumed record
+    exp = now + timedelta(seconds=ttl_seconds)
+    record = ConsumedTotpCode(
+        user_id=user_id,
+        code_hash=c_hash,
+        expires_at=exp,
+        consumed_at=now
+    )
+    db.add(record)
+    try:
+        db.commit()
         return True
-
-
-def is_totp_code_consumed(user_id: str, code: str) -> bool:
-    """Checks whether a code has already been consumed for a given user."""
-    clean_code = str(code).strip()
-    key = f"{user_id}:{clean_code}"
-    now = time.time()
-    with _consumed_totp_lock:
-        if key in _consumed_totp_codes:
-            if _consumed_totp_codes[key] >= now:
-                return True
-            else:
-                del _consumed_totp_codes[key]
+    except IntegrityError:
+        db.rollback()
+        return False
+    except Exception:
+        db.rollback()
         return False
 
 
-def clear_consumed_totp_codes() -> None:
-    """Utility to clear consumed codes (used primarily in test suites)."""
-    with _consumed_totp_lock:
-        _consumed_totp_codes.clear()
+def is_totp_code_consumed(db: Any, user_id: str, code: str) -> bool:
+    """Checks whether a code has already been consumed in DB for a given user."""
+    from app.db.models import ConsumedTotpCode, utc_now
+    clean_code = str(code).strip()
+    c_hash = hash_totp_code(user_id, clean_code)
+    now = utc_now()
+
+    def _check(s):
+        return s.query(ConsumedTotpCode).filter(
+            ConsumedTotpCode.user_id == user_id,
+            ConsumedTotpCode.code_hash == c_hash,
+            ConsumedTotpCode.expires_at >= now
+        ).first() is not None
+
+    if db is None:
+        from app.db.session import SessionLocal
+        with SessionLocal() as session:
+            return _check(session)
+    return _check(db)
+
+
+def clear_consumed_totp_codes(db: Any = None) -> None:
+    """Utility to clear consumed codes in DB (used primarily in test suites)."""
+    from app.db.models import ConsumedTotpCode
+    def _clear(s):
+        s.query(ConsumedTotpCode).delete()
+        s.commit()
+
+    if db is None:
+        from app.db.session import SessionLocal
+        with SessionLocal() as session:
+            _clear(session)
+    else:
+        _clear(db)
 
 
 def create_access_token(
