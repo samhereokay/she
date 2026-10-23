@@ -1,17 +1,121 @@
 """Email delivery service for zero-trust verification codes.
 
-Uses Python smtplib with STARTTLS support and clean plain text / HTML formatting.
-Never logs OTP codes, passwords, or SMTP authentication credentials.
+Supports:
+- HTTPS Email APIs: Resend, Brevo, SendGrid (configured via Render environment variables)
+- Traditional SMTP with STARTTLS and SSL failover (e.g. Mailpit for local testing)
+- Direct 1-click verification link in email body
+- Never logs OTP codes, passwords, or authentication credentials.
 """
 
+import json
 import logging
 import smtplib
+import urllib.request
+import urllib.error
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional
 
 from app.core.config import settings
 
 logger = logging.getLogger("uvicorn.error")
+
+
+def _dispatch_https_api(clean_target: str, subject: str, text_body: str, html_body: str) -> bool:
+    """
+    Attempt email dispatch via HTTPS APIs (Resend, Brevo, SendGrid) without relying on SMTP.
+    Returns True if successfully dispatched via an HTTPS API, False otherwise.
+    """
+    # 1. Resend API
+    if settings.RESEND_API_KEY:
+        try:
+            url = "https://api.resend.com/emails"
+            from_addr = settings.SMTP_FROM if ("@" in settings.SMTP_FROM and not settings.SMTP_FROM.endswith(".local")) else "onboarding@resend.dev"
+            payload = json.dumps({
+                "from": from_addr,
+                "to": [clean_target],
+                "subject": subject,
+                "html": html_body,
+                "text": text_body
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "SHE-AntiTheft/0.4.1"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                if 200 <= resp.status < 300:
+                    logger.info(f"Verification email dispatched successfully via Resend API to {clean_target}")
+                    return True
+        except Exception as resend_err:
+            logger.warning(f"Resend API dispatch failed ({type(resend_err).__name__}). Falling back...")
+
+    # 2. Brevo API (formerly Sendinblue)
+    if settings.BREVO_API_KEY:
+        try:
+            url = "https://api.brevo.com/v3/smtp/email"
+            from_addr = settings.SMTP_FROM if ("@" in settings.SMTP_FROM and not settings.SMTP_FROM.endswith(".local")) else "verify@she.app"
+            payload = json.dumps({
+                "sender": {"email": from_addr, "name": "SHE Anti-Theft"},
+                "to": [{"email": clean_target}],
+                "subject": subject,
+                "htmlContent": html_body,
+                "textContent": text_body
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "api-key": settings.BREVO_API_KEY,
+                    "Content-Type": "application/json",
+                    "User-Agent": "SHE-AntiTheft/0.4.1"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                if 200 <= resp.status < 300:
+                    logger.info(f"Verification email dispatched successfully via Brevo API to {clean_target}")
+                    return True
+        except Exception as brevo_err:
+            logger.warning(f"Brevo API dispatch failed ({type(brevo_err).__name__}). Falling back...")
+
+    # 3. SendGrid API
+    if settings.SENDGRID_API_KEY:
+        try:
+            url = "https://api.sendgrid.com/v3/mail/send"
+            from_addr = settings.SMTP_FROM if ("@" in settings.SMTP_FROM and not settings.SMTP_FROM.endswith(".local")) else "no-reply@she.app"
+            payload = json.dumps({
+                "personalizations": [{"to": [{"email": clean_target}]}],
+                "from": {"email": from_addr, "name": "SHE Anti-Theft"},
+                "subject": subject,
+                "content": [
+                    {"type": "text/plain", "value": text_body},
+                    {"type": "text/html", "value": html_body}
+                ]
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.SENDGRID_API_KEY}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "SHE-AntiTheft/0.4.1"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                if 200 <= resp.status < 300:
+                    logger.info(f"Verification email dispatched successfully via SendGrid API to {clean_target}")
+                    return True
+        except Exception as sg_err:
+            logger.warning(f"SendGrid API dispatch failed ({type(sg_err).__name__}). Falling back...")
+
+    return False
 
 
 def _dispatch_smtp(msg: MIMEMultipart, clean_target: str, host: str, port: int, timeout: float = 6.0) -> None:
@@ -35,23 +139,31 @@ def _dispatch_smtp(msg: MIMEMultipart, clean_target: str, host: str, port: int, 
             server.send_message(msg)
 
 
-def send_verification_email(to_email: str, code: str) -> None:
+def send_verification_email(to_email: str, code: str, verify_url: Optional[str] = None) -> None:
     """
-    Deliver a 6-digit verification code to the target email.
+    Deliver a 6-digit verification code and optional 1-click verification link to the target email.
     
-    Supports:
-    - STARTTLS (587) and direct SSL (465) with automatic failover
-    - Plain SMTP when unauthenticated (e.g. local Mailpit test instance)
-    - Zero credential / code leakage in application logs
+    Priority:
+    1. HTTPS API delivery (Resend / Brevo / SendGrid) if configured via environment
+    2. SMTP delivery (port 587 with STARTTLS or port 465 direct SSL)
+    3. Plain SMTP for local development (Mailpit)
     """
     clean_target = to_email.strip().lower()
     subject = f"SHE Anti-Theft Verification Code: {code}"
 
+    link_text_section = f"\nAlternatively, verify instantly by clicking this link:\n{verify_url}\n" if verify_url else ""
+    link_html_section = f"""
+    <div style="text-align: center; margin: 20px 0;">
+      <a href="{verify_url}" style="display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; font-size: 15px;">Verify Email Address</a>
+    </div>
+    <p style="font-size: 12px; color: #64748b; word-break: break-all;">Or copy and paste this link in your browser:<br>{verify_url}</p>
+    """ if verify_url else ""
+
     text_body = f"""SHE Anti-Theft Verification
 
 Your one-time email verification code is: {code}
-
-This code is valid for 10 minutes.
+{link_text_section}
+This code and link are valid for 15 minutes.
 If you did not request this code, no further action is required.
 """
 
@@ -71,12 +183,13 @@ If you did not request this code, no further action is required.
 <body>
   <div class="container">
     <div class="logo">SHE Anti-Theft & Recovery</div>
-    <p>Please enter the following 6-digit code to verify your account email address:</p>
+    <p>Please enter the following 6-digit code in the SHE Admin app, or click the verification button below:</p>
     <div class="code-box">
       <span class="code">{code}</span>
     </div>
+    {link_html_section}
     <p class="footer">
-      This code will expire in <strong>10 minutes</strong>.<br>
+      This code will expire in <strong>15 minutes</strong>.<br>
       If you did not request this code, you can safely ignore this email.
     </p>
   </div>
@@ -84,6 +197,11 @@ If you did not request this code, no further action is required.
 </html>
 """
 
+    # Priority 1: Try HTTPS API (Resend / Brevo / SendGrid)
+    if _dispatch_https_api(clean_target, subject, text_body, html_body):
+        return
+
+    # Priority 2: Fall back to SMTP
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.SMTP_FROM
@@ -118,5 +236,5 @@ If you did not request this code, no further action is required.
             )
 
     # If all attempts failed, log clean diagnostic without leaking credentials or OTP
-    logger.error(f"Failed to dispatch verification email to {clean_target} across all available SMTP transports.")
+    logger.error(f"Failed to dispatch verification email to {clean_target} across all available transports.")
     raise

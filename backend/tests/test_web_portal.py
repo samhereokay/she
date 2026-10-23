@@ -136,7 +136,7 @@ def test_releases_page_and_binary_downloads():
     resp_check = client.get("/releases/check")
     assert resp_check.status_code == 200
     data = resp_check.json()
-    assert data["version_code"] == 4
+    assert data["version_code"] == 5
     assert data["version_name"] == settings.VERSION
     assert "download_url" in data["guardian"]
     assert "download_url" in data["admin"]

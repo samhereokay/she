@@ -197,6 +197,15 @@
                     android:textColor="#71717A"
                     android:textSize="12sp" />
 
+                <TextView
+                    android:id="@+id/tvDiagnostics"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="SIM State: Detecting... | SMS: Checking... | Pending SMS: 0"
+                    android:textColor="#38BDF8"
+                    android:textSize="12sp" />
+
                 <!-- Map & Info Row -->
                 <LinearLayout
                     android:layout_width="match_parent"

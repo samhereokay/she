@@ -67,6 +67,15 @@ class AdminSessionManager(context: Context) {
         return next
     }
 
+    @Synchronized
+    fun updateCommandSequence(minSequence: Long) {
+        val currentStr = secureStorage.getDecryptedString(KEY_COMMAND_SEQ, "0") ?: "0"
+        val saved = currentStr.toLongOrNull() ?: 0L
+        if (minSequence > saved) {
+            secureStorage.putEncryptedString(KEY_COMMAND_SEQ, minSequence.toString())
+        }
+    }
+
     fun saveDevicePairingId(deviceId: String, pairingId: String) {
         secureStorage.putEncryptedString("pairing_id_$deviceId", pairingId)
     }

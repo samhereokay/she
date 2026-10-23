@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     PROJECT_NAME: str = "SHE - Sentinel for Handheld Equipment"
-    VERSION: str = "0.4.0"
+    VERSION: str = "0.4.1"
     API_V1_STR: str = "/api/v1"
     
     # Environment & Security
@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
+    # Email HTTPS APIs & SMTP Configuration
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
+    SERVER_PUBLIC_URL: str = os.getenv("SERVER_PUBLIC_URL", "https://she-92h6.onrender.com")
+
     # SMTP / Mailpit Configuration
     SMTP_HOST: str = os.getenv("SMTP_HOST", "localhost")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "1025"))

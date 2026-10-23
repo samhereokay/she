@@ -523,3 +523,91 @@ def test_startup_fails_when_debug_false_and_verify_secret_disallowed():
     validate_production_security_config(
         MockConfig(debug=False, verify_secret="prod-entropy-strong-unique-secret-32b-length", pairing_key="prod-pairing-entropy-strong-32b")
     )
+
+
+def test_email_link_verification_single_use_and_roundtrip(client):
+    """
+    Verifies 1-click email confirmation link flow:
+    - GET /email/link shows confirm page
+    - POST /email/link verifies account and marks challenge consumed
+    - Subsequent POST or GET is rejected as already consumed
+    """
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+    settings.DEBUG = True
+
+    # 1. Register unverified user
+    client.post("/auth/register", json={
+        "username": "link_owner",
+        "email": "link_owner@example.com",
+        "password": "PasswordLink123!"
+    })
+
+    login_resp = client.post("/auth/login/json", json={
+        "username": "link_owner",
+        "password": "PasswordLink123!"
+    })
+    token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Dispatch verification code
+    with patch("app.api.verify.send_verification_email") as mock_mail:
+        send_resp = client.post("/verify/email/send", json={}, headers=headers)
+        assert send_resp.status_code == 202
+        verify_link = send_resp.json()["debug_verify_link"]
+        assert "token=" in verify_link
+        link_token = verify_link.split("token=")[1]
+
+    # 3. GET /email/link shows confirm page with form
+    get_resp = client.get(f"/verify/email/link?token={link_token}")
+    assert get_resp.status_code == 200
+    assert "Confirm Email Verification" in get_resp.text
+    assert "Confirm &amp; Verify Email" in get_resp.text or "Confirm & Verify Email" in get_resp.text
+
+    # 4. POST /email/link confirms verification
+    post_resp = client.post(f"/verify/email/link?token={link_token}")
+    assert post_resp.status_code == 200
+    assert "Email Verified Successfully!" in post_resp.text
+
+    # 5. Profile is now verified
+    me_resp = client.get("/auth/me", headers=headers)
+    assert me_resp.status_code == 200
+    assert me_resp.json()["email_verified_at"] is not None
+
+    # 6. Replaying link returns 400 Already Used
+    replay_resp = client.post(f"/verify/email/link?token={link_token}")
+    assert replay_resp.status_code == 400
+    assert "Link Already Used" in replay_resp.text
+
+
+def test_debug_verify_bypass_strictly_rejected_in_production(client):
+    """
+    CRITICAL SECURITY INVARIANT:
+    Direct verification bypass (/email/debug-verify, /phone/debug-verify)
+    is strictly forbidden (HTTP 403) whenever settings.DEBUG=False.
+    """
+    settings.ALLOW_PUBLIC_REGISTRATION = True
+
+    client.post("/auth/register", json={
+        "username": "prod_sec_user",
+        "email": "prodsec@example.com",
+        "password": "PasswordProd123!"
+    })
+    token = client.post("/auth/login/json", json={
+        "username": "prod_sec_user",
+        "password": "PasswordProd123!"
+    }).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # When DEBUG=False, bypass is strictly 403 Forbidden
+    settings.DEBUG = False
+    try:
+        resp_email = client.post("/verify/email/debug-verify", headers=headers)
+        assert resp_email.status_code == 403
+        assert "debug_bypass_disabled" in resp_email.json()["detail"]
+
+        resp_phone = client.post("/verify/phone/debug-verify", headers=headers)
+        assert resp_phone.status_code == 403
+        assert "debug_bypass_disabled" in resp_phone.json()["detail"]
+    finally:
+        settings.DEBUG = True
+

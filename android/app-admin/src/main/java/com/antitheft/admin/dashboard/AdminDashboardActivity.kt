@@ -202,7 +202,7 @@ class AdminDashboardActivity : BaseSecureActivity() {
                         sessionsList = sessionsList,
                         isSessionsLoading = isSessionsLoading,
                         onRevokeOtherSessions = { revokeOtherSessions() },
-                        onRevokeSession = { sessionId, force -> revokeSession(sessionId, force) },
+                        onRevokeSession = { sessionId, force, totp -> revokeSession(sessionId, force, totp) },
                         onCheckUpdates = {
                             com.antitheft.common.update.AppUpdateManager.checkAndPromptUpdate(
                                 context = this@AdminDashboardActivity,
@@ -212,12 +212,14 @@ class AdminDashboardActivity : BaseSecureActivity() {
                                 manualTrigger = true
                             )
                         },
-                        onDeleteDevice = { device ->
-                            deleteDevice(device)
+                        onDeleteDevice = { device, totp ->
+                            deleteDevice(device, totp)
                         },
                         onConfirmPendingPairing = { device, code ->
                             confirmPendingPairing(device, code)
-                        }
+                        },
+                        onDebugVerifyEmail = { debugVerifyEmail() },
+                        onDebugVerifyPhone = { debugVerifyPhone() }
                     )
                 }
             }
@@ -313,7 +315,7 @@ class AdminDashboardActivity : BaseSecureActivity() {
                 (e is retrofit2.HttpException && e.code() == 401)
         if (is401) {
             sessionManager.clearSession()
-            Toast.makeText(this@AdminDashboardActivity, "Session expired or owner account reset. Please sign in or register.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@AdminDashboardActivity, "Session terminated. Please log in again.", Toast.LENGTH_LONG).show()
             val loginIntent = Intent(this@AdminDashboardActivity, com.antitheft.admin.auth.AdminLoginActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             }
@@ -493,6 +495,14 @@ class AdminDashboardActivity : BaseSecureActivity() {
                 }
                 val trustedDevId = ensureTrustedDeviceRegistered(api)
 
+                try {
+                    val serverSeqResp = api.getNextCommandSequence(trustedDevId)
+                    val serverNextSeq = (serverSeqResp["next_sequence"] as? Number)?.toLong() ?: 1L
+                    sessionManager.updateCommandSequence(serverNextSeq - 1L)
+                } catch (se: Exception) {
+                    android.util.Log.w("AdminDashboard", "Failed to query server sequence: ${se.message}")
+                }
+
                 val seqCounter = sessionManager.getNextCommandSequence()
                 val nowEpochSec = System.currentTimeMillis() / 1000L
                 val expiryEpochSec = nowEpochSec + 300L
@@ -614,27 +624,34 @@ class AdminDashboardActivity : BaseSecureActivity() {
         }
     }
 
-    private fun revokeSession(sessionId: String, force: Boolean = false) {
+    private fun revokeSession(sessionId: String, force: Boolean = false, totpCode: String? = null) {
         isSessionsLoading = true
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val res = api.revokeSession(sessionId, force)
+                val res = api.revokeSession(sessionId, force, totpCode)
                 Toast.makeText(this@AdminDashboardActivity, res.message, Toast.LENGTH_SHORT).show()
                 loadSessions()
             } catch (e: Exception) {
                 android.util.Log.e("AdminDashboard", "Failed to revoke session", e)
-                Toast.makeText(this@AdminDashboardActivity, "Failed to revoke session: ${e.message}", Toast.LENGTH_SHORT).show()
+                val errMsg = if (e is retrofit2.HttpException) {
+                    try {
+                        val body = e.response()?.errorBody()?.string() ?: ""
+                        if (body.contains("{")) org.json.JSONObject(body).optString("detail", e.message()) else body
+                    } catch (_: Exception) { e.message() }
+                } else e.message ?: "Revoke failed"
+                Toast.makeText(this@AdminDashboardActivity, "Failed to revoke session: $errMsg", Toast.LENGTH_SHORT).show()
                 isSessionsLoading = false
+                handleApiError(e)
             }
         }
     }
 
-    private fun deleteDevice(device: DeviceDto) {
+    private fun deleteDevice(device: DeviceDto, totpCode: String? = null) {
         lifecycleScope.launch {
             try {
                 val api = ApiClient.create(sessionManager)
-                val resp = api.deleteDevice(device.id, "delete")
+                val resp = api.deleteDevice(device.id, "delete", totpCode = totpCode)
                 val msg = resp["message"] as? String ?: "Device '${device.device_alias}' unpair request succeeded."
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@AdminDashboardActivity, msg, Toast.LENGTH_LONG).show()
@@ -643,8 +660,43 @@ class AdminDashboardActivity : BaseSecureActivity() {
             } catch (e: Exception) {
                 android.util.Log.e("AdminDashboard", "Failed to delete device", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@AdminDashboardActivity, "Unpair failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    val errMsg = if (e is retrofit2.HttpException) {
+                        try {
+                            val body = e.response()?.errorBody()?.string() ?: ""
+                            if (body.contains("{")) org.json.JSONObject(body).optString("detail", e.message()) else body
+                        } catch (_: Exception) { e.message() }
+                    } else e.message ?: "Unpair failed"
+                    Toast.makeText(this@AdminDashboardActivity, "Unpair failed: $errMsg", Toast.LENGTH_LONG).show()
                 }
+                handleApiError(e)
+            }
+        }
+    }
+
+    private fun debugVerifyEmail() {
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val res = api.debugVerifyEmail()
+                Toast.makeText(this@AdminDashboardActivity, res["message"] as? String ?: "Email verified (DEBUG)", Toast.LENGTH_LONG).show()
+                showEmailVerifyDialog = false
+                refreshDashboardData()
+            } catch (e: Exception) {
+                Toast.makeText(this@AdminDashboardActivity, "Debug verify failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun debugVerifyPhone() {
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val res = api.debugVerifyPhone()
+                Toast.makeText(this@AdminDashboardActivity, res["message"] as? String ?: "Phone verified (DEBUG)", Toast.LENGTH_LONG).show()
+                showPhoneVerifyDialog = false
+                refreshDashboardData()
+            } catch (e: Exception) {
+                Toast.makeText(this@AdminDashboardActivity, "Debug verify failed: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }

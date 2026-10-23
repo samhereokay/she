@@ -369,11 +369,21 @@ interface AdminApiService {
     @POST("auth/sessions/{id}/revoke")
     suspend fun revokeSession(
         @Path("id") id: String,
-        @retrofit2.http.Query("force") force: Boolean = false
+        @retrofit2.http.Query("force") force: Boolean = false,
+        @retrofit2.http.Header("x-totp-code") totpCode: String? = null
     ): SessionRevokeResponse
 
     @POST("auth/sessions/revoke-others")
     suspend fun revokeOtherSessions(): SessionRevokeResponse
+
+    @POST("verify/email/debug-verify")
+    suspend fun debugVerifyEmail(): Map<String, Any>
+
+    @POST("verify/phone/debug-verify")
+    suspend fun debugVerifyPhone(): Map<String, Any>
+
+    @GET("api/v1/devices/commands/next-sequence")
+    suspend fun getNextCommandSequence(@retrofit2.http.Query("trusted_device_id") trustedDeviceId: String): Map<String, Any>
 }
 
 object ApiClient {

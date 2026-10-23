@@ -134,10 +134,12 @@ fun AdminDashboardScreen(
     sessionsList: List<UserSessionDto> = emptyList(),
     isSessionsLoading: Boolean = false,
     onRevokeOtherSessions: () -> Unit = {},
-    onRevokeSession: (String, Boolean) -> Unit = { _, _ -> },
+    onRevokeSession: (String, Boolean, String?) -> Unit = { _, _, _ -> },
     onCheckUpdates: () -> Unit = {},
-    onDeleteDevice: (DeviceDto) -> Unit = {},
-    onConfirmPendingPairing: (DeviceDto, String) -> Unit = { _, _ -> }
+    onDeleteDevice: (DeviceDto, String?) -> Unit = { _, _ -> },
+    onConfirmPendingPairing: (DeviceDto, String) -> Unit = { _, _ -> },
+    onDebugVerifyEmail: (() -> Unit)? = null,
+    onDebugVerifyPhone: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showThemeSheet by remember { mutableStateOf(false) }
@@ -577,7 +579,8 @@ fun AdminDashboardScreen(
             onSendCode = onSendEmailCode,
             onConfirmCode = onConfirmEmailCode,
             isLoading = isEmailVerifying,
-            errorMessage = emailVerifyMessage
+            errorMessage = emailVerifyMessage,
+            onDebugVerify = onDebugVerifyEmail
         )
     }
 
@@ -588,7 +591,8 @@ fun AdminDashboardScreen(
             onSendCode = onSendPhoneCode,
             onConfirmCode = onConfirmPhoneCode,
             isLoading = isPhoneVerifying,
-            errorMessage = phoneVerifyMessage
+            errorMessage = phoneVerifyMessage,
+            onDebugVerify = onDebugVerifyPhone
         )
     }
 
@@ -619,6 +623,7 @@ fun AdminDashboardScreen(
     // Delete / Unpair Confirmation Dialog
     if (deviceToDelete != null) {
         val target = deviceToDelete!!
+        var unpairTotpCode by remember(target.id) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { deviceToDelete = null },
             containerColor = SheTheme.colors.surface,
@@ -658,6 +663,19 @@ fun AdminDashboardScreen(
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     )
+                    if (target.status != "PENDING_CONFIRMATION") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        SheTextField(
+                            value = unpairTotpCode,
+                            onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) unpairTotpCode = it },
+                            label = "6-DIGIT AUTHENTICATOR TOTP CODE",
+                            placeholder = "123456",
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            )
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -665,11 +683,13 @@ fun AdminDashboardScreen(
                     text = "Unpair & Delete",
                     onClick = {
                         val dev = target
+                        val code = unpairTotpCode.trim()
                         deviceToDelete = null
-                        onDeleteDevice(dev)
+                        onDeleteDevice(dev, code.takeIf { it.isNotBlank() })
                     },
                     variant = SheButtonVariant.DANGER,
-                    height = 38.dp
+                    height = 38.dp,
+                    enabled = (target.status == "PENDING_CONFIRMATION" || unpairTotpCode.length == 6)
                 )
             },
             dismissButton = {
@@ -1063,7 +1083,7 @@ private fun DeviceCardItem(
                         if (isSkewed) {
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "⚠️ Large clock skew: phone clock shifted",
+                                text = "WARNING: Large clock skew: phone clock shifted",
                                 color = SheTheme.colors.danger,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
@@ -1105,16 +1125,16 @@ private fun DeviceCardItem(
                             else -> StatusLevel.SUCCESS
                         }
                         SheStatusChip(
-                            text = if (isCharging) "⚡ Charging $batt%" else "🔋 Battery $batt%",
+                            text = if (isCharging) "Battery: $batt% (Charging)" else "Battery: $batt% (Discharging)",
                             level = battLevel
                         )
                     } else {
-                        SheStatusChip(text = "🔋 Battery: Active", level = StatusLevel.INFO)
+                        SheStatusChip(text = "Battery: Active", level = StatusLevel.INFO)
                     }
 
-                    val carrierName = statusInfo?.sim_operator?.takeIf { it.isNotBlank() } ?: "Cellular Ready"
+                    val carrierName = statusInfo?.sim_operator?.takeIf { it.isNotBlank() } ?: "Cellular"
                     Text(
-                        text = "📶 $carrierName",
+                        text = "Signal: ${if (statusInfo?.battery_level != null) "High" else "Standby"} ($carrierName)",
                         color = SheTheme.colors.textPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
@@ -1139,20 +1159,20 @@ private fun DeviceCardItem(
                             else -> "Online Data"
                         }
                         SheStatusChip(
-                            text = "🟢 Internet: ON ($connLabel)",
+                            text = "Status: ONLINE ($connLabel)",
                             level = StatusLevel.SUCCESS
                         )
                     } else {
                         val offlineLabel = if (device.calculated_status == "DELAYED") "Fix Delayed" else "Offline"
                         SheStatusChip(
-                            text = "🔴 Internet: OFF ($offlineLabel • SMS Armed)",
+                            text = "Status: OFFLINE ($offlineLabel • SMS Armed)",
                             level = StatusLevel.DANGER
                         )
                     }
 
                     if (statusInfo?.sim_changed == true) {
                         SheStatusChip(
-                            text = "🚨 SIM SWAP ALERT",
+                            text = "ALERT: SIM SWAP DETECTED",
                             level = StatusLevel.DANGER
                         )
                     } else {
@@ -1193,7 +1213,7 @@ private fun DeviceCardItem(
                         .padding(8.dp)
                 ) {
                     Text(
-                        text = "⚠️ HANDSET HEALTH WARNING:",
+                        text = "WARNING: HANDSET HEALTH WARNING:",
                         color = SheTheme.colors.danger,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -1572,7 +1592,8 @@ private fun EmailVerificationDialog(
     onSendCode: () -> Unit,
     onConfirmCode: (String) -> Unit,
     isLoading: Boolean,
-    errorMessage: String?
+    errorMessage: String?,
+    onDebugVerify: (() -> Unit)? = null
 ) {
     var code by remember { mutableStateOf("") }
 
@@ -1650,6 +1671,15 @@ private fun EmailVerificationDialog(
                     )
                 )
 
+                if (com.antitheft.admin.BuildConfig.DEBUG && onDebugVerify != null) {
+                    SheButton(
+                        text = "Instant Verify (Debug Only)",
+                        onClick = onDebugVerify,
+                        variant = SheButtonVariant.OUTLINED,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 if (!errorMessage.isNullOrBlank()) {
                     Text(
                         text = errorMessage,
@@ -1687,7 +1717,8 @@ private fun PhoneVerificationDialog(
     onSendCode: (String) -> Unit,
     onConfirmCode: (String) -> Unit,
     isLoading: Boolean,
-    errorMessage: String?
+    errorMessage: String?,
+    onDebugVerify: (() -> Unit)? = null
 ) {
     var phoneInput by remember { mutableStateOf(initialPhone) }
     var code by remember { mutableStateOf("") }
@@ -1756,6 +1787,15 @@ private fun PhoneVerificationDialog(
                     )
                 )
 
+                if (com.antitheft.admin.BuildConfig.DEBUG && onDebugVerify != null) {
+                    SheButton(
+                        text = "Instant Verify (Debug Only)",
+                        onClick = onDebugVerify,
+                        variant = SheButtonVariant.OUTLINED,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 if (!errorMessage.isNullOrBlank()) {
                     Text(
                         text = errorMessage,
@@ -1769,7 +1809,7 @@ private fun PhoneVerificationDialog(
         },
         confirmButton = {
             SheButton(
-                text = "Verify & Arm Beacons",
+                text = "Confirm Verification",
                 onClick = { onConfirmCode(code) },
                 enabled = code.length == 6 && !isLoading,
                 isLoading = isLoading,
@@ -2310,19 +2350,17 @@ private fun IosCommandGuideDialog(
                     }
 
                     Text(
-                        text = "PERMANENT FIX: DISABLE PLAY PROTECT SCANNING",
+                        text = "INSTALLATION & PLAY PROTECT GUIDE",
                         color = SheTheme.colors.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
 
                     val playProtectSteps = listOf(
-                        "1. Open the Google Play Store app on Mom's phone.",
-                        "2. Tap the Profile icon in the top-right corner.",
-                        "3. Tap 'Play Protect'.",
-                        "4. Tap the Settings Gear (⚙️) icon in the top right corner.",
-                        "5. Toggle OFF 'Scan apps with Play Protect' (or toggle OFF 'Improve harmful app detection').",
-                        "6. Tap 'Turn off' when prompted by Android."
+                        "1. When installing or updating the APK, Android may show 'Unsafe app blocked' or 'Blocked by Play Protect'.",
+                        "2. Tap 'More details' (down arrow/text) on the bottom of the prompt.",
+                        "3. Tap 'Install anyway' to complete the installation.",
+                        "4. Note: There is NO NEED to turn off Play Protect entirely on the device."
                     )
 
                     SheCard(
@@ -2468,9 +2506,12 @@ private fun ActiveSessionsSheet(
     isLoading: Boolean,
     onDismiss: () -> Unit,
     onRevokeOtherSessions: () -> Unit,
-    onRevokeSession: (String, Boolean) -> Unit
+    onRevokeSession: (String, Boolean, String?) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
+    var sessionToRevokeWithTotp by remember { mutableStateOf<UserSessionDto?>(null) }
+    var sessionTotpCode by remember { mutableStateOf("") }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -2599,7 +2640,14 @@ private fun ActiveSessionsSheet(
                 activeSessions.forEach { s ->
                     SessionRowCard(
                         session = s,
-                        onRevoke = { onRevokeSession(s.id, false) }
+                        onRevoke = {
+                            if (s.is_registered_device) {
+                                sessionTotpCode = ""
+                                sessionToRevokeWithTotp = s
+                            } else {
+                                onRevokeSession(s.id, false, null)
+                            }
+                        }
                     )
                 }
             }
@@ -2615,6 +2663,77 @@ private fun ActiveSessionsSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
         }
+    }
+
+    if (sessionToRevokeWithTotp != null) {
+        val target = sessionToRevokeWithTotp!!
+        AlertDialog(
+            onDismissRequest = { sessionToRevokeWithTotp = null },
+            containerColor = SheTheme.colors.surface,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Security,
+                        contentDescription = null,
+                        tint = SheTheme.colors.danger,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Revoke Registered Phone",
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "This session belongs to your primary registered phone. Terminating it requires your 6-digit Authenticator TOTP code.",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    SheTextField(
+                        value = sessionTotpCode,
+                        onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) sessionTotpCode = it },
+                        label = "6-DIGIT AUTHENTICATOR TOTP CODE",
+                        placeholder = "123456",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                SheButton(
+                    text = "Confirm Revoke",
+                    onClick = {
+                        val code = sessionTotpCode.trim()
+                        sessionToRevokeWithTotp = null
+                        onRevokeSession(target.id, true, code)
+                    },
+                    variant = SheButtonVariant.DANGER,
+                    height = 38.dp,
+                    enabled = sessionTotpCode.length == 6
+                )
+            },
+            dismissButton = {
+                SheButton(
+                    text = "Cancel",
+                    onClick = { sessionToRevokeWithTotp = null },
+                    variant = SheButtonVariant.OUTLINED,
+                    height = 38.dp
+                )
+            }
+        )
     }
 }
 

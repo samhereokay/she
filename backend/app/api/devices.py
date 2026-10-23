@@ -790,15 +790,15 @@ def revoke_or_delete_device(
     alias = device.device_alias
     code = totp_code or request.headers.get("x-totp-code")
 
-    # If owner has TOTP enabled, verify code
-    if current_user.totp_enabled:
+    is_revoke = (action == "revoke") or (request.query_params.get("action") == "revoke")
+
+    # If owner has TOTP enabled, verify code (PENDING_CONFIRMATION handsets exempt only when deleting incomplete pairing)
+    if current_user.totp_enabled and not (device.status == "PENDING_CONFIRMATION" and not is_revoke):
         if not code or not verify_user_totp_code(current_user, code, db=db):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or missing TOTP verification code. Handset revocation strictly mandates fresh 2FA."
             )
-
-    is_revoke = (action == "revoke") or (request.query_params.get("action") == "revoke")
 
     if is_revoke:
         device.status = "REVOKED"
@@ -988,6 +988,26 @@ def list_trusted_devices(
         TrustedDevice.user_id == current_user.id,
         TrustedDevice.revoked_at.is_(None)
     ).all()
+
+
+@router.get("/commands/next-sequence")
+def get_next_command_sequence(
+    trusted_device_id: str,
+    current_user: User = Depends(get_verified_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Return the next strictly monotonic command sequence counter for a trusted Admin device."""
+    trusted = db.query(TrustedDevice).filter(
+        TrustedDevice.id == trusted_device_id,
+        TrustedDevice.user_id == current_user.id
+    ).first()
+    if not trusted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trusted device not found")
+
+    max_seq = db.query(func.coalesce(func.max(DeviceCommand.sequence_counter), 0)).filter(
+        DeviceCommand.trusted_device_id == trusted.id
+    ).scalar() or 0
+    return {"next_sequence_counter": int(max_seq) + 1}
 
 
 @router.post("/commands/dispatch", response_model=CommandResponse, status_code=status.HTTP_201_CREATED)

@@ -17,7 +17,8 @@ from app.core.security import (
     encrypt_totp_secret,
     decrypt_totp_secret,
     get_totp_uri,
-    verify_totp_code
+    verify_totp_code,
+    verify_user_totp_code
 )
 from app.core.rate_limit import auth_limiter, totp_limiter
 from app.core.kyc_validator import validate_email_kyc, validate_phone_kyc, validate_hardware_kyc
@@ -865,6 +866,7 @@ def list_user_sessions(
 @router.post("/sessions/{session_id}/revoke", response_model=SessionRevokeResponse)
 def revoke_user_session(
     session_id: str,
+    request: Request,
     force: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -872,6 +874,7 @@ def revoke_user_session(
     """
     Revoke/terminate a specific login session.
     Protects the primary registered device from accidental revocation unless force=True.
+    When 2FA is active, mandates fresh TOTP verification.
     """
     session = db.query(UserSession).filter(
         UserSession.id == session_id,
@@ -884,11 +887,19 @@ def revoke_user_session(
             detail="Session not found"
         )
 
-    if session.is_registered_device and not force:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot terminate the primary registered device session unless force=true is specified."
-        )
+    if session.is_registered_device:
+        if not force:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot terminate the primary registered device session unless force=true is specified."
+            )
+        if current_user.totp_enabled:
+            totp_code = request.headers.get("x-totp-code")
+            if not totp_code or not verify_user_totp_code(current_user, totp_code, db=db):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or missing TOTP verification code. Primary registered device session termination requires fresh 2FA authentication."
+                )
 
     session.revoked_at = utc_now()
     db.commit()

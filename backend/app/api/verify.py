@@ -1,10 +1,12 @@
-"""Zero-trust ownership challenge endpoints (Email OTP & SMS Phone Verification)."""
-
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -31,6 +33,117 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/verify", tags=["Verification"])
 
 
+def create_email_verification_token(challenge_id: str, user_id: str, email: str, expires_epoch: int) -> str:
+    """Creates a signed HMAC token bound to challenge, user, email, and expiration."""
+    payload = f"{challenge_id}:{user_id}:{email.strip().lower()}:{expires_epoch}"
+    secret = (settings.VERIFY_SECRET or settings.SECRET_KEY).encode("utf-8")
+    sig = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    b64_payload = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("utf-8").rstrip("=")
+    return f"{b64_payload}.{sig}"
+
+
+def verify_email_verification_token(token: str) -> tuple[bool, Optional[dict], str]:
+    """Validates signature, structure, and expiration of an email verification link token."""
+    try:
+        parts = token.strip().split(".")
+        if len(parts) != 2:
+            return False, None, "Malformed verification token structure"
+        b64_payload, provided_sig = parts[0], parts[1]
+        rem = len(b64_payload) % 4
+        padded = b64_payload + ("=" * (4 - rem) if rem else "")
+        raw_payload = base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
+        secret = (settings.VERIFY_SECRET or settings.SECRET_KEY).encode("utf-8")
+        expected_sig = hmac.new(secret, raw_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(provided_sig, expected_sig):
+            return False, None, "Invalid cryptographic token signature"
+        p_parts = raw_payload.split(":")
+        if len(p_parts) != 4:
+            return False, None, "Invalid payload structure"
+        challenge_id, user_id, email, exp_str = p_parts[0], p_parts[1], p_parts[2], p_parts[3]
+        if time.time() > int(exp_str):
+            return False, None, "Verification link has expired"
+        return True, {
+            "challenge_id": challenge_id,
+            "user_id": user_id,
+            "email": email,
+            "expires_epoch": int(exp_str)
+        }, ""
+    except Exception as e:
+        return False, None, f"Failed to parse token: {str(e)}"
+
+
+def render_html_page(title: str, message: str, action_html: str = "", is_error: bool = False, is_success: bool = False) -> str:
+    """Renders a clean, dark-mode responsive HTML page for web confirmation."""
+    accent_color = "#ef4444" if is_error else ("#10b981" if is_success else "#0284c7")
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} - SHE Anti-Theft</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0b1120;
+      color: #f1f5f9;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }}
+    .card {{
+      max-width: 480px;
+      width: 100%;
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 32px 28px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      text-align: center;
+    }}
+    .brand {{
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 16px;
+    }}
+    h1 {{
+      font-size: 22px;
+      font-weight: 700;
+      color: {accent_color};
+      margin: 0 0 16px 0;
+    }}
+    p {{
+      font-size: 15px;
+      line-height: 1.6;
+      color: #94a3b8;
+      margin: 0 0 24px 0;
+    }}
+    .footer-note {{
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 24px;
+      margin-bottom: 0;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">SHE Anti-Theft & Recovery</div>
+    <h1>{title}</h1>
+    <p>{message}</p>
+    {action_html}
+    <p class="footer-note">You can safely close this browser window and return to the SHE Admin app.</p>
+  </div>
+</body>
+</html>"""
+
+
 # -----------------------------------------------------------------------------
 # Email Verification (OTP via SMTP / Mailpit)
 # -----------------------------------------------------------------------------
@@ -48,7 +161,7 @@ def send_email_verification(
     
     Accepts an optional new target email or defaults to user's registered email.
     Re-validates email against disposable lists and live MX checks before issuance.
-    Dispatches email asynchronously via background tasks.
+    Dispatches email asynchronously via background tasks with 1-click verification link.
     """
     email_verify_limiter.check_rate_limit(request)
     target_email = (req.email or current_user.email).strip().lower()
@@ -89,8 +202,16 @@ def send_email_verification(
         target=target_email
     )
 
+    from datetime import timezone
+    exp_dt = challenge.expires_at
+    if exp_dt.tzinfo is None:
+        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+    exp_epoch = int(exp_dt.timestamp())
+    link_token = create_email_verification_token(challenge.id, current_user.id, target_email, exp_epoch)
+    verify_url = f"{settings.SERVER_PUBLIC_URL.rstrip('/')}/api/v1/verify/email/link?token={link_token}"
+
     # Asynchronously dispatch email (zero credentials/codes in logs)
-    background_tasks.add_task(send_verification_email, target_email, raw_code)
+    background_tasks.add_task(send_verification_email, target_email, raw_code, verify_url=verify_url)
 
     resp = {
         "status": "challenge_issued",
@@ -100,7 +221,211 @@ def send_email_verification(
     }
     if settings.DEBUG:
         resp["debug_code"] = raw_code
+        resp["debug_verify_link"] = verify_url
     return resp
+
+
+@router.get("/email/link", response_class=HTMLResponse)
+def render_email_verification_link_page(token: str, db: Session = Depends(get_db)) -> Any:
+    """
+    Renders confirmation webpage for 1-click email verification.
+    Displays target email and a confirmation button that submits POST /verify/email/link.
+    """
+    is_valid, payload, err = verify_email_verification_token(token)
+    if not is_valid or not payload:
+        return HTMLResponse(
+            status_code=400,
+            content=render_html_page(
+                title="Verification Link Invalid or Expired",
+                message=f"This email verification link is no longer valid ({err}). Please open the SHE Admin app and request a fresh verification link.",
+                is_error=True
+            )
+        )
+
+    # Check challenge in database
+    challenge = db.query(VerificationChallenge).filter(
+        VerificationChallenge.id == payload["challenge_id"],
+        VerificationChallenge.user_id == payload["user_id"]
+    ).first()
+
+    if not challenge:
+        return HTMLResponse(
+            status_code=404,
+            content=render_html_page(
+                title="Verification Challenge Not Found",
+                message="The requested verification session was not found. Please request a new code from the SHE Admin app.",
+                is_error=True
+            )
+        )
+
+    if challenge.consumed_at is not None:
+        return HTMLResponse(
+            status_code=400,
+            content=render_html_page(
+                title="Link Already Consumed",
+                message="This verification link has already been used. If your account is still unverified, please request a new verification code from the SHE Admin app.",
+                is_error=True
+            )
+        )
+
+    confirm_form = f"""
+    <form method="POST" action="/api/v1/verify/email/link">
+      <input type="hidden" name="token" value="{token}" />
+      <button type="submit" style="display: block; width: 100%; background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 14px 28px; border: none; border-radius: 8px; font-weight: 700; font-size: 16px; cursor: pointer; transition: background-color 0.2s;">Confirm & Verify Email</button>
+    </form>
+    """
+
+    return HTMLResponse(
+        content=render_html_page(
+            title="Confirm Email Verification",
+            message=f"Click the button below to confirm ownership of <strong>{payload['email']}</strong> for your SHE account:",
+            action_html=confirm_form
+        )
+    )
+
+
+@router.post("/email/link", response_class=HTMLResponse)
+async def process_email_verification_link(
+    request: Request,
+    token: Optional[str] = None,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Validates token, marks challenge as consumed, sets email_verified_at, and renders success page.
+    """
+    sub_token = token
+    if not sub_token:
+        try:
+            form = await request.form()
+            sub_token = form.get("token")
+        except Exception:
+            pass
+
+    if not sub_token:
+        return HTMLResponse(
+            status_code=400,
+            content=render_html_page(
+                title="Missing Token",
+                message="No verification token was provided in the request.",
+                is_error=True
+            )
+        )
+
+    is_valid, payload, err = verify_email_verification_token(sub_token)
+    if not is_valid or not payload:
+        return HTMLResponse(
+            status_code=400,
+            content=render_html_page(
+                title="Invalid or Expired Link",
+                message=f"Could not verify email: {err}. Please request a fresh verification link from the SHE Admin app.",
+                is_error=True
+            )
+        )
+
+    challenge = db.query(VerificationChallenge).filter(
+        VerificationChallenge.id == payload["challenge_id"],
+        VerificationChallenge.user_id == payload["user_id"]
+    ).first()
+
+    if not challenge or challenge.consumed_at is not None:
+        return HTMLResponse(
+            status_code=400,
+            content=render_html_page(
+                title="Link Already Used",
+                message="This verification link has already been used. Please check your SHE Admin app.",
+                is_error=True
+            )
+        )
+
+    target_email = payload["email"].strip().lower()
+    user = db.query(User).filter(User.id == payload["user_id"]).first()
+    if not user:
+        return HTMLResponse(
+            status_code=404,
+            content=render_html_page(
+                title="Account Not Found",
+                message="The associated account could not be found.",
+                is_error=True
+            )
+        )
+
+    # Check if another account verified this email
+    other_verified = db.query(User).filter(
+        User.email == target_email,
+        User.id != user.id,
+        User.email_verified_at != None
+    ).first()
+    if other_verified:
+        return HTMLResponse(
+            status_code=409,
+            content=render_html_page(
+                title="Verification Conflict",
+                message="Another account has already verified ownership of this email address.",
+                is_error=True
+            )
+        )
+
+    now = utc_now()
+    challenge.consumed_at = now
+    user.email_verified_at = now
+
+    # Remove any unverified competing registrations
+    unverified_competitors = db.query(User).filter(
+        User.email == target_email,
+        User.id != user.id,
+        User.email_verified_at == None
+    ).all()
+    for comp in unverified_competitors:
+        db.delete(comp)
+
+    db.add(AuditEvent(
+        user_id=user.id,
+        event_type="EMAIL_VERIFIED_LINK",
+        details=f"Email '{target_email}' verified via 1-click web confirmation link."
+    ))
+    db.commit()
+
+    return HTMLResponse(
+        content=render_html_page(
+            title="Email Verified Successfully!",
+            message=f"Ownership of <strong>{target_email}</strong> has been successfully verified.<br><br>You can now return to the SHE Admin app. Your devices, commands, and location controls are unlocked.",
+            is_success=True
+        )
+    )
+
+
+@router.post("/email/debug-verify")
+def debug_verify_email(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Development-only instant email verification bypass."""
+    if not settings.DEBUG:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="debug_bypass_disabled: Direct verification bypass is strictly restricted to development environments."
+        )
+    current_user.email_verified_at = utc_now()
+    db.commit()
+    return {"status": "verified", "email_verified_at": current_user.email_verified_at}
+
+
+@router.post("/phone/debug-verify")
+def debug_verify_phone(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """Development-only instant phone verification bypass."""
+    if not settings.DEBUG:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="debug_bypass_disabled: Direct phone verification bypass is strictly restricted to development environments."
+        )
+    current_user.phone_verified_at = utc_now()
+    if not current_user.fallback_phone_e164:
+        current_user.fallback_phone_e164 = "+919876543210"
+    db.commit()
+    return {"status": "verified", "phone_verified_at": current_user.phone_verified_at}
 
 
 @router.post("/email/confirm", response_model=EmailVerifyResponse)

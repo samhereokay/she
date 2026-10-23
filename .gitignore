@@ -27,7 +27,7 @@ local.properties
 # Environment & Secrets
 .env
 .env.local
-*.keystore
+*.keystore*
 *.jks
 *.bundle
 certs/

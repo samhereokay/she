@@ -265,6 +265,20 @@ def clear_consumed_totp_codes(db: Any = None) -> None:
         _clear(db)
 
 
+def verify_user_totp_code(user: Any, code: str, db: Any = None, consume: bool = True) -> bool:
+    """Verifies a 6-digit TOTP code against the owner's encrypted TOTP secret and enforces database-backed single-use replay protection."""
+    if not getattr(user, "totp_enabled", False) or not getattr(user, "totp_secret", None):
+        return False
+    clean_code = str(code).strip()
+    secret = decrypt_totp_secret(user.totp_secret)
+    if not verify_totp_code(secret, clean_code):
+        return False
+    if consume:
+        return consume_totp_code(db, str(user.id), clean_code)
+    return True
+
+
+
 def create_access_token(
     subject: Union[str, Any],
     is_2fa: bool = False,

@@ -3,6 +3,7 @@ package com.antitheft.guardian.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.telephony.TelephonyManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
@@ -770,6 +771,15 @@ class GuardianMainActivity : AppCompatActivity() {
 
                 tvQueueCount.text = "Offline Queue: $pendingCount pending"
 
+                val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                val simReady = tm?.simState == TelephonyManager.SIM_STATE_READY
+                val opName = tm?.simOperatorName?.takeIf { it.isNotBlank() } ?: (if (simReady) "Ready" else "No SIM")
+                val simStr = if (simReady) "SIM: Ready ($opName)" else "SIM: Absent/Restricted"
+                val smsGranted = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                val smsStr = if (smsGranted) "SMS: Granted" else "SMS: Denied/Restricted"
+                val tvDiagnostics = findViewById<TextView>(R.id.tvDiagnostics)
+                tvDiagnostics?.text = "$simStr | $smsStr | Pending SMS: 0"
+
                 // Update Tier 2 OEM & System Guidance Card
                 findViewById<TextView>(R.id.tvLiteBadge)?.text = "LITE ACTIVE"
 
@@ -998,31 +1008,19 @@ class GuardianMainActivity : AppCompatActivity() {
 
     private fun showPlayProtectGuide() {
         AlertDialog.Builder(this)
-            .setTitle("How to Stop Play Protect Warnings")
+            .setTitle("Installation & Play Protect Guide")
             .setMessage(
-                "Google Play Protect warns on sideloaded apps because SHE Guardian uses background location and emergency SMS without Google Play Store developer signing.\n\n" +
-                "To stop Play Protect warnings permanently:\n" +
-                "1. Open the 'Google Play Store' app.\n" +
-                "2. Tap your Profile icon (top right corner).\n" +
-                "3. Tap 'Play Protect'.\n" +
-                "4. Tap the Settings Gear (⚙️) icon in the top right.\n" +
-                "5. Turn OFF 'Scan apps with Play Protect' (or turn OFF 'Improve harmful app detection').\n" +
-                "6. Tap 'Turn off' when prompted.\n\n" +
-                "During installation or update:\n" +
-                "If Play Protect blocks install, tap 'More details' -> 'Install anyway'."
+                "When installing or updating SHE Guardian, Android may flag sideloaded security applications.\n\n" +
+                "1. During APK installation/update:\n" +
+                "   Tap 'More details' (down arrow) -> Tap 'Install anyway'.\n\n" +
+                "2. Android 13/14 Restricted Settings (if SMS or Location permissions are greyed out):\n" +
+                "   - Go to phone Settings -> Apps -> Sentinel Guardian.\n" +
+                "   - Tap the 3 dots menu in the top-right corner.\n" +
+                "   - Tap 'Allow restricted settings' and confirm with your device PIN or Fingerprint.\n" +
+                "   - Return to the app and grant required permissions.\n\n" +
+                "No need to disable Play Protect entirely on the device."
             )
-            .setPositiveButton("Open Play Store") { _, _ ->
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse("https://play.google.com/store/apps")
-                        setPackage("com.android.vending")
-                    }
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Open Google Play Store manually", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Close", null)
+            .setPositiveButton("OK", null)
             .show()
     }
 
