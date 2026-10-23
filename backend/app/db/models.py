@@ -49,6 +49,7 @@ class User(Base):
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     pairing_sessions = relationship("PairingSession", back_populates="user", cascade="all, delete-orphan")
     device_audit_logs = relationship("DeviceAuditLog", back_populates="user", cascade="all, delete-orphan")
+    audit_events = relationship("AuditEvent", back_populates="user")
     consumed_totp_codes = relationship("ConsumedTotpCode", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -136,6 +137,7 @@ class ProtectedDevice(Base):
     location_events = relationship("LocationEvent", back_populates="protected_device", cascade="all, delete-orphan")
     status_record = relationship("DeviceStatus", uselist=False, back_populates="device", cascade="all, delete-orphan")
     audit_logs = relationship("DeviceAuditLog", back_populates="device", cascade="all, delete-orphan")
+    audit_events = relationship("AuditEvent", back_populates="protected_device", cascade="all, delete-orphan")
 
 
 class LocationEvent(Base):
@@ -171,6 +173,9 @@ class AuditEvent(Base):
     event_type = Column(String(64), nullable=False)
     details = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user = relationship("User", back_populates="audit_events")
+    protected_device = relationship("ProtectedDevice", back_populates="audit_events")
 
 
 class DeviceCommand(Base):

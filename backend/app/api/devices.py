@@ -470,11 +470,12 @@ def pair_device(
             is_possible_reinstall=False
         )
         db.add(device)
+    db.flush()
 
     # 6. Initialize or update DeviceStatus record
     status_rec = db.query(DeviceStatus).filter(DeviceStatus.device_id == device.id).first()
     if not status_rec:
-        status_rec = DeviceStatus(device_id=device.id)
+        status_rec = DeviceStatus(id=generate_uuid(), device_id=device.id)
         db.add(status_rec)
 
     status_rec.battery_level = getattr(pair_in, "battery_level", None)
@@ -490,20 +491,28 @@ def pair_device(
     status_rec.capabilities = json.dumps(caps)
     status_rec.last_seen = utc_now()
     status_rec.last_sync_path = "online"
+    db.flush()
 
-    # 7. Audit log
-    db.add(DeviceAuditLog(
-        user_id=current_user.id,
-        device_id=device.id,
-        action="PAIR",
-        details=f"Handset '{device.device_alias}' ({device.id}) requested pairing. Model: {device.model or 'unknown'}, Variant: {device.variant}. Confirmation code: {confirmation_code}"
-    ))
-    db.add(AuditEvent(
-        user_id=current_user.id,
-        protected_device_id=device.id,
-        event_type="DEVICE_PAIRING_REQUESTED",
-        details=f"Device {device.device_alias} ({device.id}) requested enrollment. Confirmation code: {confirmation_code}"
-    ))
+    # 7. Audit log (defensively recorded so secondary logging never aborts enrollment)
+    try:
+        db.add(DeviceAuditLog(
+            id=generate_uuid(),
+            user_id=current_user.id,
+            device_id=device.id,
+            action="PAIR",
+            details=f"Handset '{device.device_alias}' ({device.id}) requested pairing. Model: {device.model or 'unknown'}, Variant: {device.variant}. Confirmation code: {confirmation_code}"
+        ))
+        db.add(AuditEvent(
+            id=generate_uuid(),
+            user_id=current_user.id,
+            protected_device_id=device.id,
+            event_type="DEVICE_PAIRING_REQUESTED",
+            details=f"Device {device.device_alias} ({device.id}) requested enrollment. Confirmation code: {confirmation_code}"
+        ))
+        db.flush()
+    except Exception as audit_err:
+        logger.warning(f"Audit log recording skipped during pair: {audit_err}")
+
     try:
         db.commit()
         db.refresh(device)
