@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     
     # Environment-Mandated Secrets (NO committed fallback defaults)
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
-    TOTP_ENCRYPTION_KEY: str = os.getenv("TOTP_ENCRYPTION_KEY", "")
-    PAIRING_SECRET_ENCRYPTION_KEY: str = os.getenv("PAIRING_SECRET_ENCRYPTION_KEY", "")
+    TOTP_ENCRYPTION_KEY: str = os.getenv("TOTP_ENCRYPTION_KEY", "") or os.getenv("SECRET_KEY", "")
+    PAIRING_SECRET_ENCRYPTION_KEY: str = os.getenv("PAIRING_SECRET_ENCRYPTION_KEY", "") or os.getenv("SECRET_KEY", "")
     VERIFY_SECRET: str = os.getenv("VERIFY_SECRET", "") or os.getenv("SECRET_KEY", "default-verification-hmac-secret-32b")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

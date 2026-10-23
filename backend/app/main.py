@@ -37,7 +37,7 @@ def validate_production_security_config(cfg=None):
             raise RuntimeError(
                 "CRITICAL SECURITY CONFIGURATION ERROR: VERIFY_SECRET must be set to a secure, unique, non-default value when DEBUG=false."
             )
-        pairing_key = (getattr(conf, "PAIRING_SECRET_ENCRYPTION_KEY", None) or "").strip()
+        pairing_key = (getattr(conf, "PAIRING_SECRET_ENCRYPTION_KEY", None) or getattr(conf, "SECRET_KEY", None) or "").strip()
         if not pairing_key or pairing_key in DISALLOWED_ENCRYPTION_KEYS:
             raise RuntimeError(
                 "CRITICAL SECURITY CONFIGURATION ERROR: PAIRING_SECRET_ENCRYPTION_KEY must be configured in environment when DEBUG=false."
