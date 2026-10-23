@@ -47,6 +47,7 @@ data class UserSessionDto(
     val user_agent: String? = null,
     val is_registered_device: Boolean = false,
     val is_current: Boolean = false,
+    val is_revoked: Boolean = false,
     val created_at: String,
     val last_active_at: String
 )

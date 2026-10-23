@@ -136,7 +136,8 @@ class LocationSyncWorker(
             "siren",
             "ring",
             "battery_report",
-            "remote_photo"
+            "remote_photo",
+            "stolen_mode"
         )
 
         suspend fun sendHeartbeatNow(context: Context): Boolean = withContext(Dispatchers.IO) {

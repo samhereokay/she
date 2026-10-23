@@ -842,7 +842,8 @@ def list_user_sessions(
             current_jti = payload.get("jti")
 
     sessions = db.query(UserSession).filter(
-        UserSession.user_id == current_user.id
+        UserSession.user_id == current_user.id,
+        UserSession.revoked_at.is_(None)
     ).order_by(UserSession.last_active_at.desc()).all()
 
     resp = []

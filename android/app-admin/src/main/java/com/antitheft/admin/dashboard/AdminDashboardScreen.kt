@@ -342,10 +342,10 @@ fun AdminDashboardScreen(
         val caps = dev.status_info?.capabilities ?: listOf("locate_sms", "live_gps", "siren", "ring", "battery_report")
         val hasLocate = "live_gps" in caps || "locate_sms" in caps
         val hasRing = "ring" in caps || "siren" in caps
-        val hasLock = "lock" in caps
-        val hasKiosk = "kiosk" in caps || "lock_task" in caps
-        val hasStolenMode = "stolen_mode" in caps || "lock" in caps
         val hasDeviceOwner = "device_owner" in caps
+        val hasLock = "lock" in caps || hasDeviceOwner
+        val hasKiosk = "kiosk" in caps || "lock_task" in caps || hasDeviceOwner
+        val hasStolenMode = true // Supported on all handsets (acoustic siren + satellite telemetry + SMS beacon)
 
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(
@@ -2109,10 +2109,11 @@ private fun IosCommandDispatchDialog(
                     value = totpCode,
                     onValueChange = { totpCode = it },
                     label = "6-DIGIT TOTP OR RECOVERY CODE",
-                    placeholder = "Enter 6-digit TOTP or recovery key",
+                    placeholder = "e.g. 123456",
+                    helperText = "Enter the 6-digit code from Google Authenticator or Authy to unlock and authorize this command.",
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                     )
                 )
             }
@@ -2566,9 +2567,11 @@ private fun ActiveSessionsSheet(
                 }
             }
 
+            val activeSessions = sessions.filter { !it.is_revoked }
+
             // Sessions List
             Text(
-                text = "CURRENT SESSIONS (${sessions.size})",
+                text = "CURRENT SESSIONS (${activeSessions.size})",
                 color = SheTheme.colors.textTertiary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -2576,7 +2579,7 @@ private fun ActiveSessionsSheet(
                 modifier = Modifier.padding(start = 4.dp)
             )
 
-            if (isLoading && sessions.isEmpty()) {
+            if (isLoading && activeSessions.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2585,7 +2588,7 @@ private fun ActiveSessionsSheet(
                 ) {
                     CircularProgressIndicator(color = SheTheme.colors.accent)
                 }
-            } else if (sessions.isEmpty()) {
+            } else if (activeSessions.isEmpty()) {
                 Text(
                     text = "No active sessions found.",
                     color = SheTheme.colors.textSecondary,
@@ -2593,7 +2596,7 @@ private fun ActiveSessionsSheet(
                     modifier = Modifier.padding(16.dp)
                 )
             } else {
-                sessions.forEach { s ->
+                activeSessions.forEach { s ->
                     SessionRowCard(
                         session = s,
                         onRevoke = { onRevokeSession(s.id, false) }

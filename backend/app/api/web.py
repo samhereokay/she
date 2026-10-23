@@ -1326,19 +1326,19 @@ async def check_app_updates():
     guardian_path = get_effective_guardian_apk()
     admin_path = get_effective_admin_apk()
     return {
-        "version_code": 3,
-        "version_name": "0.3.0",
+        "version_code": 4,
+        "version_name": "0.4.0",
         "guardian": {
-            "version_code": 3,
-            "version_name": "0.3.0",
+            "version_code": 4,
+            "version_name": "0.4.0",
             "package_name": "com.antitheft.guardian.lite",
             "download_url": "https://she-92h6.onrender.com/releases/download/she-guardian.apk",
             "sha256": get_file_sha256(guardian_path),
             "size_bytes": os.path.getsize(guardian_path) if os.path.exists(guardian_path) else 36578674
         },
         "admin": {
-            "version_code": 3,
-            "version_name": "0.3.0",
+            "version_code": 4,
+            "version_name": "0.4.0",
             "package_name": "com.antitheft.admin",
             "download_url": "https://she-92h6.onrender.com/releases/download/she-admin.apk",
             "sha256": get_file_sha256(admin_path),
