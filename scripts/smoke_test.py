@@ -21,8 +21,34 @@ ENDPOINTS = [
 ]
 
 
+def wait_for_service_ready(base_url: str, max_wait_seconds: int = 300, poll_interval: int = 10) -> bool:
+    """Polls /health until the service is active and responding with 200 OK, handling Render cold starts and deploy build windows."""
+    print(f"Waiting for {base_url}/health to report healthy (max {max_wait_seconds}s)...")
+    url = f"{base_url.rstrip('/')}/health"
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait_seconds:
+        req = urllib.request.Request(url, headers={"User-Agent": "SHE-CI-SmokeTest/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    elapsed = time.time() - start_time
+                    print(f"Service is LIVE and healthy! (waited {elapsed:.1f}s)")
+                    return True
+        except Exception as e:
+            elapsed = time.time() - start_time
+            print(f"  [{elapsed:.0f}s elapsed] Service not ready yet ({e}). Waiting {poll_interval}s...")
+        time.sleep(poll_interval)
+
+    print(f"ERROR: Service did not become ready within {max_wait_seconds} seconds.")
+    return False
+
+
 def run_smoke_tests(base_url: str, retries: int = 5, retry_delay: int = 6) -> bool:
-    print(f"Starting smoke tests against: {base_url}")
+    if not wait_for_service_ready(base_url):
+        return False
+
+    print(f"\nStarting smoke tests against: {base_url}")
     all_passed = True
 
     for ep in ENDPOINTS:
