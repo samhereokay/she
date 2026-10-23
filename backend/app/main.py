@@ -9,80 +9,10 @@ from app.api.vault import router as vault_router
 from app.api.web import router as web_router
 from app.api.verify import router as verify_router
 
-# Auto-create tables for all databases
-try:
+# Auto-create tables for development / SQLite testing
+if settings.DATABASE_URL.startswith("sqlite"):
     Base.metadata.create_all(bind=engine)
-except Exception as _e:
-    pass
 
-def sync_db_schema_columns(eng):
-    """Guarantees all model columns exist in PostgreSQL idempotently."""
-    try:
-        if not getattr(eng, "dialect", None) or not eng.dialect.name.startswith("postgresql"):
-            return
-        from sqlalchemy import text
-        statements = [
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS key_fingerprint VARCHAR(64);",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(64);",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS brand VARCHAR(64);",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS model VARCHAR(64);",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS android_version VARCHAR(32);",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS sdk_level INTEGER;",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS variant VARCHAR(32) DEFAULT 'lite';",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS app_version VARCHAR(32);",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS install_date TIMESTAMP WITH TIME ZONE;",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS is_device_owner BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS is_possible_reinstall BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE protected_devices ADD COLUMN IF NOT EXISTS pairing_secret VARCHAR(256);",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS is_charging BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS capabilities TEXT DEFAULT '[]';",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS permission_health TEXT DEFAULT '{}';",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS sim_operator VARCHAR(64);",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS sim_country VARCHAR(8);",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS sim_changed BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE device_status ADD COLUMN IF NOT EXISTS last_sync_path VARCHAR(16) DEFAULT 'online';",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(32);",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE;",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_device_id VARCHAR(36);",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_device_name VARCHAR(128);",
-            "ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS refresh_token_hash VARCHAR(128);",
-            "ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS is_2fa BOOLEAN DEFAULT FALSE;",
-        ]
-        with eng.begin() as conn:
-            for stmt in statements:
-                try:
-                    conn.execute(text(stmt))
-                except Exception:
-                    pass
-    except Exception as e:
-        import logging
-        logging.getLogger("uvicorn.error").warning(f"Error in sync_db_schema_columns: {e}")
-
-sync_db_schema_columns(engine)
-
-def run_db_migrations():
-    """Ensure database schema is automatically migrated to Alembic head on startup."""
-    try:
-        import os
-        from alembic.config import Config
-        from alembic import command
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        ini_path = os.path.join(base_dir, "alembic.ini")
-        if os.path.exists(ini_path):
-            cfg = Config(ini_path)
-            cfg.set_main_option("script_location", os.path.join(base_dir, "alembic"))
-            cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-            cfg.set_section_option("alembic", "prepend_sys_path", base_dir)
-            command.upgrade(cfg, "head")
-            import logging
-            logging.getLogger("uvicorn.error").info("Alembic database migrations applied successfully to head.")
-    except Exception as e:
-        import logging
-        logging.getLogger("uvicorn.error").warning(f"Alembic auto-migration note: {e}")
-
-if not settings.DATABASE_URL.startswith("sqlite"):
-    run_db_migrations()
 
 DISALLOWED_VERIFY_SECRETS = {
     "",
