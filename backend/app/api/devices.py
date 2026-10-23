@@ -403,24 +403,42 @@ def pair_device(
                 details=f"New handset ({dev_id}) enrolled with matching model '{model_name}'. Flagged previous handset record as possible reinstall."
             ))
 
+    # Truncate strings to column limits
+    safe_alias = (getattr(pair_in, "device_alias", None) or "Handset")[:64]
+    mfr = getattr(pair_in, "manufacturer", None)
+    safe_mfr = str(mfr)[:64] if mfr else None
+    brd = getattr(pair_in, "brand", None)
+    safe_brand = str(brd)[:64] if brd else None
+    mdl = getattr(pair_in, "model", None)
+    safe_model = str(mdl)[:64] if mdl else None
+    aver = getattr(pair_in, "android_version", None)
+    safe_aver = str(aver)[:32] if aver else None
+    appver = getattr(pair_in, "app_version", None)
+    safe_appver = str(appver)[:32] if appver else None
+    safe_phone = (getattr(pair_in, "trusted_phone_number", None) or "")[:32]
+    sim_op = getattr(pair_in, "sim_operator", None)
+    safe_sim_op = str(sim_op)[:64] if sim_op else None
+    sim_ctry = getattr(pair_in, "sim_country", None)
+    safe_sim_ctry = str(sim_ctry)[:8] if sim_ctry else None
+
     # 5. Create or update ProtectedDevice record
     if existing_by_id:
-        existing_by_id.device_alias = pair_in.device_alias
+        existing_by_id.device_alias = safe_alias
         existing_by_id.public_key_pem = pair_in.public_key_pem
         existing_by_id.key_fingerprint = fingerprint
-        existing_by_id.trusted_phone_number = pair_in.trusted_phone_number
+        existing_by_id.trusted_phone_number = safe_phone
         existing_by_id.pairing_secret_hash = pairing_hash
         existing_by_id.pairing_secret = encrypt_pairing_secret(pair_in.pairing_secret)
         existing_by_id.pairing_id = pairing_id
         existing_by_id.confirmation_code = confirmation_code
         existing_by_id.status = "PENDING_CONFIRMATION"
-        existing_by_id.manufacturer = getattr(pair_in, "manufacturer", None)
-        existing_by_id.brand = getattr(pair_in, "brand", None)
-        existing_by_id.model = getattr(pair_in, "model", None)
-        existing_by_id.android_version = getattr(pair_in, "android_version", None)
+        existing_by_id.manufacturer = safe_mfr
+        existing_by_id.brand = safe_brand
+        existing_by_id.model = safe_model
+        existing_by_id.android_version = safe_aver
         existing_by_id.sdk_level = getattr(pair_in, "sdk_level", None)
         existing_by_id.variant = getattr(pair_in, "variant", "lite")
-        existing_by_id.app_version = getattr(pair_in, "app_version", None)
+        existing_by_id.app_version = safe_appver
         existing_by_id.install_date = getattr(pair_in, "install_date", None)
         existing_by_id.is_device_owner = getattr(pair_in, "is_device_owner", False)
         device = existing_by_id
@@ -428,22 +446,22 @@ def pair_device(
         device = ProtectedDevice(
             id=dev_id,
             user_id=current_user.id,
-            device_alias=pair_in.device_alias,
+            device_alias=safe_alias,
             public_key_pem=pair_in.public_key_pem,
             key_fingerprint=fingerprint,
-            trusted_phone_number=pair_in.trusted_phone_number,
+            trusted_phone_number=safe_phone,
             pairing_secret_hash=pairing_hash,
             pairing_secret=encrypt_pairing_secret(pair_in.pairing_secret),
             pairing_id=pairing_id,
             confirmation_code=confirmation_code,
             status="PENDING_CONFIRMATION",
-            manufacturer=getattr(pair_in, "manufacturer", None),
-            brand=getattr(pair_in, "brand", None),
-            model=getattr(pair_in, "model", None),
-            android_version=getattr(pair_in, "android_version", None),
+            manufacturer=safe_mfr,
+            brand=safe_brand,
+            model=safe_model,
+            android_version=safe_aver,
             sdk_level=getattr(pair_in, "sdk_level", None),
             variant=getattr(pair_in, "variant", "lite"),
-            app_version=getattr(pair_in, "app_version", None),
+            app_version=safe_appver,
             install_date=getattr(pair_in, "install_date", None),
             is_device_owner=getattr(pair_in, "is_device_owner", False),
             is_possible_reinstall=False
@@ -459,8 +477,8 @@ def pair_device(
     status_rec.battery_level = getattr(pair_in, "battery_level", None)
     status_rec.is_charging = getattr(pair_in, "is_charging", False)
     status_rec.connectivity_type = getattr(pair_in, "connectivity_type", None)
-    status_rec.sim_operator = getattr(pair_in, "sim_operator", None)
-    status_rec.sim_country = getattr(pair_in, "sim_country", None)
+    status_rec.sim_operator = safe_sim_op
+    status_rec.sim_country = safe_sim_ctry
     status_rec.sim_changed = getattr(pair_in, "sim_changed", False)
     status_rec.permission_health = json.dumps(getattr(pair_in, "permission_health", {}) or {})
     caps = getattr(pair_in, "capabilities", None)
@@ -483,8 +501,16 @@ def pair_device(
         event_type="DEVICE_PAIRING_REQUESTED",
         details=f"Device {device.device_alias} ({device.id}) requested enrollment. Confirmation code: {confirmation_code}"
     ))
-    db.commit()
-    db.refresh(device)
+    try:
+        db.commit()
+        db.refresh(device)
+    except Exception as db_err:
+        db.rollback()
+        logger.error(f"Failed to commit device pairing to database: {db_err}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Pairing database commit failed: {type(db_err).__name__}: {str(db_err)}"
+        )
 
     # 8. Notify active Admin WebSocket listeners about the new handset
     try:

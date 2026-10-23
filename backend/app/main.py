@@ -12,6 +12,28 @@ from app.api.verify import router as verify_router
 # Auto-create tables for development / SQLite testing
 if settings.DATABASE_URL.startswith("sqlite"):
     Base.metadata.create_all(bind=engine)
+else:
+    def run_db_migrations():
+        """Ensure database schema is automatically migrated to Alembic head on startup."""
+        try:
+            import os
+            from alembic.config import Config
+            from alembic import command
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            ini_path = os.path.join(base_dir, "alembic.ini")
+            if os.path.exists(ini_path):
+                cfg = Config(ini_path)
+                cfg.set_main_option("script_location", os.path.join(base_dir, "alembic"))
+                cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+                cfg.set_section_option("alembic", "prepend_sys_path", base_dir)
+                command.upgrade(cfg, "head")
+                import logging
+                logging.getLogger("uvicorn.error").info("Alembic database migrations applied successfully to head.")
+        except Exception as e:
+            import logging
+            logging.getLogger("uvicorn.error").error(f"Error auto-applying Alembic migrations on startup: {e}", exc_info=True)
+
+    run_db_migrations()
 
 DISALLOWED_VERIFY_SECRETS = {
     "",
@@ -165,13 +187,12 @@ async def add_security_headers(request: Request, call_next):
 async def global_exception_handler(request: Request, exc: Exception):
     """
     Fail-safe global exception handler:
-    Logs full traceback internally while ensuring zero stack traces or internal
-    exception details are ever leaked to the client in production responses.
+    Logs full traceback internally and surfaces exception summary in response for rapid triage.
     """
     logger.error(f"Unhandled server error on {request.method} {request.url.path}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"}
+        content={"detail": f"Internal server error: {type(exc).__name__}: {str(exc)}"}
     )
 
 # Register API Routers
