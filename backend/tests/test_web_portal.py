@@ -129,6 +129,16 @@ def test_releases_page_and_binary_downloads():
         assert resp_a.status_code == 307
         assert "github.com/samhereokay/she/releases" in resp_a.headers["location"]
 
+    resp_check = client.get("/releases/check")
+    assert resp_check.status_code == 200
+    data = resp_check.json()
+    assert data["version_code"] == 3
+    assert data["version_name"] == "0.3.0"
+    assert "download_url" in data["guardian"]
+    assert "download_url" in data["admin"]
+    assert "sha256" in data["guardian"]
+    assert "sha256" in data["admin"]
+
 
 def test_2fa_and_recovery_guide_route():
     client = TestClient(app)
@@ -138,7 +148,7 @@ def test_2fa_and_recovery_guide_route():
     assert "otpauth://" in resp.text
     assert "Strict 1-Device-Per-User Restriction" in resp.text
     assert "Emergency Login from Someone Else" in resp.text
-    assert "she.up.railway.app/emergency" in resp.text
+    assert "she-92h6.onrender.com/emergency" in resp.text
 
     # Alias check
     resp_alias = client.get("/blog/setup-2fa-recovery")
@@ -172,15 +182,15 @@ def test_robots_txt_and_sitemap_xml():
     assert resp_r.status_code == 200
     assert "text/plain" in resp_r.headers["content-type"]
     assert "User-agent: *" in resp_r.text
-    assert "Sitemap: https://she.up.railway.app/sitemap.xml" in resp_r.text
+    assert "Sitemap: https://she-92h6.onrender.com/sitemap.xml" in resp_r.text
 
     # sitemap.xml
     resp_s = client.get("/sitemap.xml")
     assert resp_s.status_code == 200
     assert "application/xml" in resp_s.headers["content-type"]
-    assert "<loc>https://she.up.railway.app/</loc>" in resp_s.text
-    assert "<loc>https://she.up.railway.app/releases</loc>" in resp_s.text
-    assert "<loc>https://she.up.railway.app/emergency</loc>" in resp_s.text
+    assert "<loc>https://she-92h6.onrender.com/</loc>" in resp_s.text
+    assert "<loc>https://she-92h6.onrender.com/releases</loc>" in resp_s.text
+    assert "<loc>https://she-92h6.onrender.com/emergency</loc>" in resp_s.text
 
 
 def test_seo_metadata_and_open_graph():
@@ -193,12 +203,12 @@ def test_seo_metadata_and_open_graph():
     assert '<meta name="description"' in html
     assert '<meta name="keywords"' in html
     assert '<meta name="robots" content="index, follow' in html
-    assert '<link rel="canonical" href="https://she.up.railway.app/"' in html
+    assert '<link rel="canonical" href="https://she-92h6.onrender.com/"' in html
 
     # Open Graph & Twitter tags
     assert '<meta property="og:type" content="website">' in html
     assert '<meta property="og:site_name" content="SHE - Sentinel for Handheld Equipment">' in html
-    assert '<meta property="og:image" content="https://she.up.railway.app/logo.png">' in html
+    assert '<meta property="og:image" content="https://she-92h6.onrender.com/logo.png">' in html
     assert '<meta name="twitter:card" content="summary">' in html
 
     # Schema.org JSON-LD

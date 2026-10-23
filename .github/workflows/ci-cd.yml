@@ -92,6 +92,6 @@ jobs:
 
       - name: Await Deployment & Run Live Smoke Tests
         run: |
-          # Wait 30 seconds for Railway container swap before starting verification
+          # Wait 30 seconds for container swap before starting verification
           sleep 30
-          python3 scripts/smoke_test.py https://she.up.railway.app
+          python3 scripts/smoke_test.py https://she-92h6.onrender.com

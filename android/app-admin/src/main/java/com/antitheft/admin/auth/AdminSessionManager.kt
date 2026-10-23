@@ -41,7 +41,7 @@ class AdminSessionManager(context: Context) {
     }
 
     fun getServerUrl(): String {
-        val defaultUrl = if (isEmulator()) "https://10.0.2.2" else "https://she.up.railway.app"
+        val defaultUrl = if (isEmulator()) "https://10.0.2.2" else "https://she-92h6.onrender.com"
         return secureStorage.getDecryptedString(KEY_SERVER_URL, defaultUrl) ?: defaultUrl
     }
 

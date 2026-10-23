@@ -266,9 +266,9 @@ fun AdminLoginScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SheButton(
-                        text = "Railway",
-                        onClick = { serverUrl = "https://she.up.railway.app" },
-                        variant = if (serverUrl == "https://she.up.railway.app") SheButtonVariant.PRIMARY else SheButtonVariant.TONAL,
+                        text = "Render",
+                        onClick = { serverUrl = "https://she-92h6.onrender.com" },
+                        variant = if (serverUrl == "https://she-92h6.onrender.com") SheButtonVariant.PRIMARY else SheButtonVariant.TONAL,
                         height = 36.dp,
                         cornerRadius = 10.dp,
                         icon = {
@@ -870,7 +870,7 @@ fun AdminLoginScreen(
                             borderColor = SheTheme.colors.accent
                         ) {
                             Text(
-                                text = "Account approved & 2FA active. If your phone is lost or stolen, your Google Authenticator is also on that stolen phone. Save your Account ID and these 8 emergency single-use keys now to sign into the Emergency Web Console at https://she.up.railway.app/emergency from any browser or laptop.",
+                                text = "Account approved & 2FA active. If your phone is lost or stolen, your Google Authenticator is also on that stolen phone. Save your Account ID and these 8 emergency single-use keys now to sign into the Emergency Web Console at https://she-92h6.onrender.com/emergency from any browser or laptop.",
                                 color = SheTheme.colors.textPrimary,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp,
@@ -1018,7 +1018,7 @@ fun AdminLoginScreen(
                                         appendLine("Owner Mobile:   ${recoveryKitState.phoneNumber}")
                                         appendLine("Registered HW:  ${recoveryKitState.deviceInfo}")
                                         appendLine("============================================================")
-                                        appendLine("Emergency Web Console: https://she.up.railway.app/emergency")
+                                        appendLine("Emergency Web Console: https://she-92h6.onrender.com/emergency")
                                         appendLine("============================================================")
                                         appendLine("SINGLE-USE EMERGENCY RECOVERY KEYS:")
                                         recoveryKitState.recoveryKeys.forEachIndexed { i, k ->
@@ -1190,8 +1190,8 @@ fun AdminLoginScreen(
                                 "4. Zero Commercial Telemetry & 30-Day Purge: Location records older than 30 days are automatically purged. Vault secrets are protected with zero-knowledge AES-256-GCM encryption.\n\n" +
                                 "5. Open-Source Software: Distributed under the Apache 2.0 License without warranties of any kind.\n\n" +
                                 "Full policies available at:\n" +
-                                "• Terms: https://she.up.railway.app/terms\n" +
-                                "• Privacy: https://she.up.railway.app/privacy",
+                                "• Terms: https://she-92h6.onrender.com/terms\n" +
+                                "• Privacy: https://she-92h6.onrender.com/privacy",
                             color = SheTheme.colors.textSecondary,
                             fontSize = 12.sp,
                             lineHeight = 17.sp

@@ -48,7 +48,7 @@
 # -----------------------------------------------------------------------------
 # TLS-Terminating HTTPS Reverse Proxy (Local Dev & Production)
 # -----------------------------------------------------------------------------
-api.she.local, localhost, 127.0.0.1, 10.0.2.2, {$PUBLIC_DOMAIN:she.up.railway.app} {
+api.she.local, localhost, 127.0.0.1, 10.0.2.2, {$PUBLIC_DOMAIN:she-92h6.onrender.com} {
 	# Local Dev: uses mkcert certificate outside repo, otherwise internal CA
 	tls {$TLS_CERT:/home/sam/.local/share/she-dev-certs/dev-cert.pem} {$TLS_KEY:/home/sam/.local/share/she-dev-certs/dev-key.pem}
 

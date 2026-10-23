@@ -298,6 +298,22 @@
                     android:textSize="12sp"
                     app:cornerRadius="10dp" />
 
+                <!-- Check for Updates Button -->
+                <Button
+                    android:id="@+id/btnCheckForUpdates"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#1C1C1E"
+                    app:strokeColor="#3B82F6"
+                    app:strokeWidth="1dp"
+                    android:text="Check for Updates &amp; Override Install"
+                    android:textColor="#3B82F6"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    app:cornerRadius="10dp" />
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

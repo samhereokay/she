@@ -1024,7 +1024,7 @@ def render_html_shell(
     bing_verify = os.getenv("BING_SITE_VERIFICATION", "")
     bing_verify_meta = f'<meta name="msvalidate.01" content="{bing_verify}">' if bing_verify else ''
 
-    full_canonical = f"https://she.up.railway.app{canonical_path}"
+    full_canonical = f"https://she-92h6.onrender.com{canonical_path}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1036,7 +1036,7 @@ def render_html_shell(
     <!-- SEO & Metadata -->
     <meta name="description" content="{description}">
     <meta name="keywords" content="SHE anti-theft, open-source android security, lost phone tracker, handset recovery, direct boot, zero knowledge vault, offline sms beacon, emergency wipe, erss 112, ceir">
-    <meta name="author" content="SHE Open-Source Security Project">
+    <meta name="author" content="SHE Open-Source Project">
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
     <meta name="theme-color" content="#000000">
     <meta name="color-scheme" content="dark light">
@@ -1048,7 +1048,7 @@ def render_html_shell(
     <meta property="og:url" content="{full_canonical}">
     <meta property="og:title" content="{title}">
     <meta property="og:description" content="{description}">
-    <meta property="og:image" content="https://she.up.railway.app/logo.png">
+    <meta property="og:image" content="https://she-92h6.onrender.com/logo.png">
     <meta property="og:image:width" content="512">
     <meta property="og:image:height" content="512">
     <meta property="og:image:alt" content="SHE Anti-Theft Shield Logo">
@@ -1057,7 +1057,7 @@ def render_html_shell(
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="{title}">
     <meta name="twitter:description" content="{description}">
-    <meta name="twitter:image" content="https://she.up.railway.app/logo.png">
+    <meta name="twitter:image" content="https://she-92h6.onrender.com/logo.png">
 
     <!-- Search Console Verification -->
     {google_verify_meta}
@@ -1084,8 +1084,8 @@ def render_html_shell(
             "priceCurrency": "USD"
         }},
         "description": "Open-source Android anti-theft and remote handset recovery ecosystem with Direct Boot, offline SMS beacons, and zero-knowledge vault.",
-        "url": "https://she.up.railway.app",
-        "downloadUrl": "https://she.up.railway.app/releases",
+        "url": "https://she-92h6.onrender.com",
+        "downloadUrl": "https://she-92h6.onrender.com/releases",
         "author": {{
             "@type": "Organization",
             "name": "SHE Open-Source Project",
@@ -1244,7 +1244,7 @@ Allow: /docs/
 Disallow: /api/
 Disallow: /auth/
 
-Sitemap: https://she.up.railway.app/sitemap.xml
+Sitemap: https://she-92h6.onrender.com/sitemap.xml
 """,
         media_type="text/plain"
     )
@@ -1256,42 +1256,42 @@ async def get_sitemap_xml():
     xml_content = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-        <loc>https://she.up.railway.app/</loc>
+        <loc>https://she-92h6.onrender.com/</loc>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/releases</loc>
+        <loc>https://she-92h6.onrender.com/releases</loc>
         <changefreq>daily</changefreq>
         <priority>0.9</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/emergency</loc>
+        <loc>https://she-92h6.onrender.com/emergency</loc>
         <changefreq>weekly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/docs/2fa-and-recovery</loc>
+        <loc>https://she-92h6.onrender.com/docs/2fa-and-recovery</loc>
         <changefreq>weekly</changefreq>
         <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/terms</loc>
+        <loc>https://she-92h6.onrender.com/terms</loc>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/privacy</loc>
+        <loc>https://she-92h6.onrender.com/privacy</loc>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/docs/user-guide</loc>
+        <loc>https://she-92h6.onrender.com/docs/user-guide</loc>
         <changefreq>weekly</changefreq>
         <priority>0.7</priority>
     </url>
     <url>
-        <loc>https://she.up.railway.app/docs/setup-order</loc>
+        <loc>https://she-92h6.onrender.com/docs/setup-order</loc>
         <changefreq>weekly</changefreq>
         <priority>0.7</priority>
     </url>
@@ -1318,6 +1318,33 @@ async def download_admin_apk():
 
 
 GITHUB_RELEASES_URL = "https://github.com/samhereokay/she/releases/latest"
+
+
+@router.get("/releases/check")
+async def check_app_updates():
+    """Returns the latest available production APK version metadata for in-app OTA update checks."""
+    guardian_path = get_effective_guardian_apk()
+    admin_path = get_effective_admin_apk()
+    return {
+        "version_code": 3,
+        "version_name": "0.3.0",
+        "guardian": {
+            "version_code": 3,
+            "version_name": "0.3.0",
+            "package_name": "com.antitheft.guardian.lite",
+            "download_url": "https://she-92h6.onrender.com/releases/download/she-guardian.apk",
+            "sha256": get_file_sha256(guardian_path),
+            "size_bytes": os.path.getsize(guardian_path) if os.path.exists(guardian_path) else 36578674
+        },
+        "admin": {
+            "version_code": 3,
+            "version_name": "0.3.0",
+            "package_name": "com.antitheft.admin",
+            "download_url": "https://she-92h6.onrender.com/releases/download/she-admin.apk",
+            "sha256": get_file_sha256(admin_path),
+            "size_bytes": os.path.getsize(admin_path) if os.path.exists(admin_path) else 36773705
+        }
+    }
 
 
 @router.get("/releases/download/she-guardian.apk")
@@ -2609,13 +2636,13 @@ async def render_2fa_and_recovery_guide():
                 If your phone is stolen, your Google Authenticator app is on that stolen phone. To solve this, we created an <strong>Emergency Web Recovery Console</strong>:
             </p>
             <p style="margin-bottom: 1rem;">
-                <strong>Live URL:</strong> <a href="/emergency" style="color: var(--primary); font-weight: 700; font-family: var(--font-mono);">https://she.up.railway.app/emergency</a>
+                <strong>Live URL:</strong> <a href="/emergency" style="color: var(--primary); font-weight: 700; font-family: var(--font-mono);">https://she-92h6.onrender.com/emergency</a>
             </p>
 
             <h3 style="font-size: 1.05rem; margin-bottom: 0.75rem; color: var(--text-main);">How It Works:</h3>
             <ol style="margin-left: 1.5rem; color: var(--text-muted); line-height: 1.8; margin-bottom: 1.5rem;">
                 <li><strong>Borrow any device</strong> (a friend's phone, laptop, or work PC).</li>
-                <li>Open <a href="/emergency" style="color: var(--primary); font-weight: 600;">https://she.up.railway.app/emergency</a>.</li>
+                <li>Open <a href="/emergency" style="color: var(--primary); font-weight: 600;">https://she-92h6.onrender.com/emergency</a>.</li>
                 <li>Enter your <strong>Username + Password</strong>, and in the 2FA field enter one of your 8-character Emergency Recovery Keys (e.g., <code>K4M9-7P2X</code>).</li>
                 <li>The console immediately loads:
                     <ul style="margin-left: 1.25rem; margin-top: 0.5rem;">

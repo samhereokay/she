@@ -11,7 +11,7 @@ import java.io.File
 
 object ApkShareHelper {
 
-    const val RELEASES_WEB_URL = "https://she.up.railway.app/releases"
+    const val RELEASES_WEB_URL = "https://she-92h6.onrender.com/releases"
 
     fun showShareOptions(
         context: Context,

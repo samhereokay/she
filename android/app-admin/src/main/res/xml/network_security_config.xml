@@ -33,9 +33,19 @@
          degrades to normal CA validation rather than bricking the app.
     -->
     <domain-config>
+        <domain includeSubdomains="true">she-92h6.onrender.com</domain>
+        <domain includeSubdomains="true">onrender.com</domain>
         <domain includeSubdomains="true">she.up.railway.app</domain>
         <domain includeSubdomains="true">api.she.local</domain>
         <pin-set expiration="2027-12-31">
+            <!-- Render Live CA: Google Trust Services Intermediate WE1 (Current issuer on Render)
+                 Subject: C=US, O=Google Trust Services, CN=WE1
+                 SPKI pin: kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4= -->
+            <pin digest="SHA-256">kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=</pin>
+            <!-- Render Live CA Root / Intermediate: GTS Root R4
+                 Subject: C=US, O=Google Trust Services LLC, CN=GTS Root R4
+                 SPKI pin: mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c= -->
+            <pin digest="SHA-256">mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=</pin>
             <!-- Primary: Let's Encrypt intermediate YE2 (current issuer)
                  Computed: openssl x509 -noout -pubkey | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
                  Subject: C=US, O=Let's Encrypt, CN=YE2

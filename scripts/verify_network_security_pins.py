@@ -17,6 +17,8 @@ CONFIGS = [
 ]
 
 EXPECTED_PINS = {
+    "kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=": "Google Trust Services Intermediate WE1 (Render Live)",
+    "mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=": "Google Trust Services GTS Root R4 (Render Live)",
     "s/tdAOmUzd8syaTuqfgGvFcn6DzA5Cmb+Vby1ST+U3Y=": "Let's Encrypt Intermediate YE2 (Live Chain)",
     "sCkq5UWXjg+7mKu9lMhhYF5bGLsy7VI/UNW3tccdR7w=": "ISRG Root YE cross-sign (Live Chain)",
     "diGVwiVYbubAI3RW4hB9xU8e/CH2GnkuvVFZE8zmgzI=": "ISRG Root X2 cross-sign & CA root",
@@ -46,7 +48,7 @@ def main():
         if errs:
             all_errors.extend(errs)
         else:
-            print(f"  ✓ {cfg.relative_to(REPO_ROOT)}: All 6 SPKI pins present and verified")
+            print(f"  ✓ {cfg.relative_to(REPO_ROOT)}: All {len(EXPECTED_PINS)} SPKI pins present and verified")
 
     if all_errors:
         print("\n[FAIL] Pin verification errors:")

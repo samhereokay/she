@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.SystemUpdate
 import com.antitheft.common.util.ApkShareHelper
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
@@ -133,7 +134,8 @@ fun AdminDashboardScreen(
     sessionsList: List<UserSessionDto> = emptyList(),
     isSessionsLoading: Boolean = false,
     onRevokeOtherSessions: () -> Unit = {},
-    onRevokeSession: (String, Boolean) -> Unit = { _, _ -> }
+    onRevokeSession: (String, Boolean) -> Unit = { _, _ -> },
+    onCheckUpdates: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showThemeSheet by remember { mutableStateOf(false) }
@@ -188,6 +190,7 @@ fun AdminDashboardScreen(
                             "she-admin.apk"
                         )
                     },
+                    onCheckUpdates = onCheckUpdates,
                     onLogout = onLogout
                 )
             }
@@ -609,6 +612,7 @@ private fun DashboardHeader(
     onOpenVault: () -> Unit,
     onOpenSessions: () -> Unit,
     onShareApp: () -> Unit,
+    onCheckUpdates: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     SheCard(
@@ -683,6 +687,17 @@ private fun DashboardHeader(
                         )
                     },
                     onClick = onShareApp
+                )
+                HeaderIconButton(
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.SystemUpdate,
+                            contentDescription = "Check for Updates",
+                            tint = SheTheme.colors.accent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = onCheckUpdates
                 )
                 HeaderIconButton(
                     icon = {

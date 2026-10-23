@@ -24,6 +24,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- In-app OTA Update Installation -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Camera for QR Code Pairing Scanner -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

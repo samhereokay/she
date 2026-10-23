@@ -537,7 +537,7 @@ class LiveTrackingActivity : BaseSecureActivity() {
                                 "Your connection may be monitored or intercepted.\n\n" +
                                 "The server's certificate does not match this app's trusted pins.\n\n" +
                                 "Get the official SHE Admin app only from:\n" +
-                                "https://she.up.railway.app/portal/releases"
+                                "https://she-92h6.onrender.com/releases"
                             )
                             .setPositiveButton("OK", null)
                             .show()

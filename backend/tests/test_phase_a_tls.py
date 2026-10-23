@@ -349,7 +349,7 @@ def test_python_ssl_verification_rejects_untrusted_ca():
     """
     Verifies that Python's client-side SSL layer strictly rejects untrusted/MITM certificates.
     Note: Android release build MITM rejection is enforced at the OS level via network_security_config.xml
-    which only trusts system CAs (no user certs) and enforces SPKI certificate pinning on she.up.railway.app.
+    which only trusts system CAs (no user certs) and enforces SPKI certificate pinning on she-92h6.onrender.com.
     """
     ctx = ssl.create_default_context()
     ctx.check_hostname = True

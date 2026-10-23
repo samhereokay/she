@@ -1,0 +1,27 @@
+name: Keep-Alive Ping (Render Spin-Up)
+
+on:
+  schedule:
+    # Runs every 10 minutes (Render free tier sleeps after 15 min of inactivity)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  ping:
+    name: Ping Health Endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping SHE Backend on Render
+        run: |
+          echo "Pinging https://she-92h6.onrender.com/health at $(date -u)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://she-92h6.onrender.com/health)
+          echo "HTTP Status Code: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+            echo "Ping successful (Service active and healthy)"
+            exit 0
+          else
+            echo "Ping failed with status $STATUS"
+            exit 1
+          fi

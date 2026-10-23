@@ -261,6 +261,25 @@ class GuardianMainActivity : AppCompatActivity() {
             )
         }
 
+        findViewById<Button>(R.id.btnCheckForUpdates)?.setOnClickListener {
+            com.antitheft.common.update.AppUpdateManager.checkAndPromptUpdate(
+                context = this,
+                serverUrl = storageHelper.getServerUrl(),
+                appType = "guardian",
+                coroutineScope = lifecycleScope,
+                manualTrigger = true
+            )
+        }
+
+        // Automatic non-intrusive OTA check on startup
+        com.antitheft.common.update.AppUpdateManager.checkAndPromptUpdate(
+            context = this,
+            serverUrl = storageHelper.getServerUrl(),
+            appType = "guardian",
+            coroutineScope = lifecycleScope,
+            manualTrigger = false
+        )
+
         findViewById<Button>(R.id.btnAdminGuide)?.setOnClickListener {
             showBrandSetupGuideDialog()
         }
@@ -595,7 +614,7 @@ class GuardianMainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     val msg = e.message ?: "Unknown error"
                     val userTip = if (msg.contains("127.0.0.1") || msg.contains("Connection refused")) {
-                        "Connection failed. Verify server URL (e.g. https://she.up.railway.app or local https://192.168.0.x). Ensure TLS is active."
+                        "Connection failed. Verify server URL (e.g. https://she-92h6.onrender.com or local https://192.168.0.x). Ensure TLS is active."
                     } else {
                         "Pairing error: $msg"
                     }

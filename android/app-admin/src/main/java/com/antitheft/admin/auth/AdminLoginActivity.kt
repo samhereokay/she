@@ -124,7 +124,7 @@ class AdminLoginActivity : BaseSecureActivity() {
             isPinFailure(e) ->
                 "Your connection may be monitored or intercepted. " +
                 "The server's certificate does not match this app's trusted pins. " +
-                "Get the official SHE Admin app only from https://she.up.railway.app/portal/releases"
+                "Get the official SHE Admin app only from https://she-92h6.onrender.com/releases"
             generateSequence(e) { it.cause }.any { it is java.security.cert.CertificateException ||
                 it is javax.net.ssl.SSLPeerUnverifiedException } ||
             full.contains("CertPathValidatorException", ignoreCase = true) ->
@@ -276,7 +276,7 @@ class AdminLoginActivity : BaseSecureActivity() {
                 keys below along with your Master Password to sign in to the
                 Emergency Web Console from any browser or borrowed device:
 
-                Emergency Web Console: https://she.up.railway.app/emergency
+                Emergency Web Console: https://she-92h6.onrender.com/emergency
                 ============================================================
                 SINGLE-USE EMERGENCY RECOVERY KEYS:
                 $keysBlock

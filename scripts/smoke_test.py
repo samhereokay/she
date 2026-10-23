@@ -9,7 +9,7 @@ import urllib.request
 import urllib.error
 import json
 
-DEFAULT_BASE_URL = "https://she.up.railway.app"
+DEFAULT_BASE_URL = "https://she-92h6.onrender.com"
 
 ENDPOINTS = [
     {"path": "/health", "expected_status": 200, "json_keys": ["status"]},

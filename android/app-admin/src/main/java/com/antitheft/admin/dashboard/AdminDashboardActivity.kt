@@ -202,11 +202,29 @@ class AdminDashboardActivity : BaseSecureActivity() {
                         sessionsList = sessionsList,
                         isSessionsLoading = isSessionsLoading,
                         onRevokeOtherSessions = { revokeOtherSessions() },
-                        onRevokeSession = { sessionId, force -> revokeSession(sessionId, force) }
+                        onRevokeSession = { sessionId, force -> revokeSession(sessionId, force) },
+                        onCheckUpdates = {
+                            com.antitheft.common.update.AppUpdateManager.checkAndPromptUpdate(
+                                context = this@AdminDashboardActivity,
+                                serverUrl = sessionManager.getServerUrl(),
+                                appType = "admin",
+                                coroutineScope = lifecycleScope,
+                                manualTrigger = true
+                            )
+                        }
                     )
                 }
             }
         }
+
+        // Automatic non-intrusive OTA check on startup
+        com.antitheft.common.update.AppUpdateManager.checkAndPromptUpdate(
+            context = this,
+            serverUrl = sessionManager.getServerUrl(),
+            appType = "admin",
+            coroutineScope = lifecycleScope,
+            manualTrigger = false
+        )
 
         handleIncomingCommandIntent(intent)
     }
