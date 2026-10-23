@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     PROJECT_NAME: str = "SHE - Sentinel for Handheld Equipment"
-    VERSION: str = "0.3.0"
+    VERSION: str = "0.4.0"
     API_V1_STR: str = "/api/v1"
     
     # Environment & Security

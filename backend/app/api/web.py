@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse, Response
 from app.db.session import SessionLocal
 from app.db.models import ProtectedDevice, LocationEvent
+from app.core.config import settings
 
 router = APIRouter(tags=["Web & Portal"])
 
@@ -1355,7 +1356,7 @@ async def download_release_guardian():
         return FileResponse(
             apk_path,
             media_type="application/vnd.android.package-archive",
-            filename="she-guardian-v0.3.0.apk"
+            filename=f"she-guardian-v{settings.VERSION}.apk"
         )
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url=GITHUB_RELEASES_URL, status_code=307)
@@ -1369,7 +1370,7 @@ async def download_release_admin():
         return FileResponse(
             apk_path,
             media_type="application/vnd.android.package-archive",
-            filename="she-admin-v0.3.0.apk"
+            filename=f"she-admin-v{settings.VERSION}.apk"
         )
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url=GITHUB_RELEASES_URL, status_code=307)
@@ -1383,7 +1384,7 @@ async def render_releases_page():
     content = f"""
     <header class="hero">
         <img src="/logo.png" alt="SHE Logo" style="width: 110px; height: 110px; object-fit: contain; margin-bottom: 1.5rem; filter: drop-shadow(0 0 25px rgba(0, 210, 255, 0.35));" />
-        <div class="hero-badge">{SVG_SHIELD} Official Community Release &bull; Version 0.3.0</div>
+        <div class="hero-badge">{SVG_SHIELD} Official Community Release &bull; Version {settings.VERSION}</div>
         <h1>Download <span>SHE Handset Defense</span></h1>
         <p>Verified, open-source Android binaries for autonomous anti-theft tracking, Direct Boot GPS recovery, and zero-knowledge vault protection.</p>
         <div class="btn-group">
@@ -1396,7 +1397,7 @@ async def render_releases_page():
     <!-- Downloads Section -->
     <div class="container" id="downloads">
         <div class="section-header">
-            <h2>Release Binaries (v0.3.0)</h2>
+            <h2>Release Binaries (v{settings.VERSION})</h2>
             <p>Digitally signed, standalone APK packages compiled for Android 10 through 15.</p>
         </div>
 
@@ -1409,7 +1410,7 @@ async def render_releases_page():
                         <div class="card-title">SHE Guardian</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Protected Handset Agent</div>
                     </div>
-                    <span class="card-badge badge-primary" style="margin-left: auto;">v0.3.0 Direct</span>
+                    <span class="card-badge badge-primary" style="margin-left: auto;">v{settings.VERSION} Direct</span>
                 </div>
                 <p style="color: var(--text-muted); font-size: 0.94rem; margin-bottom: 1.25rem;">
                     Install on the phone you wish to protect. Runs Direct Boot GPS recovery in Device Encrypted Storage, emergency AT1 SMS fallback, remote siren alerts, and device owner kiosk restrictions.
@@ -1441,7 +1442,7 @@ async def render_releases_page():
                         <div class="card-title">SHE Admin Companion</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Controller &amp; Vault Handset</div>
                     </div>
-                    <span class="card-badge badge-success" style="margin-left: auto;">v0.3.0 Release</span>
+                    <span class="card-badge badge-success" style="margin-left: auto;">v{settings.VERSION} Release</span>
                 </div>
                 <p style="color: var(--text-muted); font-size: 0.94rem; margin-bottom: 1.25rem;">
                     Install on the owner's primary device. Dispatches authenticated HMAC commands (Locate, Ring, Stop Ring), inspects live GPS pins on Google Maps, and manages zero-knowledge client-side encrypted vault secrets.
@@ -1531,7 +1532,7 @@ async def render_releases_page():
         </div>
     </div>
     """
-    return HTMLResponse(render_html_shell("SHE - Release & APK Downloads (v0.3.0)", content, "releases"))
+    return HTMLResponse(render_html_shell(f"SHE - Release & APK Downloads (v{settings.VERSION})", content, "releases"))
 
 
 # -----------------------------------------------------------------------------
@@ -1558,7 +1559,7 @@ async def render_landing_page():
         <div class="release-banner">
             <div class="release-icon">{SVG_DOWNLOAD}</div>
             <div class="release-body">
-                <div class="release-title">v0.3.0 Community Release Active &bull; Verified Binaries Live</div>
+                <div class="release-title">v{settings.VERSION} Community Release Active &bull; Verified Binaries Live</div>
                 Official APK builds for <strong>SHE Guardian</strong> and <strong>SHE Admin Companion</strong> are now live for hardware testing and sideloading with full SHA-256 cryptographic verification.
             </div>
             <a href="/releases" class="btn btn-primary" style="white-space: nowrap; padding: 0.55rem 1.15rem; font-size: 0.85rem; text-decoration: none;">Download APKs &rarr;</a>
@@ -1567,7 +1568,7 @@ async def render_landing_page():
 
     <header class="hero">
         <img src="/logo.png" alt="SHE Logo" style="width: 110px; height: 110px; object-fit: contain; margin-bottom: 1.5rem; filter: drop-shadow(0 0 25px rgba(0, 210, 255, 0.35));" />
-        <div class="hero-badge">{SVG_SHIELD} Version 0.3.0 &bull; Open-Source Handset Security</div>
+        <div class="hero-badge">{SVG_SHIELD} Version {settings.VERSION} &bull; Open-Source Handset Security</div>
         <h1>Sentinel for <span>Handheld Equipment</span></h1>
         <p>A zero-compromise, open-source Android anti-theft and remote handset recovery ecosystem designed for high-stress offline environments.</p>
         <div class="btn-group">
@@ -1645,7 +1646,7 @@ async def render_landing_page():
                         <div class="card-title">SHE Guardian</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Protected Handset Agent</div>
                     </div>
-                    <span class="card-badge badge-warning" style="margin-left: auto;">v0.3.0 Direct</span>
+                    <span class="card-badge badge-warning" style="margin-left: auto;">v{settings.VERSION} Direct</span>
                 </div>
                 <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1rem;">
                     Runs Direct Boot tracking in Device Encrypted Storage, offline AT1 SMS beacons, remote sirens, and device owner kiosk restrictions.
@@ -1670,7 +1671,7 @@ async def render_landing_page():
                         <div class="card-title">SHE Admin Companion</div>
                         <div style="font-size: 0.85rem; color: var(--text-muted);">Controller & Vault Manager</div>
                     </div>
-                    <span class="card-badge badge-warning" style="margin-left: auto;">v0.3.0 Release</span>
+                    <span class="card-badge badge-warning" style="margin-left: auto;">v{settings.VERSION} Release</span>
                 </div>
                 <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1rem;">
                     Monitors live GPS fixes, dispatches signed HMAC commands, and manages zero-knowledge client-side encrypted vault secrets.

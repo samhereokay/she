@@ -10,8 +10,10 @@ def test_landing_page_renders_with_pre_release_and_features():
     assert "text/html" in response.headers["content-type"]
     html = response.text
 
+    from app.core.config import settings
+
     # Community release banner verification
-    assert "v0.3.0 Community Release Active" in html
+    assert f"v{settings.VERSION} Community Release Active" in html
     assert "Verified Binaries Live" in html
 
     # 9 architectural capabilities verification
@@ -102,11 +104,13 @@ def test_logo_asset_serves_png():
 def test_releases_page_and_binary_downloads():
     client = TestClient(app)
 
+    from app.core.config import settings
+
     # Releases landing page
     resp_r = client.get("/releases")
     assert resp_r.status_code == 200
     assert "text/html" in resp_r.headers["content-type"]
-    assert "Release Binaries (v0.3.0)" in resp_r.text
+    assert f"Release Binaries (v{settings.VERSION})" in resp_r.text
     assert "she-guardian.apk" in resp_r.text
     from app.api.web import get_file_sha256, get_effective_guardian_apk, get_effective_admin_apk
     assert get_file_sha256(get_effective_guardian_apk()) in resp_r.text
@@ -132,8 +136,8 @@ def test_releases_page_and_binary_downloads():
     resp_check = client.get("/releases/check")
     assert resp_check.status_code == 200
     data = resp_check.json()
-    assert data["version_code"] == 3
-    assert data["version_name"] == "0.3.0"
+    assert data["version_code"] == 4
+    assert data["version_name"] == settings.VERSION
     assert "download_url" in data["guardian"]
     assert "download_url" in data["admin"]
     assert "sha256" in data["guardian"]
