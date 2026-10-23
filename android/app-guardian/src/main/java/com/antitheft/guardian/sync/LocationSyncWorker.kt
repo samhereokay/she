@@ -216,7 +216,11 @@ class LocationSyncWorker(
                 "secure_lock_screen" to secureLockScreen
             )
 
-            val payload = mapOf(
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+            val simOperator = tm?.simOperatorName?.takeIf { it.isNotBlank() }
+                ?: tm?.networkOperatorName?.takeIf { it.isNotBlank() }
+
+            val payload = mutableMapOf<String, Any?>(
                 "battery_level" to batteryLevel,
                 "is_charging" to isCharging,
                 "connectivity_type" to connType,
@@ -226,6 +230,9 @@ class LocationSyncWorker(
                 "timestamp" to nowTs,
                 "signature" to sigBase64
             )
+            if (!simOperator.isNullOrBlank()) {
+                payload["sim_operator"] = simOperator
+            }
 
             val req = Request.Builder()
                 .url("$serverUrl/api/v1/devices/$deviceId/heartbeat")

@@ -297,6 +297,10 @@ class GuardianMainActivity : AppCompatActivity() {
             showRestrictedSettingsGuide()
         }
 
+        findViewById<Button>(R.id.btnPlayProtectGuide)?.setOnClickListener {
+            showPlayProtectGuide()
+        }
+
         handleIncomingPairingIntent(intent)
         handleIncomingDeviceOwnerIntent(intent)
     }
@@ -545,6 +549,21 @@ class GuardianMainActivity : AppCompatActivity() {
                 val bStatus = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
                 val isCharging = bStatus == android.os.BatteryManager.BATTERY_STATUS_CHARGING || bStatus == android.os.BatteryManager.BATTERY_STATUS_FULL
 
+                val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val activeNet = cm?.activeNetwork
+                val netCaps = if (activeNet != null) cm.getNetworkCapabilities(activeNet) else null
+                val connType = when {
+                    netCaps == null -> "offline"
+                    netCaps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                    netCaps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                    netCaps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                    netCaps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+                    else -> "other"
+                }
+                val tm = getSystemService(android.content.Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                val simOperator = tm?.simOperatorName?.takeIf { it.isNotBlank() }
+                    ?: tm?.networkOperatorName?.takeIf { it.isNotBlank() }
+
                 var successMsg = "Pairing failed."
                 var confirmationCode: String? = null
 
@@ -567,7 +586,7 @@ class GuardianMainActivity : AppCompatActivity() {
                     } else serverUrl.replace("http://", "https://")
                     val pairEndpoint = effectiveServerUrl.trimEnd('/') + "/api/v1/devices/pair"
 
-                    val reqBodyMap = mapOf(
+                    val reqBodyMap = mutableMapOf<String, Any?>(
                         "device_id" to storageHelper.getDeviceId(),
                         "device_alias" to effectiveAlias,
                         "public_key_pem" to guardianPubPem,
@@ -583,8 +602,12 @@ class GuardianMainActivity : AppCompatActivity() {
                         "is_device_owner" to false,
                         "battery_level" to batteryLevel,
                         "is_charging" to isCharging,
+                        "connectivity_type" to connType,
                         "capabilities" to listOf("locate_sms", "live_gps", "siren", "ring", "battery_report")
                     )
+                    if (!simOperator.isNullOrBlank()) {
+                        reqBodyMap["sim_operator"] = simOperator
+                    }
                     val reqJson = com.google.gson.Gson().toJson(reqBodyMap)
                     val mediaType = "application/json; charset=utf-8".toMediaType()
                     val body = reqJson.toRequestBody(mediaType)
@@ -967,6 +990,36 @@ class GuardianMainActivity : AppCompatActivity() {
                     startActivity(intent)
                 } catch (e: Exception) {
                     startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showPlayProtectGuide() {
+        AlertDialog.Builder(this)
+            .setTitle("How to Stop Play Protect Warnings")
+            .setMessage(
+                "Google Play Protect warns on sideloaded apps because SHE Guardian uses background location and emergency SMS without Google Play Store developer signing.\n\n" +
+                "To stop Play Protect warnings permanently:\n" +
+                "1. Open the 'Google Play Store' app.\n" +
+                "2. Tap your Profile icon (top right corner).\n" +
+                "3. Tap 'Play Protect'.\n" +
+                "4. Tap the Settings Gear (⚙️) icon in the top right.\n" +
+                "5. Turn OFF 'Scan apps with Play Protect' (or turn OFF 'Improve harmful app detection').\n" +
+                "6. Tap 'Turn off' when prompted.\n\n" +
+                "During installation or update:\n" +
+                "If Play Protect blocks install, tap 'More details' -> 'Install anyway'."
+            )
+            .setPositiveButton("Open Play Store") { _, _ ->
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse("https://play.google.com/store/apps")
+                        setPackage("com.android.vending")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Open Google Play Store manually", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Close", null)

@@ -1080,8 +1080,17 @@ private fun DeviceCardItem(
             }
 
             val statusInfo = device.status_info
-            if (statusInfo?.battery_level != null || !statusInfo?.connectivity_type.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SheTheme.colors.surfaceVariant.copy(alpha = 0.6f))
+                    .border(1.dp, SheTheme.colors.border, RoundedCornerShape(12.dp))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Row 1: Battery Charging & Carrier / Telephony Signal
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1099,13 +1108,59 @@ private fun DeviceCardItem(
                             text = if (isCharging) "⚡ Charging $batt%" else "🔋 Battery $batt%",
                             level = battLevel
                         )
+                    } else {
+                        SheStatusChip(text = "🔋 Battery: Active", level = StatusLevel.INFO)
                     }
-                    if (!statusInfo?.connectivity_type.isNullOrBlank()) {
+
+                    val carrierName = statusInfo?.sim_operator?.takeIf { it.isNotBlank() } ?: "Cellular Ready"
+                    Text(
+                        text = "📶 $carrierName",
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                // Row 2: Internet Connection State (ON / OFF) & SIM Alert
+                val rawConn = statusInfo?.connectivity_type?.lowercase()
+                val isOnline = (rawConn == "wifi" || rawConn == "cellular" || rawConn == "ethernet" || rawConn == "vpn") &&
+                                (device.calculated_status == "LIVE" || device.calculated_status == "RECENT")
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isOnline) {
+                        val connLabel = when (rawConn) {
+                            "wifi" -> "Wi-Fi Connected"
+                            "cellular" -> "Mobile Data (4G/5G)"
+                            "vpn" -> "VPN Encrypted"
+                            else -> "Online Data"
+                        }
+                        SheStatusChip(
+                            text = "🟢 Internet: ON ($connLabel)",
+                            level = StatusLevel.SUCCESS
+                        )
+                    } else {
+                        val offlineLabel = if (device.calculated_status == "DELAYED") "Fix Delayed" else "Offline"
+                        SheStatusChip(
+                            text = "🔴 Internet: OFF ($offlineLabel • SMS Armed)",
+                            level = StatusLevel.DANGER
+                        )
+                    }
+
+                    if (statusInfo?.sim_changed == true) {
+                        SheStatusChip(
+                            text = "🚨 SIM SWAP ALERT",
+                            level = StatusLevel.DANGER
+                        )
+                    } else {
                         Text(
-                            text = "Net: ${statusInfo?.connectivity_type}",
-                            color = SheTheme.colors.textSecondary,
+                            text = "Sync: ${statusInfo?.last_sync_path ?: "online"}",
+                            color = SheTheme.colors.textTertiary,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            fontFamily = FontFamily.Monospace
                         )
                     }
                 }
@@ -1229,7 +1284,26 @@ private fun DeviceCardItem(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Quick Actions Row 3: Unpair / Reconnect Handset
+            // Quick Actions Row 3: Guide & Configuration
+            SheButton(
+                text = "Setup Workflow & Play Protect Guide",
+                onClick = onOpenGuide,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                variant = SheButtonVariant.TONAL,
+                height = 38.dp,
+                cornerRadius = 12.dp,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Quick Actions Row 4: Unpair / Reconnect Handset
             SheButton(
                 text = "Unpair & Delete Handset",
                 onClick = onDeleteDevice,
@@ -2070,6 +2144,8 @@ private fun IosCommandDispatchDialog(
 private fun IosCommandGuideDialog(
     onDismiss: () -> Unit
 ) {
+    var selectedTab by remember { mutableStateOf(0) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SheTheme.colors.surface,
@@ -2085,7 +2161,7 @@ private fun IosCommandGuideDialog(
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
-                    text = "Recovery Command Center",
+                    text = "Handset Setup & Security Guide",
                     color = SheTheme.colors.textPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -2099,84 +2175,276 @@ private fun IosCommandGuideDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Test Mode vs Real Mode Comparison Card
-                SheCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = SheTheme.colors.surfaceVariant,
-                    borderColor = SheTheme.colors.accent.copy(alpha = 0.5f),
-                    cornerRadius = 14.dp
+                // Tab Navigation Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SheTheme.colors.surfaceVariant)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 0) SheTheme.colors.surface else Color.Transparent)
+                            .clickable { selectedTab = 0 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = "TEST MODE VS REAL MODE",
-                            color = SheTheme.colors.accent,
-                            fontSize = 12.sp,
+                            text = "1. Workflow",
+                            color = if (selectedTab == 0) SheTheme.colors.accent else SheTheme.colors.textSecondary,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 1) SheTheme.colors.surface else Color.Transparent)
+                            .clickable { selectedTab = 1 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = "• TEST MODE (Drill):\n" +
-                                   "  Runs a non-destructive simulation. The siren sounds for 10 seconds only. You can input a friend's mobile number to test offline SMS beacons without notifying police or emergency authorities.\n\n" +
-                                   "• REAL MODE (STOLEN_MODE):\n" +
-                                   "  Full production theft lockdown. Sounds continuous acoustic siren + TTS alert, forces enterprise kiosk, hides notifications, and transmits emergency SMS beacons with live GPS coordinates to verified emergency contacts.",
-                            color = SheTheme.colors.textPrimary,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp
+                            text = "2. Play Protect",
+                            color = if (selectedTab == 1) SheTheme.colors.accent else SheTheme.colors.textSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 2) SheTheme.colors.surface else Color.Transparent)
+                            .clickable { selectedTab = 2 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "3. Commands",
+                            color = if (selectedTab == 2) SheTheme.colors.accent else SheTheme.colors.textSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
-                Text(
-                    text = "COMMAND REFERENCE",
-                    color = SheTheme.colors.textTertiary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
-                )
+                if (selectedTab == 0) {
+                    // WORKFLOW TAB
+                    Text(
+                        text = "CONFIGURATION WORKFLOW (WHAT TO DO NEXT)",
+                        color = SheTheme.colors.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
 
-                val guideItems = listOf(
-                    Triple("LOCATE", "Captures fresh GPS fix via satellite hardware and transmits over WebSocket.", Icons.Outlined.MyLocation),
-                    Triple("RING", "Plays maximum volume siren alert to pinpoint phone nearby (overrides Silent/DND).", Icons.Outlined.NotificationsActive),
-                    Triple("STOP_RING", "Silences the acoustic emergency siren alert.", Icons.AutoMirrored.Outlined.VolumeOff),
-                    Triple("LOCK", "Forces immediate screen sleep and enterprise PIN/kiosk lockdown.", Icons.Outlined.Lock),
-                    Triple("EXIT_KIOSK", "Releases stolen kiosk lock and restores default Android home launcher.", Icons.Outlined.LockOpen),
-                    Triple("UNPAIR", "Revokes mutual pairing handshake keys between companion and handset.", Icons.Outlined.LinkOff),
-                    Triple("CLEAR_DEVICE_OWNER", "Deprovisions enterprise Device Owner administration (requires TOTP confirmation).", Icons.Outlined.DeleteForever)
-                )
+                    val steps = listOf(
+                        Pair("Step 1: Mutual Pairing PIN", "After scanning the QR code or pasting the pairing payload on Guardian, a 6-digit confirmation PIN is generated on Mom's screen. On your device card here, tap 'Enter 6-Digit Pairing PIN' and submit it."),
+                        Pair("Step 2: Unlock Android 13/14 Restricted Settings", "Because SHE Guardian is a sideloaded APK, Android restricts SMS permissions by default:\n• Open Mom's Settings -> Apps -> SHE Guardian.\n• Tap the 3 dots (⋮) in the top-right corner.\n• Tap 'Allow restricted settings' and confirm screen lock / fingerprint."),
+                        Pair("Step 3: Grant SMS & Location Permissions", "In SHE Guardian App Info:\n• Tap 'Permissions' -> enable 'SMS' (Send & Receive).\n• Tap 'Location' -> choose 'Allow all the time' (ensures background satellite tracking)."),
+                        Pair("Step 4: Disable Battery Optimization (Doze Mode)", "To prevent Android from killing the sentinel worker:\n• In App Info -> Battery -> select 'Unrestricted'.\n• This guarantees 24/7 telemetry and emergency command response even when screen is locked."),
+                        Pair("Step 5: Test Remote Siren Drill", "From this companion app, tap 'Dispatch Remote Command' -> choose 'RING' (Siren). The target handset will sound a 10-second test drill to verify cryptographic link.")
+                    )
 
-                guideItems.forEach { (cmd, desc, icon) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(SheTheme.colors.surfaceVariant),
-                            contentAlignment = Alignment.Center
+                    steps.forEach { (stepTitle, stepDesc) ->
+                        SheCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            backgroundColor = SheTheme.colors.surfaceVariant,
+                            cornerRadius = 12.dp
                         ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = SheTheme.colors.accent,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = stepTitle,
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = stepDesc,
+                                    color = SheTheme.colors.textSecondary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
                         }
-                        Column(modifier = Modifier.weight(1f)) {
+                    }
+                } else if (selectedTab == 1) {
+                    // PLAY PROTECT TAB
+                    Text(
+                        text = "HOW TO STOP PLAY PROTECT WARNINGS",
+                        color = SheTheme.colors.danger,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    SheCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        backgroundColor = SheTheme.colors.surfaceVariant,
+                        borderColor = SheTheme.colors.danger.copy(alpha = 0.4f),
+                        cornerRadius = 14.dp
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             Text(
-                                text = cmd,
+                                text = "Why Does Google Play Protect Warn?",
                                 color = SheTheme.colors.textPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = desc,
+                                text = "Google Play Protect automatically flags apps installed outside the Google Play Store (sideloaded APKs) that request high-privilege emergency SMS and background GPS, because they are not distributed through Google Play Developer Console.",
                                 color = SheTheme.colors.textSecondary,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
                             )
+                        }
+                    }
+
+                    Text(
+                        text = "PERMANENT FIX: DISABLE PLAY PROTECT SCANNING",
+                        color = SheTheme.colors.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    val playProtectSteps = listOf(
+                        "1. Open the Google Play Store app on Mom's phone.",
+                        "2. Tap the Profile icon in the top-right corner.",
+                        "3. Tap 'Play Protect'.",
+                        "4. Tap the Settings Gear (⚙️) icon in the top right corner.",
+                        "5. Toggle OFF 'Scan apps with Play Protect' (or toggle OFF 'Improve harmful app detection').",
+                        "6. Tap 'Turn off' when prompted by Android."
+                    )
+
+                    SheCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        backgroundColor = SheTheme.colors.surfaceVariant,
+                        cornerRadius = 12.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            playProtectSteps.forEach { step ->
+                                Text(
+                                    text = step,
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+
+                    SheCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        backgroundColor = SheTheme.colors.surfaceVariant,
+                        cornerRadius = 12.dp
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "During APK Installation / Update:",
+                                color = SheTheme.colors.accent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "If you ever see 'Blocked by Play Protect' or 'Unsafe app', tap 'More details' (small arrow) and then tap 'Install anyway'.",
+                                color = SheTheme.colors.textSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                } else {
+                    // COMMAND REFERENCE TAB
+                    SheCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        backgroundColor = SheTheme.colors.surfaceVariant,
+                        borderColor = SheTheme.colors.accent.copy(alpha = 0.5f),
+                        cornerRadius = 14.dp
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "TEST MODE VS REAL MODE",
+                                color = SheTheme.colors.accent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "• TEST MODE (Drill):\n" +
+                                       "  Runs a non-destructive simulation. The siren sounds for 10 seconds only. You can input a friend's mobile number to test offline SMS beacons without notifying police or emergency authorities.\n\n" +
+                                       "• REAL MODE (STOLEN_MODE):\n" +
+                                       "  Full production theft lockdown. Sounds continuous acoustic siren + TTS alert, forces enterprise kiosk, hides notifications, and transmits emergency SMS beacons with live GPS coordinates to verified emergency contacts.",
+                                color = SheTheme.colors.textPrimary,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "COMMAND REFERENCE",
+                        color = SheTheme.colors.textTertiary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    val guideItems = listOf(
+                        Triple("LOCATE", "Captures fresh GPS fix via satellite hardware and transmits over WebSocket.", Icons.Outlined.MyLocation),
+                        Triple("RING", "Plays maximum volume siren alert to pinpoint phone nearby (overrides Silent/DND).", Icons.Outlined.NotificationsActive),
+                        Triple("STOP_RING", "Silences the acoustic emergency siren alert.", Icons.AutoMirrored.Outlined.VolumeOff),
+                        Triple("LOCK", "Forces immediate screen sleep and enterprise PIN/kiosk lockdown.", Icons.Outlined.Lock),
+                        Triple("EXIT_KIOSK", "Releases stolen kiosk lock and restores default Android home launcher.", Icons.Outlined.LockOpen),
+                        Triple("UNPAIR", "Revokes mutual pairing handshake keys between companion and handset.", Icons.Outlined.LinkOff),
+                        Triple("CLEAR_DEVICE_OWNER", "Deprovisions enterprise Device Owner administration (requires TOTP confirmation).", Icons.Outlined.DeleteForever)
+                    )
+
+                    guideItems.forEach { (cmd, desc, icon) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SheTheme.colors.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = SheTheme.colors.accent,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = cmd,
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = desc,
+                                    color = SheTheme.colors.textSecondary,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
                         }
                     }
                 }
