@@ -123,6 +123,12 @@ class TrackingForegroundService : Service() {
                         .get()
                         .build()
                     val response = httpClient.newCall(request).execute()
+                    if (response.code == 404) {
+                        Log.w(TAG, "Device $deviceId not found on server (404). Device was unpaired or deleted. Backing off command polling.")
+                        response.close()
+                        delay(60_000L)
+                        continue
+                    }
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: ""
                         if (body.isNotBlank() && body != "[]") {

@@ -84,6 +84,10 @@ class LocationSyncWorker(
         try {
             val response = httpClient.newCall(request).execute()
             if (!response.isSuccessful) {
+                if (response.code == 404) {
+                    Log.w(TAG, "Device not found on server (404). Device was unpaired or reset. Abandoning sync batch.")
+                    return@withContext Result.failure()
+                }
                 Log.w(TAG, "Server returned error: ${response.code}")
                 return@withContext Result.retry()
             }
