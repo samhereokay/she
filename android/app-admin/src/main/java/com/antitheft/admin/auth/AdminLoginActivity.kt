@@ -14,6 +14,8 @@ import com.antitheft.admin.dashboard.AdminDashboardActivity
 import com.antitheft.admin.network.ApiClient
 import com.antitheft.admin.network.LoginRequest
 import com.antitheft.admin.network.RegisterRequest
+import com.antitheft.admin.network.ForgotPasswordRequest
+import com.antitheft.admin.network.ResetPasswordRequest
 import com.antitheft.admin.network.TotpValidateRequest
 import com.antitheft.admin.network.TotpVerifyRequest
 import com.antitheft.admin.ui.theme.SheTheme
@@ -81,7 +83,13 @@ class AdminLoginActivity : BaseSecureActivity() {
                         show2faLoginDialog = false
                     },
                     isLoading = isLoading,
-                    errorMessage = errorMessage
+                    errorMessage = errorMessage,
+                    onForgotPasswordRequest = { identifier, url, callback ->
+                        performForgotPassword(identifier, url, callback)
+                    },
+                    onResetPasswordConfirm = { identifier, code, newPass, url, callback ->
+                        performResetPassword(identifier, code, newPass, url, callback)
+                    }
                 )
             }
         }
@@ -379,6 +387,52 @@ class AdminLoginActivity : BaseSecureActivity() {
                 val formatted = formatErrorMessage(e, sessionManager.getServerUrl())
                 errorMessage = formatted
                 Toast.makeText(this@AdminLoginActivity, formatted, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun performForgotPassword(
+        identifier: String,
+        serverUrl: String,
+        onResult: (Boolean, String?, String?) -> Unit
+    ) {
+        lifecycleScope.launch {
+            try {
+                sessionManager.setServerUrl(serverUrl)
+                val api = ApiClient.create(sessionManager)
+                val resp = api.forgotPassword(ForgotPasswordRequest(identifier = identifier.trim()))
+                onResult(true, resp.email_hint, null)
+            } catch (e: Exception) {
+                android.util.Log.e("AdminLogin", "FORGOT_PASSWORD_FAILED", e)
+                val formatted = formatErrorMessage(e, serverUrl)
+                onResult(false, null, formatted)
+            }
+        }
+    }
+
+    private fun performResetPassword(
+        identifier: String,
+        code: String,
+        newPassword: String,
+        serverUrl: String,
+        onResult: (Boolean, String?, String?) -> Unit
+    ) {
+        lifecycleScope.launch {
+            try {
+                sessionManager.setServerUrl(serverUrl)
+                val api = ApiClient.create(sessionManager)
+                val resp = api.resetPassword(
+                    ResetPasswordRequest(
+                        identifier = identifier.trim(),
+                        code = code.trim(),
+                        new_password = newPassword
+                    )
+                )
+                onResult(true, resp.message, null)
+            } catch (e: Exception) {
+                android.util.Log.e("AdminLogin", "RESET_PASSWORD_FAILED", e)
+                val formatted = formatErrorMessage(e, serverUrl)
+                onResult(false, null, formatted)
             }
         }
     }

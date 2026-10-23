@@ -258,12 +258,23 @@ data class PhoneStartRequest(val phone_number: String)
 data class PhoneConfirmRequest(val code: String)
 data class PhoneVerifyResponse(val status: String, val fallback_phone_e164: String, val phone_verified_at: String)
 
+data class ForgotPasswordRequest(val identifier: String)
+data class ForgotPasswordResponse(val status: String, val message: String, val email_hint: String? = null)
+data class ResetPasswordRequest(val identifier: String, val code: String, val new_password: String)
+data class ResetPasswordResponse(val status: String, val message: String)
+
 interface AdminApiService {
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): UserResponseDto
 
     @POST("auth/login/json")
     suspend fun login(@Body request: LoginRequest): TokenResponse
+
+    @POST("auth/forgot-password")
+    suspend fun forgotPassword(@Body request: ForgotPasswordRequest): ForgotPasswordResponse
+
+    @POST("auth/reset-password")
+    suspend fun resetPassword(@Body request: ResetPasswordRequest): ResetPasswordResponse
 
     @GET("auth/me")
     suspend fun getProfile(): UserProfileDto

@@ -6,6 +6,7 @@ import secrets
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -34,11 +35,20 @@ from app.schemas.auth import (
     TotpStatusResponse,
     UserSessionResponse,
     SessionRevokeResponse,
-    RefreshTokenRequest
+    RefreshTokenRequest,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse
 )
 from app.schemas.device import PairingTokenCreateRequest, PairingTokenResponse
 from app.api.deps import get_current_user, get_current_user_2fa
 from app.core.security import create_pairing_token, verify_access_token
+from app.verification.engine import issue as issue_challenge, confirm as confirm_challenge
+from app.verification.mailer import send_password_reset_email
+import logging
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -325,6 +335,121 @@ def login_json(
         "totp_required": bool(user.totp_enabled),
         "refresh_token": raw_refresh
     }
+
+
+def _obfuscate_email(email_str: str) -> str:
+    """Helper to safely obfuscate email addresses for hints (e.g. j***n@example.com)."""
+    if not email_str or "@" not in email_str:
+        return "your registered email"
+    name_part, domain_part = email_str.split("@", 1)
+    if len(name_part) <= 2:
+        masked_name = name_part[0] + "***"
+    else:
+        masked_name = name_part[0] + "***" + name_part[-1]
+    return f"{masked_name}@{domain_part}"
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    request: Request,
+    req: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Initiate a zero-trust password reset flow.
+    Sends a 6-digit challenge code to the user's registered recovery email.
+    Applies timing-safe response to prevent user enumeration attacks.
+    """
+    auth_limiter.check_rate_limit(request)
+
+    clean_identifier = req.identifier.strip()
+    clean_email = clean_identifier.lower()
+
+    user = db.query(User).filter(
+        (func.lower(User.email) == clean_email) | (User.username == clean_identifier)
+    ).first()
+
+    if not user or not user.email:
+        # Anti-enumeration response: always return generic success message
+        return ForgotPasswordResponse(
+            status="ok",
+            message="If an account exists with that identifier, a verification code has been sent."
+        )
+
+    try:
+        challenge, raw_code = issue_challenge(db, user.id, "email", user.email)
+        send_password_reset_email(to_email=user.email, code=raw_code)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error dispatching password reset email to {user.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send password reset code. Please try again later."
+        )
+
+    return ForgotPasswordResponse(
+        status="ok",
+        message="A 6-digit password reset code has been sent to your registered email address.",
+        email_hint=_obfuscate_email(user.email)
+    )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+def reset_password(
+    request: Request,
+    req: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Verify the 6-digit challenge code and reset the user's master password.
+    Invalidates all existing user sessions upon password change.
+    """
+    auth_limiter.check_rate_limit(request)
+
+    if len(req.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long."
+        )
+
+    clean_identifier = req.identifier.strip()
+    clean_email = clean_identifier.lower()
+
+    user = db.query(User).filter(
+        (func.lower(User.email) == clean_email) | (User.username == clean_identifier)
+    ).first()
+
+    if not user or not user.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid identifier or reset code."
+        )
+
+    # Verify the challenge code using the verification engine
+    confirm_challenge(db, user.id, "email", user.email, req.code)
+
+    # Update password
+    user.hashed_password = hash_password(req.new_password)
+
+    # Invalidate all existing sessions
+    db.query(UserSession).filter(UserSession.user_id == user.id).delete()
+
+    # Audit log
+    client_ip = request.client.host if request.client else "unknown"
+    audit = AuditEvent(
+        user_id=user.id,
+        event_type="USER_PASSWORD_RESET",
+        details=f"Password successfully reset via email verification code from IP {client_ip}"
+    )
+    db.add(audit)
+    db.commit()
+
+    return ResetPasswordResponse(
+        status="ok",
+        message="Your password has been successfully reset. Please sign in with your new password."
+    )
+
 
 
 def generate_recovery_codes(count: int = 8) -> tuple[list[str], list[str]]:

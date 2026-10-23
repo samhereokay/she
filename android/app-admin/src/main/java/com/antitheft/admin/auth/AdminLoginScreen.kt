@@ -97,7 +97,9 @@ fun AdminLoginScreen(
     onValidate2faLogin: (code: String) -> Unit,
     onDismiss2faLogin: () -> Unit,
     isLoading: Boolean,
-    errorMessage: String?
+    errorMessage: String?,
+    onForgotPasswordRequest: (identifier: String, serverUrl: String, onResult: (Boolean, String?, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onResetPasswordConfirm: (identifier: String, code: String, newPassword: String, serverUrl: String, onResult: (Boolean, String?, String?) -> Unit) -> Unit = { _, _, _, _, _ -> }
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -165,6 +167,17 @@ fun AdminLoginScreen(
     // Dialog state
     var totpCodeInput by remember { mutableStateOf("") }
     var login2faCodeInput by remember { mutableStateOf("") }
+
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var forgotStep by remember { mutableStateOf(1) }
+    var forgotIdentifier by remember { mutableStateOf("") }
+    var forgotCode by remember { mutableStateOf("") }
+    var forgotNewPassword by remember { mutableStateOf("") }
+    var forgotConfirmPassword by remember { mutableStateOf("") }
+    var forgotEmailHint by remember { mutableStateOf<String?>(null) }
+    var forgotLoading by remember { mutableStateOf(false) }
+    var forgotDialogError by remember { mutableStateOf<String?>(null) }
+    var forgotSuccessMsg by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
 
@@ -396,6 +409,35 @@ fun AdminLoginScreen(
                 isPassword = true,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            if (!isRegisterMode) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "Forgot Password?",
+                        color = SheTheme.colors.accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                forgotIdentifier = username.ifBlank { "" }
+                                forgotStep = 1
+                                forgotCode = ""
+                                forgotNewPassword = ""
+                                forgotConfirmPassword = ""
+                                forgotEmailHint = null
+                                forgotDialogError = null
+                                forgotSuccessMsg = null
+                                showForgotPasswordDialog = true
+                            }
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    )
+                }
+            }
 
             if (isRegisterMode) {
                 Spacer(modifier = Modifier.height(14.dp))
@@ -1212,6 +1254,259 @@ fun AdminLoginScreen(
                 dismissButton = {
                     TextButton(onClick = { showTermsDialog = false }) {
                         Text("Close", color = SheTheme.colors.textSecondary)
+                    }
+                },
+                containerColor = SheTheme.colors.surface,
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        // -------------------------------------------------------------
+        // Step 4: Forgot / Reset Master Password Modal
+        // -------------------------------------------------------------
+        if (showForgotPasswordDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (!forgotLoading) {
+                        showForgotPasswordDialog = false
+                    }
+                },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Key,
+                            contentDescription = null,
+                            tint = SheTheme.colors.accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = if (forgotSuccessMsg != null) "Password Reset"
+                                   else if (forgotStep == 1) "Reset Master Password"
+                                   else "Enter Reset Code",
+                            color = SheTheme.colors.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        if (forgotSuccessMsg != null) {
+                            SheCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 12.dp,
+                                backgroundColor = SheTheme.colors.surfaceVariant,
+                                borderColor = SheTheme.colors.accent
+                            ) {
+                                Text(
+                                    text = forgotSuccessMsg!!,
+                                    color = SheTheme.colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 18.sp,
+                                    modifier = Modifier.padding(14.dp)
+                                )
+                            }
+                        } else if (forgotStep == 1) {
+                            Text(
+                                text = "Enter your username or registered email address. We'll send a 6-digit verification code to reset your master password.",
+                                color = SheTheme.colors.textSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            SheTextField(
+                                value = forgotIdentifier,
+                                onValueChange = {
+                                    forgotIdentifier = it
+                                    forgotDialogError = null
+                                },
+                                label = "Username or Email",
+                                placeholder = "e.g. admin or admin@example.com",
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Text(
+                                text = if (!forgotEmailHint.isNullOrBlank()) {
+                                    "Verification code sent to $forgotEmailHint. Check your inbox (or spam folder) and enter the 6-digit code below:"
+                                } else {
+                                    "Enter the 6-digit verification code sent to your registered email, and choose your new master password:"
+                                },
+                                color = SheTheme.colors.textSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            SheTextField(
+                                value = forgotCode,
+                                onValueChange = {
+                                    if (it.length <= 6) forgotCode = it
+                                    forgotDialogError = null
+                                },
+                                label = "6-Digit Verification Code",
+                                placeholder = "123456",
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            SheTextField(
+                                value = forgotNewPassword,
+                                onValueChange = {
+                                    forgotNewPassword = it
+                                    forgotDialogError = null
+                                },
+                                label = "New Master Password",
+                                placeholder = "Min 8 characters",
+                                isPassword = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            SheTextField(
+                                value = forgotConfirmPassword,
+                                onValueChange = {
+                                    forgotConfirmPassword = it
+                                    forgotDialogError = null
+                                },
+                                label = "Confirm New Password",
+                                placeholder = "Re-enter new password",
+                                isPassword = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        if (!forgotDialogError.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            SheCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 10.dp,
+                                backgroundColor = SheTheme.colors.dangerContainer,
+                                borderColor = SheTheme.colors.danger
+                            ) {
+                                Text(
+                                    text = forgotDialogError!!,
+                                    color = SheTheme.colors.danger,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (forgotSuccessMsg != null) {
+                        SheButton(
+                            text = "Back to Sign In",
+                            onClick = {
+                                showForgotPasswordDialog = false
+                                forgotSuccessMsg = null
+                            },
+                            height = 40.dp,
+                            cornerRadius = 10.dp
+                        )
+                    } else if (forgotStep == 1) {
+                        SheButton(
+                            text = "Send Code",
+                            onClick = {
+                                if (forgotIdentifier.trim().isBlank()) {
+                                    forgotDialogError = "Please enter your username or registered email."
+                                    return@SheButton
+                                }
+                                forgotLoading = true
+                                forgotDialogError = null
+                                onForgotPasswordRequest(forgotIdentifier.trim(), serverUrl) { success, emailHint, err ->
+                                    forgotLoading = false
+                                    if (success) {
+                                        forgotEmailHint = emailHint
+                                        forgotStep = 2
+                                        forgotDialogError = null
+                                    } else {
+                                        forgotDialogError = err ?: "Failed to send reset code. Please try again."
+                                    }
+                                }
+                            },
+                            isLoading = forgotLoading,
+                            height = 40.dp,
+                            cornerRadius = 10.dp
+                        )
+                    } else {
+                        SheButton(
+                            text = "Reset Password",
+                            onClick = {
+                                val code = forgotCode.trim()
+                                val newPass = forgotNewPassword
+                                when {
+                                    code.isBlank() -> {
+                                        forgotDialogError = "Please enter the 6-digit verification code."
+                                        return@SheButton
+                                    }
+                                    code.length != 6 -> {
+                                        forgotDialogError = "Verification code must be exactly 6 digits."
+                                        return@SheButton
+                                    }
+                                    newPass.length < 8 -> {
+                                        forgotDialogError = "Password must be at least 8 characters."
+                                        return@SheButton
+                                    }
+                                    newPass != forgotConfirmPassword -> {
+                                        forgotDialogError = "Passwords do not match."
+                                        return@SheButton
+                                    }
+                                }
+                                forgotLoading = true
+                                forgotDialogError = null
+                                onResetPasswordConfirm(forgotIdentifier.trim(), code, newPass, serverUrl) { success, msg, err ->
+                                    forgotLoading = false
+                                    if (success) {
+                                        password = newPass
+                                        if (username.isBlank()) {
+                                            username = forgotIdentifier.trim()
+                                        }
+                                        forgotSuccessMsg = msg ?: "Password has been reset successfully! You can now sign in with your new password."
+                                        Toast.makeText(context, "Password reset successful! Please sign in.", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        forgotDialogError = err ?: "Failed to reset password. Check your code and try again."
+                                    }
+                                }
+                            },
+                            isLoading = forgotLoading,
+                            height = 40.dp,
+                            cornerRadius = 10.dp
+                        )
+                    }
+                },
+                dismissButton = {
+                    if (forgotSuccessMsg == null) {
+                        TextButton(
+                            onClick = {
+                                if (forgotStep == 2) {
+                                    forgotStep = 1
+                                    forgotDialogError = null
+                                } else {
+                                    showForgotPasswordDialog = false
+                                }
+                            },
+                            enabled = !forgotLoading
+                        ) {
+                            Text(
+                                text = if (forgotStep == 2) "Back" else "Cancel",
+                                color = SheTheme.colors.textSecondary
+                            )
+                        }
                     }
                 },
                 containerColor = SheTheme.colors.surface,
