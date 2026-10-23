@@ -10,6 +10,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
+import logging
+
+logger = logging.getLogger("uvicorn.error")
 
 from app.core.config import settings
 from app.core.ws_manager import ws_manager
