@@ -1,5 +1,8 @@
 import os
+import secrets
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_GENERATED_SECRET = secrets.token_urlsafe(48)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -25,10 +28,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000,https://samhereokay.github.io").split(",") if o.strip()]
     
     # Environment-Mandated Secrets (NO committed fallback defaults)
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
-    TOTP_ENCRYPTION_KEY: str = os.getenv("TOTP_ENCRYPTION_KEY", "") or os.getenv("SECRET_KEY", "")
-    PAIRING_SECRET_ENCRYPTION_KEY: str = os.getenv("PAIRING_SECRET_ENCRYPTION_KEY", "") or os.getenv("SECRET_KEY", "")
-    VERIFY_SECRET: str = os.getenv("VERIFY_SECRET", "") or os.getenv("SECRET_KEY", "default-verification-hmac-secret-32b")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "") or _DEFAULT_GENERATED_SECRET
+    TOTP_ENCRYPTION_KEY: str = os.getenv("TOTP_ENCRYPTION_KEY", "") or os.getenv("SECRET_KEY", "") or _DEFAULT_GENERATED_SECRET
+    PAIRING_SECRET_ENCRYPTION_KEY: str = os.getenv("PAIRING_SECRET_ENCRYPTION_KEY", "") or os.getenv("SECRET_KEY", "") or _DEFAULT_GENERATED_SECRET
+    VERIFY_SECRET: str = os.getenv("VERIFY_SECRET", "") or os.getenv("SECRET_KEY", "") or _DEFAULT_GENERATED_SECRET
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
