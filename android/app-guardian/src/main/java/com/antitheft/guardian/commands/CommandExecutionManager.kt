@@ -241,6 +241,11 @@ object CommandExecutionManager {
                 return false
             }
 
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "SEND_VERIFY_SMS failed: android.permission.SEND_SMS is not granted (blocked by Play Protect or Android 13+ restricted settings).")
+                return false
+            }
+
             val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
                 ?: android.telephony.SmsManager.getDefault()
             smsManager.sendTextMessage(normalizedTo, null, body, null, null)

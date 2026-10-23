@@ -169,6 +169,8 @@ class LocationSyncWorker(
             val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
             val batteryLevel = if (level >= 0 && scale > 0) (level * 100) / scale else 100
+            val bStatus = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val isCharging = bStatus == BatteryManager.BATTERY_STATUS_CHARGING || bStatus == BatteryManager.BATTERY_STATUS_FULL
 
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             val net = cm?.activeNetwork
@@ -216,6 +218,7 @@ class LocationSyncWorker(
 
             val payload = mapOf(
                 "battery_level" to batteryLevel,
+                "is_charging" to isCharging,
                 "connectivity_type" to connType,
                 "sim_changed" to false,
                 "capabilities" to LITE_CAPABILITIES,

@@ -135,11 +135,16 @@ fun AdminDashboardScreen(
     isSessionsLoading: Boolean = false,
     onRevokeOtherSessions: () -> Unit = {},
     onRevokeSession: (String, Boolean) -> Unit = { _, _ -> },
-    onCheckUpdates: () -> Unit = {}
+    onCheckUpdates: () -> Unit = {},
+    onDeleteDevice: (DeviceDto) -> Unit = {},
+    onConfirmPendingPairing: (DeviceDto, String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     var showThemeSheet by remember { mutableStateOf(false) }
     var selectedDeviceForCommand by remember { mutableStateOf<DeviceDto?>(null) }
+    var deviceToDelete by remember { mutableStateOf<DeviceDto?>(null) }
+    var deviceToConfirm by remember { mutableStateOf<DeviceDto?>(null) }
+    var confirmPairingCodeInput by remember { mutableStateOf("") }
 
     Scaffold(
         containerColor = SheTheme.colors.background,
@@ -279,6 +284,12 @@ fun AdminDashboardScreen(
                         onOpenGuide = onShowGuide,
                         onDispatchCommand = {
                             selectedDeviceForCommand = device
+                        },
+                        onDeleteDevice = {
+                            deviceToDelete = device
+                        },
+                        onConfirmCode = {
+                            deviceToConfirm = device
                         }
                     )
                 }
@@ -604,6 +615,148 @@ fun AdminDashboardScreen(
             onRevokeSession = onRevokeSession
         )
     }
+
+    // Delete / Unpair Confirmation Dialog
+    if (deviceToDelete != null) {
+        val target = deviceToDelete!!
+        AlertDialog(
+            onDismissRequest = { deviceToDelete = null },
+            containerColor = SheTheme.colors.surface,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteForever,
+                        contentDescription = null,
+                        tint = SheTheme.colors.danger,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Unpair & Delete Handset",
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Are you sure you want to unpair '${target.device_alias}' (${listOfNotNull(target.brand, target.model).filter { it.isNotBlank() }.joinToString(" ")})?",
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "This will remove the handset from your account, terminate tracking, and free up your quota so you can re-pair or reconnect cleanly.",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            },
+            confirmButton = {
+                SheButton(
+                    text = "Unpair & Delete",
+                    onClick = {
+                        val dev = target
+                        deviceToDelete = null
+                        onDeleteDevice(dev)
+                    },
+                    variant = SheButtonVariant.DANGER,
+                    height = 38.dp
+                )
+            },
+            dismissButton = {
+                SheButton(
+                    text = "Cancel",
+                    onClick = { deviceToDelete = null },
+                    variant = SheButtonVariant.OUTLINED,
+                    height = 38.dp
+                )
+            }
+        )
+    }
+
+    // Confirm Mutual Pairing PIN Dialog
+    if (deviceToConfirm != null) {
+        val target = deviceToConfirm!!
+        AlertDialog(
+            onDismissRequest = {
+                deviceToConfirm = null
+                confirmPairingCodeInput = ""
+            },
+            containerColor = SheTheme.colors.surface,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Security,
+                        contentDescription = null,
+                        tint = SheTheme.colors.accent,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Mutual Pairing PIN",
+                        color = SheTheme.colors.textPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Enter the 6-digit confirmation code shown on '${target.device_alias}':",
+                        color = SheTheme.colors.textSecondary,
+                        fontSize = 13.sp
+                    )
+                    SheTextField(
+                        value = confirmPairingCodeInput,
+                        onValueChange = { confirmPairingCodeInput = it.filter { ch -> ch.isDigit() }.take(6) },
+                        placeholder = "e.g. 123456",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                SheButton(
+                    text = "Authorize Pairing",
+                    onClick = {
+                        val dev = target
+                        val code = confirmPairingCodeInput.trim()
+                        deviceToConfirm = null
+                        confirmPairingCodeInput = ""
+                        onConfirmPendingPairing(dev, code)
+                    },
+                    enabled = confirmPairingCodeInput.length == 6,
+                    variant = SheButtonVariant.PRIMARY,
+                    height = 38.dp
+                )
+            },
+            dismissButton = {
+                SheButton(
+                    text = "Cancel",
+                    onClick = {
+                        deviceToConfirm = null
+                        confirmPairingCodeInput = ""
+                    },
+                    variant = SheButtonVariant.OUTLINED,
+                    height = 38.dp
+                )
+            }
+        )
+    }
 }
 
 @Composable
@@ -739,7 +892,9 @@ private fun DeviceCardItem(
     onOpenRadar: () -> Unit,
     onOpenMap: () -> Unit,
     onOpenGuide: () -> Unit,
-    onDispatchCommand: () -> Unit
+    onDispatchCommand: () -> Unit,
+    onDeleteDevice: () -> Unit,
+    onConfirmCode: () -> Unit
 ) {
     val statusLevel = when (device.calculated_status) {
         "LIVE", "RECENT" -> StatusLevel.SUCCESS
@@ -781,10 +936,12 @@ private fun DeviceCardItem(
                             )
                         }
                     }
-                    val hwDesc = listOfNotNull(device.brand, device.model).joinToString(" ")
-                    if (hwDesc.isNotBlank()) {
+                    val hwDesc = listOfNotNull(device.brand, device.model).filter { it.isNotBlank() }.joinToString(" ")
+                    val androidVer = if (!device.android_version.isNullOrBlank()) "Android ${device.android_version}" else null
+                    val fullHw = listOfNotNull(hwDesc.takeIf { it.isNotBlank() }, androidVer).joinToString(" • ")
+                    if (fullHw.isNotBlank()) {
                         Text(
-                            text = "$hwDesc (Android ${device.android_version ?: "N/A"})",
+                            text = fullHw,
                             color = SheTheme.colors.textSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -799,9 +956,54 @@ private fun DeviceCardItem(
                 }
 
                 SheStatusChip(
-                    text = device.calculated_status,
-                    level = statusLevel
+                    text = if (device.status == "PENDING_CONFIRMATION") "PENDING" else device.calculated_status,
+                    level = if (device.status == "PENDING_CONFIRMATION") StatusLevel.WARNING else statusLevel
                 )
+            }
+
+            // Mutual Pairing PIN Pending Banner
+            if (device.status == "PENDING_CONFIRMATION") {
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SheTheme.colors.surfaceVariant)
+                        .border(1.dp, SheTheme.colors.accent, RoundedCornerShape(12.dp))
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Security,
+                                contentDescription = null,
+                                tint = SheTheme.colors.accent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Mutual Pairing Awaiting PIN",
+                                color = SheTheme.colors.accent,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "A 6-digit confirmation PIN is displayed on Guardian handset. Enter it to finalize pair authorization.",
+                            color = SheTheme.colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SheButton(
+                            text = "Enter 6-Digit Pairing PIN",
+                            onClick = onConfirmCode,
+                            variant = SheButtonVariant.PRIMARY,
+                            height = 36.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -887,13 +1089,14 @@ private fun DeviceCardItem(
                 ) {
                     if (statusInfo?.battery_level != null) {
                         val batt = statusInfo.battery_level
+                        val isCharging = statusInfo.is_charging == true
                         val battLevel = when {
                             batt <= 15 -> StatusLevel.DANGER
                             batt <= 30 -> StatusLevel.WARNING
                             else -> StatusLevel.SUCCESS
                         }
                         SheStatusChip(
-                            text = "⚡ Battery $batt%",
+                            text = if (isCharging) "⚡ Charging $batt%" else "🔋 Battery $batt%",
                             level = battLevel
                         )
                     }
@@ -1020,6 +1223,25 @@ private fun DeviceCardItem(
                 },
                 variant = SheButtonVariant.SECONDARY,
                 height = 42.dp,
+                cornerRadius = 12.dp,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Quick Actions Row 3: Unpair / Reconnect Handset
+            SheButton(
+                text = "Unpair & Delete Handset",
+                onClick = onDeleteDevice,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteForever,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                variant = SheButtonVariant.OUTLINED,
+                height = 38.dp,
                 cornerRadius = 12.dp,
                 modifier = Modifier.fillMaxWidth()
             )

@@ -162,6 +162,7 @@ class GuardianPairRequest(BaseModel):
 
     # Status / Telemetry at enrollment
     battery_level: Optional[int] = Field(None, ge=0, le=100)
+    is_charging: Optional[bool] = False
     connectivity_type: Optional[str] = None
     sim_operator: Optional[str] = None
     sim_country: Optional[str] = None
@@ -176,6 +177,7 @@ class DeviceRenameRequest(BaseModel):
 
 class DeviceHeartbeatRequest(BaseModel):
     battery_level: Optional[int] = Field(None, ge=0, le=100)
+    is_charging: Optional[bool] = False
     connectivity_type: Optional[str] = None
     sim_operator: Optional[str] = None
     sim_country: Optional[str] = None
@@ -215,6 +217,7 @@ class DeviceAuditLogResponse(BaseModel):
 
 class DeviceStatusResponse(BaseModel):
     battery_level: Optional[int] = None
+    is_charging: Optional[bool] = False
     connectivity_type: Optional[str] = None
     sim_operator: Optional[str] = None
     sim_country: Optional[str] = None

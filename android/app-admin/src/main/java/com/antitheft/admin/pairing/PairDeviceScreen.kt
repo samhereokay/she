@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -49,6 +51,8 @@ fun PairDeviceScreen(
     onGenerateQr: (phone: String, serverUrl: String) -> Unit,
     onConfirmCode: (code: String) -> Unit,
     onPairSameDevice: () -> Unit,
+    onCopyPayload: () -> Unit = {},
+    onSharePayload: () -> Unit = {},
     showSameDeviceButton: Boolean,
     onBack: () -> Unit,
     isLoading: Boolean
@@ -197,8 +201,47 @@ fun PairDeviceScreen(
                         )
                     }
 
-                    if (showSameDeviceButton) {
+                    if (qrBitmap != null) {
                         Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SheButton(
+                                text = "Copy Key",
+                                onClick = onCopyPayload,
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                variant = SheButtonVariant.OUTLINED,
+                                height = 38.dp,
+                                cornerRadius = 10.dp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            SheButton(
+                                text = "Share Key",
+                                onClick = onSharePayload,
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Share,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                variant = SheButtonVariant.OUTLINED,
+                                height = 38.dp,
+                                cornerRadius = 10.dp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (showSameDeviceButton) {
+                        Spacer(modifier = Modifier.height(10.dp))
                         SheButton(
                             text = "Pair on This Handset (Single Device)",
                             onClick = onPairSameDevice,

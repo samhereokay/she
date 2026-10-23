@@ -80,6 +80,24 @@ class PairDeviceActivity : BaseSecureActivity() {
                             }
                         }
                     },
+                    onCopyPayload = {
+                        if (currentPayloadJson.isNotBlank()) {
+                            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("SHE Pairing Payload", currentPayloadJson)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(this@PairDeviceActivity, "Pairing Key copied to clipboard! Paste into Guardian.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onSharePayload = {
+                        if (currentPayloadJson.isNotBlank()) {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "SHE Protected Handset Pairing Key")
+                                putExtra(Intent.EXTRA_TEXT, currentPayloadJson)
+                            }
+                            startActivity(Intent.createChooser(shareIntent, "Share Pairing Key with Handset"))
+                        }
+                    },
                     showSameDeviceButton = showSameDeviceState,
                     onBack = { finish() },
                     isLoading = isLoadingState

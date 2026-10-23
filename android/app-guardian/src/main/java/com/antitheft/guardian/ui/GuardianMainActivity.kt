@@ -55,6 +55,11 @@ class GuardianMainActivity : AppCompatActivity() {
         } else {
             Toast.makeText(this, "Location permission is required for anti-theft tracking", Toast.LENGTH_LONG).show()
         }
+        val smsSend = permissions[Manifest.permission.SEND_SMS] ?: (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED)
+        val smsRecv = permissions[Manifest.permission.RECEIVE_SMS] ?: (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
+        if (!smsSend || !smsRecv) {
+            showSmsPermissionRequiredDialog()
+        }
     }
 
     private val backgroundLocationLauncher = registerForActivityResult(
@@ -470,30 +475,53 @@ class GuardianMainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun applyPairingPayload(jsonString: String) {
+    private fun applyPairingPayload(jsonString: String, forceRePair: Boolean = false) {
+        if (storageHelper.isPaired() && !forceRePair) {
+            android.util.Log.w("GuardianPairing", "Device is currently paired. Prompting owner for re-pairing confirmation.")
+            runOnUiThread {
+                requestOwnerAuth("Re-pair Guardian Handset") {
+                    storageHelper.clearPairing()
+                    Toast.makeText(this@GuardianMainActivity, "Previous pairing cleared. Connecting to new Admin...", Toast.LENGTH_SHORT).show()
+                    applyPairingPayload(jsonString, forceRePair = true)
+                }
+            }
+            return
+        }
+
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                if (storageHelper.isPaired()) {
-                    android.util.Log.w("GuardianPairing", "REJECTED_ALREADY_PAIRED: Device is already paired to an owner. Re-pairing rejected.")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@GuardianMainActivity,
-                            "Re-pairing rejected: Device is already paired. Send an owner-signed UNPAIR command first.",
-                            Toast.LENGTH_LONG
-                        ).show()
+                var clean = jsonString.trim()
+                if (clean.startsWith("```")) {
+                    clean = clean.removePrefix("```json").removePrefix("```").trim()
+                    if (clean.endsWith("```")) {
+                        clean = clean.removeSuffix("```").trim()
                     }
-                    return@launch
                 }
-
-                val clean = jsonString.trim()
+                if ((clean.startsWith("\"") && clean.endsWith("\"")) || (clean.startsWith("'") && clean.endsWith("'"))) {
+                    clean = clean.substring(1, clean.length - 1).trim()
+                }
                 val parsedJson = if (!clean.startsWith("{")) {
-                    try {
-                        String(java.util.Base64.getDecoder().decode(clean), Charsets.UTF_8)
-                    } catch (e: Exception) {
-                        clean
+                    if (clean.contains("%7B") || clean.contains("%22")) {
+                        try {
+                            java.net.URLDecoder.decode(clean, "UTF-8")
+                        } catch (_: Exception) { clean }
+                    } else {
+                        try {
+                            String(java.util.Base64.getDecoder().decode(clean), Charsets.UTF_8)
+                        } catch (_: Exception) {
+                            clean
+                        }
                     }
                 } else clean
-                val payload = com.google.gson.JsonParser.parseString(parsedJson).asJsonObject
+
+                val firstBrace = parsedJson.indexOf('{')
+                val lastBrace = parsedJson.lastIndexOf('}')
+                val jsonSnippet = if (firstBrace != -1 && lastBrace > firstBrace) {
+                    parsedJson.substring(firstBrace, lastBrace + 1)
+                } else {
+                    parsedJson
+                }
+                val payload = com.google.gson.JsonParser.parseString(jsonSnippet).asJsonObject
                 val serverUrl = payload.get("server_url")?.asString
                 val adminPubPem = payload.get("admin_public_key_pem")?.asString
                 val pairingSecretHex = payload.get("pairing_secret_hex")?.asString
@@ -504,12 +532,29 @@ class GuardianMainActivity : AppCompatActivity() {
                 keystoreManager.getSecurityInfo(this@GuardianMainActivity)
                 val guardianPubPem = keystoreManager.getPublicKeyPem()
 
+                val mfr = android.os.Build.MANUFACTURER.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
+                val defaultAlias = "$mfr ${android.os.Build.MODEL}".trim()
+                val currentAlias = storageHelper.getDeviceAlias()
+                val effectiveAlias = if (currentAlias.isBlank() || currentAlias == "Guardian Pixel" || currentAlias == "GuardianDevice") defaultAlias else currentAlias
+
+                val batteryFilter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+                val batteryStatus = registerReceiver(null, batteryFilter)
+                val level = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                val batteryLevel = if (level >= 0 && scale > 0) (level * 100) / scale else 100
+                val bStatus = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val isCharging = bStatus == android.os.BatteryManager.BATTERY_STATUS_CHARGING || bStatus == android.os.BatteryManager.BATTERY_STATUS_FULL
+
                 var successMsg = "Pairing failed."
                 var confirmationCode: String? = null
 
                 // If pairing token is present, register device with backend API
                 if (!pairingToken.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
-                    val client = okhttp3.OkHttpClient()
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+                        .writeTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
                     val effectiveServerUrl = if (serverUrl.contains("10.0.2.2")) {
                         try {
                             java.net.Socket().use { s ->
@@ -524,7 +569,7 @@ class GuardianMainActivity : AppCompatActivity() {
 
                     val reqBodyMap = mapOf(
                         "device_id" to storageHelper.getDeviceId(),
-                        "device_alias" to (storageHelper.getDeviceAlias() ?: "Guardian Pixel"),
+                        "device_alias" to effectiveAlias,
                         "public_key_pem" to guardianPubPem,
                         "trusted_phone_number" to (if (!trustedPhoneNumber.isNullOrBlank() && trustedPhoneNumber.length >= 3) trustedPhoneNumber else "+15551234567"),
                         "pairing_secret" to (pairingSecretHex ?: ""),
@@ -536,6 +581,8 @@ class GuardianMainActivity : AppCompatActivity() {
                         "variant" to "lite",
                         "app_version" to "1.0",
                         "is_device_owner" to false,
+                        "battery_level" to batteryLevel,
+                        "is_charging" to isCharging,
                         "capabilities" to listOf("locate_sms", "live_gps", "siren", "ring", "battery_report")
                     )
                     val reqJson = com.google.gson.Gson().toJson(reqBodyMap)
@@ -923,6 +970,30 @@ class GuardianMainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showSmsPermissionRequiredDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("SMS Permissions Required for Emergency & SIM Swap Tracker")
+            .setMessage(
+                "SHE Guardian relies on SMS beacons to report phone location and detect SIM card swaps when mobile data / Wi-Fi is disconnected.\n\n" +
+                "NOTE for Android 13+ & Play Protect:\n" +
+                "If SMS permissions are blocked or disabled:\n" +
+                "1. Tap 'Open App Settings' below.\n" +
+                "2. Tap the 3 dots (⋮) in the top-right corner -> 'Allow restricted settings'.\n" +
+                "3. Tap 'Permissions' -> enable 'SMS' and 'Phone'.\n" +
+                "4. In Google Play Store -> Play Protect -> Settings, ensure scanning does not silently block emergency SMS beacons."
+            )
+            .setPositiveButton("Open App Settings") { _, _ ->
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Later", null)
             .show()
     }
 

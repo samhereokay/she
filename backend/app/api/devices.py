@@ -181,6 +181,7 @@ def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDet
 
         status_info = DeviceStatusResponse(
             battery_level=status_rec.battery_level,
+            is_charging=getattr(status_rec, "is_charging", False),
             connectivity_type=status_rec.connectivity_type,
             sim_operator=status_rec.sim_operator,
             sim_country=status_rec.sim_country,
@@ -194,6 +195,7 @@ def build_device_detail_response(dev: ProtectedDevice, db: Session) -> DeviceDet
     else:
         status_info = DeviceStatusResponse(
             battery_level=None,
+            is_charging=False,
             connectivity_type=None,
             sim_operator=None,
             sim_country=None,
@@ -330,6 +332,17 @@ def pair_device(
 
     limit = min(settings.MAX_GUARDIANS_PER_ACCOUNT, getattr(settings, "MAX_DEVICES_PER_USER", settings.MAX_GUARDIANS_PER_ACCOUNT))
     if active_count >= limit:
+        jti = token_payload.get("jti")
+        if jti:
+            from app.core.security import unclaim_pairing_token_jti
+            unclaim_pairing_token_jti(jti)
+        session_id = token_payload.get("session_id")
+        if session_id:
+            from app.db.models import PairingSession
+            sess = db.query(PairingSession).filter(PairingSession.id == session_id).first()
+            if sess:
+                sess.consumed_at = None
+                db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Account limit reached: You have reached the limit of {limit} protected devices. To pair another handset, delete or unpair an old device first."
@@ -339,8 +352,16 @@ def pair_device(
     existing_by_id = db.query(ProtectedDevice).filter(ProtectedDevice.id == dev_id).first()
     if existing_by_id:
         if existing_by_id.user_id != current_user.id:
+            jti = token_payload.get("jti")
+            if jti:
+                from app.core.security import unclaim_pairing_token_jti
+                unclaim_pairing_token_jti(jti)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device ID registered to another user")
         if existing_by_id.status == "ACTIVE":
+            jti = token_payload.get("jti")
+            if jti:
+                from app.core.security import unclaim_pairing_token_jti
+                unclaim_pairing_token_jti(jti)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Device ID '{dev_id}' is already paired and active. If replacing, remove or unpair the existing handset first."
@@ -353,6 +374,10 @@ def pair_device(
         ProtectedDevice.id != dev_id
     ).first()
     if existing_by_key:
+        jti = token_payload.get("jti")
+        if jti:
+            from app.core.security import unclaim_pairing_token_jti
+            unclaim_pairing_token_jti(jti)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A handset with this exact cryptographic key pair is already registered and active."
@@ -432,6 +457,7 @@ def pair_device(
         db.add(status_rec)
 
     status_rec.battery_level = getattr(pair_in, "battery_level", None)
+    status_rec.is_charging = getattr(pair_in, "is_charging", False)
     status_rec.connectivity_type = getattr(pair_in, "connectivity_type", None)
     status_rec.sim_operator = getattr(pair_in, "sim_operator", None)
     status_rec.sim_country = getattr(pair_in, "sim_country", None)
@@ -859,6 +885,8 @@ def device_heartbeat(
         db.add(status_rec)
 
     status_rec.battery_level = req.battery_level
+    if req.is_charging is not None:
+        status_rec.is_charging = req.is_charging
     status_rec.connectivity_type = req.connectivity_type
     if req.sim_operator:
         status_rec.sim_operator = req.sim_operator

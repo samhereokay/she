@@ -285,6 +285,7 @@ class DeviceStatus(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     device_id = Column(String(36), ForeignKey("protected_devices.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
     battery_level = Column(Integer, nullable=True)
+    is_charging = Column(Boolean, default=False, nullable=True)
     connectivity_type = Column(String(32), nullable=True)  # "wifi", "cellular", "none"
     sim_operator = Column(String(64), nullable=True)
     sim_country = Column(String(8), nullable=True)

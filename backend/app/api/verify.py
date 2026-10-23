@@ -12,6 +12,7 @@ from app.api.deps import get_current_user, get_verified_user
 from app.core.rate_limit import email_verify_limiter
 from app.core.kyc_validator import validate_email_kyc, validate_phone_kyc, normalize_phone_number
 from app.core.security import create_canonical_command_bytes, compute_truncated_hmac, decrypt_pairing_secret
+from app.core.config import settings
 from app.db.session import get_db
 from app.db.models import User, ProtectedDevice, DeviceCommand, VerificationChallenge, AuditEvent, utc_now, generate_uuid
 from app.schemas.auth import (
@@ -91,12 +92,15 @@ def send_email_verification(
     # Asynchronously dispatch email (zero credentials/codes in logs)
     background_tasks.add_task(send_verification_email, target_email, raw_code)
 
-    return {
+    resp = {
         "status": "challenge_issued",
         "channel": "email",
         "target": target_email,
         "expires_at": challenge.expires_at
     }
+    if settings.DEBUG:
+        resp["debug_code"] = raw_code
+    return resp
 
 
 @router.post("/email/confirm", response_model=EmailVerifyResponse)
@@ -282,14 +286,16 @@ def start_phone_verification(
 
     logger.info(f"Enqueued SEND_VERIFY_SMS command {cmd.id} to Guardian {guardian_device.id}")
 
-    # Plaintext code NEVER returned in response
-    return {
+    resp = {
         "status": "challenge_issued",
         "channel": "sms",
         "target": e164_phone,
         "expires_at": challenge.expires_at,
         "command_id": cmd.id
     }
+    if settings.DEBUG:
+        resp["debug_code"] = raw_code
+    return resp
 
 
 @router.post("/phone/confirm", response_model=PhoneVerifyResponse)

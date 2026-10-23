@@ -88,6 +88,7 @@ data class DeviceLocationDto(
 
 data class DeviceStatusDto(
     val battery_level: Int? = null,
+    val is_charging: Boolean? = null,
     val connectivity_type: String? = null,
     val sim_operator: String? = null,
     val sim_country: String? = null,
@@ -327,7 +328,14 @@ interface AdminApiService {
     suspend fun revokeDevice(
         @Path("id") id: String,
         @retrofit2.http.Query("action") action: String = "revoke",
-        @retrofit2.http.Header("x-totp-code") totpCode: String
+        @retrofit2.http.Header("x-totp-code") totpCode: String? = null
+    ): Map<String, Any>
+
+    @retrofit2.http.DELETE("api/v1/devices/{id}")
+    suspend fun deleteDevice(
+        @Path("id") id: String,
+        @retrofit2.http.Query("action") action: String = "delete",
+        @retrofit2.http.Header("x-totp-code") totpCode: String? = null
     ): Map<String, Any>
 
     @GET("api/v1/devices/{id}/audit-log")

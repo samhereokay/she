@@ -211,6 +211,12 @@ class AdminDashboardActivity : BaseSecureActivity() {
                                 coroutineScope = lifecycleScope,
                                 manualTrigger = true
                             )
+                        },
+                        onDeleteDevice = { device ->
+                            deleteDevice(device)
+                        },
+                        onConfirmPendingPairing = { device, code ->
+                            confirmPendingPairing(device, code)
                         }
                     )
                 }
@@ -620,6 +626,43 @@ class AdminDashboardActivity : BaseSecureActivity() {
                 android.util.Log.e("AdminDashboard", "Failed to revoke session", e)
                 Toast.makeText(this@AdminDashboardActivity, "Failed to revoke session: ${e.message}", Toast.LENGTH_SHORT).show()
                 isSessionsLoading = false
+            }
+        }
+    }
+
+    private fun deleteDevice(device: DeviceDto) {
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val resp = api.deleteDevice(device.id, "delete")
+                val msg = resp["message"] as? String ?: "Device '${device.device_alias}' unpair request succeeded."
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@AdminDashboardActivity, msg, Toast.LENGTH_LONG).show()
+                }
+                refreshDashboardData()
+            } catch (e: Exception) {
+                android.util.Log.e("AdminDashboard", "Failed to delete device", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@AdminDashboardActivity, "Unpair failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun confirmPendingPairing(device: DeviceDto, code: String) {
+        lifecycleScope.launch {
+            try {
+                val api = ApiClient.create(sessionManager)
+                val resp = api.confirmPairing(device.id, com.antitheft.admin.network.ConfirmPairingRequest(code))
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@AdminDashboardActivity, "Handset '${device.device_alias}' successfully paired! Status: ${resp.status}", Toast.LENGTH_LONG).show()
+                }
+                refreshDashboardData()
+            } catch (e: Exception) {
+                android.util.Log.e("AdminDashboard", "Failed to confirm pairing", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@AdminDashboardActivity, "Pairing confirmation failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
