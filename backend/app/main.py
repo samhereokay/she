@@ -73,6 +73,9 @@ class SensitiveDataFilter(logging.Filter):
         (re.compile(r'(lng=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
         (re.compile(r'(latitude=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
         (re.compile(r'(longitude=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(phone=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(mobile=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(email=)[^&\s]+', re.IGNORECASE), r'\1[REDACTED]'),
         (re.compile(r'Bearer\s+[a-zA-Z0-9_\-\.]+', re.IGNORECASE), r'Bearer [REDACTED]'),
     ]
 
