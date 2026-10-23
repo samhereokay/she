@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: she-backend
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TOTP_ENCRYPTION_KEY
+        sync: false
+      - key: ENFORCE_HTTPS
+        value: "true"
+      - key: ALLOW_PUBLIC_REGISTRATION
+        value: "false"
+      - key: DEBUG
+        value: "false"
+      - key: PROJECT_NAME
+        value: "SHE - Sentinel for Handheld Equipment"
