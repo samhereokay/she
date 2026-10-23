@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "1025"))
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASS: str = os.getenv("SMTP_PASS", "")
-    SMTP_FROM: str = os.getenv("SMTP_FROM", "no-reply@she.local")
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "") or os.getenv("SMTP_FROM_EMAIL", "no-reply@she.local")
     
     # Database
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

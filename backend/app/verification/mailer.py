@@ -52,6 +52,9 @@ def _dispatch_https_api(clean_target: str, subject: str, text_body: str, html_bo
                 if 200 <= resp.status < 300:
                     logger.info(f"Verification email dispatched successfully via Resend API to {clean_target}")
                     return True
+        except urllib.error.HTTPError as resend_err:
+            err_msg = resend_err.read().decode("utf-8", errors="ignore")
+            logger.warning(f"Resend API HTTP {resend_err.code} error: {err_msg}. Falling back...")
         except Exception as resend_err:
             logger.warning(f"Resend API dispatch failed ({type(resend_err).__name__}). Falling back...")
 
@@ -81,6 +84,9 @@ def _dispatch_https_api(clean_target: str, subject: str, text_body: str, html_bo
                 if 200 <= resp.status < 300:
                     logger.info(f"Verification email dispatched successfully via Brevo API to {clean_target}")
                     return True
+        except urllib.error.HTTPError as brevo_err:
+            err_msg = brevo_err.read().decode("utf-8", errors="ignore")
+            logger.warning(f"Brevo API HTTP {brevo_err.code} error: {err_msg}. Falling back...")
         except Exception as brevo_err:
             logger.warning(f"Brevo API dispatch failed ({type(brevo_err).__name__}). Falling back...")
 
@@ -112,6 +118,9 @@ def _dispatch_https_api(clean_target: str, subject: str, text_body: str, html_bo
                 if 200 <= resp.status < 300:
                     logger.info(f"Verification email dispatched successfully via SendGrid API to {clean_target}")
                     return True
+        except urllib.error.HTTPError as sg_err:
+            err_msg = sg_err.read().decode("utf-8", errors="ignore")
+            logger.warning(f"SendGrid API HTTP {sg_err.code} error: {err_msg}. Falling back...")
         except Exception as sg_err:
             logger.warning(f"SendGrid API dispatch failed ({type(sg_err).__name__}). Falling back...")
 
