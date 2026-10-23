@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# Run database migrations automatically on container boot with timeout (never block boot)
-(timeout 10 alembic upgrade head || true)
+# Run database migrations asynchronously in background so port 10000 opens in <200ms
+(alembic upgrade head || true) &
 
 # Resolve port: Render defaults to 10000, fallback to 8000 for local/fly
 PORT="${PORT:-10000}"
