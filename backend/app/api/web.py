@@ -48,6 +48,26 @@ def get_latest_telemetry_snapshot():
     return None, None
 
 
+_STATIC_CHECKSUMS: dict[str, str] = {}
+
+def _get_static_checksums() -> dict[str, str]:
+    global _STATIC_CHECKSUMS
+    if not _STATIC_CHECKSUMS:
+        checksum_file = find_asset_path("backend/static/checksums.sha256")
+        if os.path.exists(checksum_file):
+            try:
+                with open(checksum_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            sha = parts[0]
+                            fname = os.path.basename(parts[1])
+                            _STATIC_CHECKSUMS[fname] = sha
+            except Exception:
+                pass
+    return _STATIC_CHECKSUMS
+
+
 @functools.lru_cache(maxsize=32)
 def _calc_sha256(filepath: str, mtime: float) -> str:
     h = hashlib.sha256()
@@ -60,6 +80,16 @@ def _calc_sha256(filepath: str, mtime: float) -> str:
 def get_file_sha256(filepath: str) -> str:
     if not filepath or not os.path.exists(filepath):
         return "LOCAL BUILD PENDING (Run Gradle to compile)"
+    
+    fname = os.path.basename(filepath)
+    static_sums = _get_static_checksums()
+    if fname in static_sums:
+        return static_sums[fname]
+    if "guardian" in fname and "she-guardian.apk" in static_sums:
+        return static_sums["she-guardian.apk"]
+    if "admin" in fname and "she-admin.apk" in static_sums:
+        return static_sums["she-admin.apk"]
+
     try:
         mtime = os.path.getmtime(filepath)
         return _calc_sha256(filepath, mtime)
