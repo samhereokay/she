@@ -113,6 +113,9 @@ app.add_middleware(
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Inject OWASP ASVS and TLS migration recommended security headers on all HTTP responses."""
+    if request.url.path == "/health":
+        return await call_next(request)
+
     raw_proto = request.headers.get("x-forwarded-proto")
     if raw_proto:
         # Take the leftmost hop (client-facing protocol) in case of multiple proxies
